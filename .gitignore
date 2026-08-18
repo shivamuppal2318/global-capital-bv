@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+vite-dev*.log
+vite-dev*.err*
+*.tar.gz
+MOM-UIUX-Global-Capital-copy.docx

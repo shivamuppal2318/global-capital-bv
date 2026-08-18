@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+:root {
+  --panel: rgba(255, 250, 242, 0.84);
+  --panel-strong: #fffdf9;
+  --line: rgba(78, 63, 44, 0.11);
+  --text: #262018;
+  --muted: #6f665a;
+  --navy: #1d3960;
+  --navy-soft: #dbe7f7;
+  --gold-soft: #f7e4c5;
+  --green: #2f7d5b;
+  --green-soft: #dceee6;
+  --rose: #8c4351;
+  --rose-soft: #f4dde2;
+  --teal: #256c73;
+  --teal-soft: #d8ecef;
+  --shadow: 0 18px 40px rgba(31, 23, 13, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(214, 174, 96, 0.16), transparent 26%),
+    radial-gradient(circle at top right, rgba(29, 57, 96, 0.1), transparent 22%),
+    linear-gradient(180deg, #fbf7f0 0%, #f2ece3 100%);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
