@@ -23,9 +23,9 @@ function requireValidToken(req, res, next) {
 // swallowed (with a server-side console.error), not surfaced to the client.
 async function recordEvent(activityLogId, kind, title, detailFn) {
   try {
-    const original = await prisma.activityLog.findUnique({ where: { id: activityLogId } });
+    const original = await prisma.emailActivityLog.findUnique({ where: { id: activityLogId } });
     if (original) {
-      await prisma.activityLog.create({
+      await prisma.emailActivityLog.create({
         data: { leadId: original.leadId, kind, title, detail: detailFn(original) }
       });
     }

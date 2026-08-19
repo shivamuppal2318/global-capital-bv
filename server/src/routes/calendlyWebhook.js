@@ -32,7 +32,7 @@ calendlyWebhookRouter.post("/", requireValidSignature, asyncHandler(async (req, 
     return res.status(400).json({ error: "Missing event or payload.email" });
   }
 
-  const lead = await prisma.lead.findFirst({ where: { email: inviteeEmail } });
+  const lead = await prisma.emailLead.findFirst({ where: { email: inviteeEmail } });
   if (!lead) {
     console.warn(`[calendly-webhook] no lead found for ${inviteeEmail}`);
     return res.status(200).json({ matched: false });
@@ -41,11 +41,11 @@ calendlyWebhookRouter.post("/", requireValidSignature, asyncHandler(async (req, 
   if (event === "invitee.created") {
     const scheduledFor = payload?.scheduled_event?.start_time ? new Date(payload.scheduled_event.start_time) : null;
     await prisma.$transaction([
-      prisma.lead.update({
+      prisma.emailLead.update({
         where: { id: lead.id },
         data: { callBookedAt: new Date(), callScheduledFor: scheduledFor, callCanceledAt: null, stage: "Zoom 1 Pending" }
       }),
-      prisma.activityLog.create({
+      prisma.emailActivityLog.create({
         data: {
           leadId: lead.id,
           kind: "CALL_BOOKED",
@@ -59,8 +59,8 @@ calendlyWebhookRouter.post("/", requireValidSignature, asyncHandler(async (req, 
 
   if (event === "invitee.canceled") {
     await prisma.$transaction([
-      prisma.lead.update({ where: { id: lead.id }, data: { callCanceledAt: new Date() } }),
-      prisma.activityLog.create({
+      prisma.emailLead.update({ where: { id: lead.id }, data: { callCanceledAt: new Date() } }),
+      prisma.emailActivityLog.create({
         data: { leadId: lead.id, kind: "CALL_CANCELED", title: "Call canceled via Calendly", detail: "Invitee canceled the booked call." }
       })
     ]);

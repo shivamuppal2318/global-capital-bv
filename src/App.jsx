@@ -20,6 +20,11 @@ import { WhatsappBusinessModule } from "./components/whatsapp/WhatsappBusinessMo
 import { AiChatPanel } from "./components/ai/AiChatPanel";
 import { CrmWorkspaceModule } from "./components/crm/CrmWorkspaceModule";
 import { MeetingsModule } from "./components/meetings/MeetingsModule";
+// Email cold-outreach domain (merged from the `crm` branch) — three
+// modules matching the existing nav placeholders.
+import { EmailOutreachModule } from "./components/emailOutreach/EmailOutreachModule";
+import { EmailTemplatesCadencesModule } from "./components/emailTemplates/EmailTemplatesCadencesModule";
+import { MarketIntelligenceModule } from "./components/marketIntelligence/MarketIntelligenceModule";
 import {
   coldBulkMailingData,
   commandCenterData,
@@ -127,6 +132,12 @@ function App() {
               <CrmWorkspaceModule />
             ) : activePage === "meetings" ? (
               <MeetingsModule />
+            ) : activePage === "cold-bulk-mailing" || activePage === "leads" ? (
+              <EmailOutreachModule initialTab={activePage === "leads" ? "leads" : "campaigns"} />
+            ) : activePage === "templates-cadences" ? (
+              <EmailTemplatesCadencesModule />
+            ) : activePage === "market-intelligence" ? (
+              <MarketIntelligenceModule />
             ) : (
               <>
                 <PageHeader pageId={activePage} page={currentPage} actions={actions} />

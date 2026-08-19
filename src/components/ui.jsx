@@ -46,13 +46,14 @@ export function StatCard({ card }) {
   );
 }
 
-export function ActionButton({ label, icon: Icon, primary, external, hero, small, onClick, active }) {
+export function ActionButton({ label, icon: Icon, primary, external, hero, small, onClick, active, disabled }) {
   if (hero) {
     return (
       <button
         type="button"
         onClick={onClick}
-        className={`inline-flex items-center gap-2 rounded-[14px] px-5 py-3 text-[15px] font-semibold ${
+        disabled={disabled}
+        className={`inline-flex items-center gap-2 rounded-[14px] px-5 py-3 text-[15px] font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
           primary ? "bg-white text-[#21439b]" : "border border-white/35 bg-white/6 text-white"
         }`}
       >
@@ -67,7 +68,8 @@ export function ActionButton({ label, icon: Icon, primary, external, hero, small
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-[14px] border font-semibold shadow-[0_2px_8px_rgba(30,48,87,0.04)] ${
+      disabled={disabled}
+      className={`inline-flex items-center gap-2 rounded-[14px] border font-semibold shadow-[0_2px_8px_rgba(30,48,87,0.04)] disabled:cursor-not-allowed disabled:opacity-50 ${
         small ? "px-3 py-2 text-[13px]" : "px-4 py-3 text-[15px]"
       } ${
         primary || active

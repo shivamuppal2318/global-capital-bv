@@ -2,8 +2,10 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// NOTE: local-dev only — swapped to sqlite because no Postgres/Docker was
+// reachable on this machine. Revert to "postgresql" for a real deployment.
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -369,4 +371,250 @@ model ActivityLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+// ============================================================================
+// Email cold-outreach domain (campaigns/leads/cadence/templates/market
+// intelligence) — merged in from the `crm` branch. Named distinctly from the
+// WhatsApp-domain models above (EmailCampaign vs. Campaign, EmailLead vs.
+// Lead, EmailTemplate vs. Template, EmailActivityLog vs. ActivityLog) even
+// though the concepts rhyme, because the two are genuinely different data
+// shapes for different channels — collapsing them into one model would lose
+// real fields on both sides. EmailAccount/CadenceStep/ReplyEvent/MarketSignal
+// had no name collision and keep their original names.
+// ============================================================================
+
+enum EmailCampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+}
+
+enum ReplyType {
+  INTERESTED
+  ZOOM_REQUEST
+  INFO_REQUEST
+  NO_REPLY
+}
+
+enum EmailActivityKind {
+  BULK_INTRO_SENT
+  REPLY_RECEIVED
+  BRANCH_EMAIL_QUEUED
+  BRANCH_EMAIL_SENT
+  STAGE_CHANGED
+  MANUAL_NOTE
+  BOUNCED
+  SEND_BLOCKED
+  NDA_SIGNED
+  CALL_BOOKED
+  CALL_CANCELED
+  CALL_COMPLETED
+  EMAIL_OPENED
+  LINK_CLICKED
+}
+
+enum BounceKind {
+  HARD
+  SOFT
+  COMPLAINT
+}
+
+model EmailCampaign {
+  id            String              @id @default(cuid())
+  name          String
+  status        EmailCampaignStatus @default(DRAFT)
+  audience      String
+  template      String
+  dailyLimit    Int                 @default(2000)
+  delayDays     Int                 @default(3)
+  followUpCount Int                 @default(3)
+  abTest        Boolean             @default(true)
+  autoPause     Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  // Which mailbox this campaign sends through. Null = fall back to the
+  // single global EMAIL_PROVIDER/.env-configured provider.
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id])
+  emailAccountId String?
+
+  leads        EmailLead[]
+  cadenceSteps CadenceStep[]
+
+  @@index([status])
+}
+
+model EmailAccount {
+  id         String  @id @default(cuid())
+  label      String
+  smtpHost   String
+  smtpPort   Int
+  smtpSecure Boolean @default(true)
+  smtpUser   String
+  // AES-256-GCM ciphertext (see src/lib/credentialCrypto.js), never the
+  // plaintext password — decrypted in memory only at the moment of
+  // building an SMTP transporter.
+  smtpPassEncrypted String
+  fromAddress       String
+  dailyLimit        Int      @default(500)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  campaigns EmailCampaign[]
+}
+
+model CadenceStep {
+  id           String        @id @default(cuid())
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignId   String
+  stepIndex    Int
+  title        String
+  bodyTemplate String
+  delayDays    Int
+
+  @@unique([campaignId, stepIndex])
+}
+
+model EmailLead {
+  id           String    @id @default(cuid())
+  name         String
+  company      String
+  email        String
+  owner        String
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id])
+  campaignId   String
+  replyType    ReplyType @default(NO_REPLY)
+  stage        String    @default("Reminder Pending")
+  unsubscribed Boolean   @default(false)
+  // A hard bounce or spam complaint suppresses this lead permanently; a
+  // soft bounce (mailbox full, temp DNS failure) does not — see
+  // src/routes/bounces.js.
+  bounced    Boolean     @default(false)
+  bounceKind BounceKind?
+  // A lightweight "clickwrap" e-signature (typed name + IP + timestamp),
+  // not a certified signature the way DocuSign/HelloSign produce one — see
+  // routes/nda.js for what this actually captures and its limits.
+  ndaSignedAt   DateTime?
+  ndaSignedName String?
+  ndaSignedIp   String?
+  // Calendly tells you a meeting was booked (invitee.created) or canceled
+  // (invitee.canceled) via webhook — it does NOT tell you whether anyone
+  // actually showed up. callCompletedAt is a manual confirmation
+  // (POST /email/leads/:id/mark-call-completed), not something Calendly reports.
+  callBookedAt     DateTime?
+  callScheduledFor DateTime?
+  callCanceledAt   DateTime?
+  callCompletedAt  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  replyEvents      ReplyEvent[]
+  activityLog      EmailActivityLog[]
+  matchedBySignals MarketSignal[]     @relation("MarketSignalMatchedLead")
+  createdBySignals MarketSignal[]     @relation("MarketSignalCreatedLead")
+
+  @@index([campaignId])
+  @@index([email])
+}
+
+model ReplyEvent {
+  id          String    @id @default(cuid())
+  lead        EmailLead @relation(fields: [leadId], references: [id])
+  leadId      String
+  rawBody     String
+  matchedRule String?
+  replyType   ReplyType
+  receivedAt  DateTime  @default(now())
+}
+
+model EmailActivityLog {
+  id        String            @id @default(cuid())
+  lead      EmailLead         @relation(fields: [leadId], references: [id])
+  leadId    String
+  kind      EmailActivityKind
+  title     String
+  detail    String
+  createdAt DateTime          @default(now())
+
+  @@index([leadId, createdAt])
+}
+
+model EmailTemplate {
+  id      String  @id @default(cuid())
+  key     String  @unique
+  subject String
+  body    String
+  // Optional branded HTML version. When null, the send path wraps `body`
+  // in a default branded shell (see src/lib/renderTemplate.js) rather than
+  // sending plain text with no company identity/unsubscribe link.
+  html      String?
+  updatedAt DateTime @updatedAt
+}
+
+enum SignalSource {
+  NEWSAPI
+  EXA
+  FIRECRAWL
+  // Google News RSS search feed — unlike the other three, needs no API key
+  // or account, so it's the one source here that can produce real signals
+  // without waiting on a credential. See sources/googleNewsRssSource.js.
+  GOOGLE_NEWS
+}
+
+enum SignalType {
+  FUNDING
+  ACQUISITION
+  EXPANSION
+  LEADERSHIP_CHANGE
+  DISTRESS
+  OTHER
+}
+
+enum SignalStatus {
+  PENDING // fetched, not yet AI-processed
+  PROCESSED // AI-processed, routed (matched existing lead or created new one)
+  DUPLICATE // matched contentHash of an already-seen signal, discarded
+  IGNORED // processed but below relevance threshold / no entity match, no action taken
+  FAILED // a source or AI-processing error stopped this signal short — see failureReason
+}
+
+// One row per raw item pulled from a source, carrying it through AI
+// processing and routing. Matches against EmailLead.company free-text.
+model MarketSignal {
+  id             String       @id @default(cuid())
+  source         SignalSource
+  sourceUrl      String
+  rawTitle       String
+  rawContent     String
+  rawPublishedAt DateTime?
+  fetchedAt      DateTime     @default(now())
+
+  // SHA-256 of source + normalized rawTitle, used for dedup (see
+  // lib/marketIntelligence/dedup.js).
+  contentHash String @unique
+
+  status        SignalStatus @default(PENDING)
+  failureReason String?
+
+  // Filled in by AI processing (lib/marketIntelligence/aiProcessor.js) —
+  // null until status moves past PENDING.
+  entityName     String?
+  signalType     SignalType?
+  relevanceScore Int? // 0-100
+  aiSummary      String?
+
+  // Routing outcome: either an existing lead this signal updated, or a
+  // newly-created one from an Apollo lookup — never both.
+  matchedLeadId String?
+  matchedLead   EmailLead? @relation("MarketSignalMatchedLead", fields: [matchedLeadId], references: [id])
+  createdLeadId String?
+  createdLead   EmailLead? @relation("MarketSignalCreatedLead", fields: [createdLeadId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([status])
+  @@index([entityName])
 }

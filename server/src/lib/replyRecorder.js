@@ -25,7 +25,7 @@ export async function recordReply(lead, textBody) {
     prisma.replyEvent.create({
       data: { leadId: lead.id, rawBody: textBody, matchedRule: matchedRule?.id ?? null, replyType }
     }),
-    prisma.activityLog.create({
+    prisma.emailActivityLog.create({
       data: {
         leadId: lead.id,
         kind: "REPLY_RECEIVED",
@@ -33,7 +33,7 @@ export async function recordReply(lead, textBody) {
         detail: textBody.slice(0, 500)
       }
     }),
-    prisma.lead.update({ where: { id: lead.id }, data: { replyType } })
+    prisma.emailLead.update({ where: { id: lead.id }, data: { replyType } })
   ]);
 
   const autoResponse = await autoRespondToReply(lead.id, replyType);
