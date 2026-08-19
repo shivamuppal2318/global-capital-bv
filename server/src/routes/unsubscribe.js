@@ -6,13 +6,13 @@ import { verifyUnsubscribeToken } from "../lib/unsubscribeToken.js";
 export const unsubscribeRouter = Router();
 
 async function suppress(leadId) {
-  const lead = await prisma.lead.update({
+  const lead = await prisma.emailLead.update({
     where: { id: leadId },
     data: { unsubscribed: true }
   }).catch(() => null);
 
   if (lead) {
-    await prisma.activityLog.create({
+    await prisma.emailActivityLog.create({
       data: {
         leadId: lead.id,
         kind: "MANUAL_NOTE",

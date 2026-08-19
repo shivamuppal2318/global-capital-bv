@@ -67,8 +67,8 @@ export function startCadenceWorker() {
     QUEUE_NAME,
     async (job) => {
       const { leadId, campaignId, subject, body } = job.data;
-      const lead = await prisma.lead.findUniqueOrThrow({ where: { id: leadId } });
-      const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: campaignId }, include: { emailAccount: true } });
+      const lead = await prisma.emailLead.findUniqueOrThrow({ where: { id: leadId } });
+      const campaign = await prisma.emailCampaign.findUniqueOrThrow({ where: { id: campaignId }, include: { emailAccount: true } });
       // Resolved per-job, not once at worker startup — a global provider
       // grabbed once would ignore any campaign-specific EmailAccount and
       // silently send every cadence step through the default mailbox
@@ -83,7 +83,7 @@ export function startCadenceWorker() {
       const { eligible, reason } = isLeadEligibleForCadenceStep(lead);
       if (!eligible) {
         console.log(`[cadence-worker] skipping step for lead ${leadId}: ${reason}`);
-        await prisma.activityLog.create({
+        await prisma.emailActivityLog.create({
           data: {
             leadId,
             kind: "SEND_BLOCKED",
@@ -113,7 +113,7 @@ export function startCadenceWorker() {
 
       const { providerMessageId } = await emailProvider.send({ to: lead.email, subject, body });
 
-      await prisma.activityLog.create({
+      await prisma.emailActivityLog.create({
         data: {
           leadId,
           kind: "BRANCH_EMAIL_SENT",

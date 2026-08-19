@@ -100,7 +100,7 @@ export async function pollOnce() {
         const textBody = parsed.text ?? "";
 
         if (fromEmail && textBody) {
-          const lead = await prisma.lead.findFirst({ where: { email: fromEmail } });
+          const lead = await prisma.emailLead.findFirst({ where: { email: fromEmail } });
           if (lead) {
             await recordReply(lead, textBody);
             processedCount += 1;

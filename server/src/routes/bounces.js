@@ -30,15 +30,15 @@ function requireWebhookSecret(req, res, next) {
 // reputation gets tanked. Only acts if the campaign opted into autoPause
 // and isn't already paused.
 async function maybeAutoPauseCampaign(campaignId) {
-  const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+  const campaign = await prisma.emailCampaign.findUnique({ where: { id: campaignId } });
   if (!campaign || !campaign.autoPause || campaign.status !== "SENDING") {
     return;
   }
 
   const [sentCount, bounceCount, complaintCount] = await Promise.all([
-    prisma.activityLog.count({ where: { kind: "BRANCH_EMAIL_SENT", lead: { campaignId } } }),
-    prisma.lead.count({ where: { campaignId, bounced: true, bounceKind: "HARD" } }),
-    prisma.lead.count({ where: { campaignId, bounced: true, bounceKind: "COMPLAINT" } })
+    prisma.emailActivityLog.count({ where: { kind: "BRANCH_EMAIL_SENT", lead: { campaignId } } }),
+    prisma.emailLead.count({ where: { campaignId, bounced: true, bounceKind: "HARD" } }),
+    prisma.emailLead.count({ where: { campaignId, bounced: true, bounceKind: "COMPLAINT" } })
   ]);
 
   const { shouldPause, reason } = evaluateCampaignHealth({ sentCount, bounceCount, complaintCount });
@@ -47,13 +47,13 @@ async function maybeAutoPauseCampaign(campaignId) {
   }
 
   await prisma.$transaction([
-    prisma.campaign.update({ where: { id: campaignId }, data: { status: "SCHEDULED" } }),
-    prisma.activityLog.create({
+    prisma.emailCampaign.update({ where: { id: campaignId }, data: { status: "SCHEDULED" } }),
+    prisma.emailActivityLog.create({
       data: {
         // Attach to any lead in the campaign so it shows up somewhere in
         // the activity trail — this is a campaign-level event, not really
         // lead-scoped, but ActivityLog is currently modeled per-lead only.
-        leadId: (await prisma.lead.findFirstOrThrow({ where: { campaignId } })).id,
+        leadId: (await prisma.emailLead.findFirstOrThrow({ where: { campaignId } })).id,
         kind: "SEND_BLOCKED",
         title: "Campaign auto-paused",
         detail: `Auto-paused "${campaign.name}": ${reason}`
@@ -71,7 +71,7 @@ bouncesRouter.post("/", requireWebhookSecret, asyncHandler(async (req, res) => {
   }
   const { email, kind, reason } = parsed.data;
 
-  const lead = await prisma.lead.findFirst({ where: { email } });
+  const lead = await prisma.emailLead.findFirst({ where: { email } });
   if (!lead) {
     console.warn(`[bounce-webhook] no lead found for ${email}`);
     return res.status(200).json({ matched: false });
@@ -85,9 +85,9 @@ bouncesRouter.post("/", requireWebhookSecret, asyncHandler(async (req, res) => {
 
   await prisma.$transaction([
     ...(shouldSuppress
-      ? [prisma.lead.update({ where: { id: lead.id }, data: { bounced: true, bounceKind: kind } })]
+      ? [prisma.emailLead.update({ where: { id: lead.id }, data: { bounced: true, bounceKind: kind } })]
       : []),
-    prisma.activityLog.create({
+    prisma.emailActivityLog.create({
       data: {
         leadId: lead.id,
         kind: "BOUNCED",

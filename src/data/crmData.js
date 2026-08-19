@@ -43,13 +43,6 @@ export const topBarMeta = {
   initials: "GC"
 };
 
-export const marketIntelligenceData = {
-  badge: "Module",
-  title: "Market Intelligence",
-  description:
-    "Scans news, the open web, and press pages for funding/acquisition/expansion signals, then matches them to existing deals or sources a new one via Apollo."
-};
-
 export const commandCenterData = {
   badge: "AI-POWERED FUNDING & INVESTMENT OS",
   title: "Command Center",
@@ -76,64 +69,29 @@ export const commandCenterData = {
   ]
 };
 
-export const crmWorkspaceData = {
-  badge: "Module",
-  title: "CRM Workspace",
-  description:
-    "Zoho-style enquiry management: records, related lists, timelines and one-click outreach across email, WhatsApp and phone.",
-  stats: [
-    { label: "Total records", value: "55", note: "+9 this week", noteTone: "blue" },
-    { label: "Unassigned", value: "6", note: "Assignment rules", noteTone: "amber" },
-    { label: "Converted", value: "9.4%", note: "Lead → deal", noteTone: "green" },
-    { label: "Avg response", value: "2h 14m", note: "First touch", noteTone: "cyan" }
-  ],
-  enquiries: [
-    { initials: "BN", name: "Bhakthi Nair", company: "Helio Grid BV", ask: "€4.5M Series A", status: "New", tone: "blue" },
-    { initials: "DP", name: "Deepa Paul", company: "Nordwind Energy", ask: "€12M Growth", status: "Negotiation", tone: "amber", active: true },
-    { initials: "HP", name: "Harsha Pillai", company: "Agrivolt SA", ask: "€8M Bridge", status: "Qualified", tone: "green" },
-    { initials: "ND", name: "Nitin Das", company: "PortLogic Rotterdam", ask: "€2.2M Seed", status: "Contacted", tone: "violet" },
-    { initials: "RK", name: "Ritu Kapoor", company: "CircuLoop Materials", ask: "€6M Series A", status: "New", tone: "sky" }
-  ],
-  lead: {
-    initials: "DP",
-    name: "Deepa Paul",
-    company: "Nordwind Energy",
-    owner: "Rahul R"
-  },
-  overview: [
-    ["Lead Owner", "Rahul R"],
-    ["Legal Entity Name", "Nordwind Energy"],
-    ["Email", "deepa.paul@nordwind.de"],
-    ["Mobile", "+49 151 4432 1180"],
-    ["Lead Source", "Referral"],
-    ["Lead Status", "Negotiation"],
-    ["Capital Ask", "€12M Growth"],
-    ["Territory", "Benelux / DACH"],
-    ["Engagement Stage", "Mandate fit review"],
-    ["Consent (GDPR)", "Opted in — 03 Aug 2026"]
-  ],
-  related: [
-    ["Notes", 2],
-    ["Attachments", 5],
-    ["Emails", 9],
-    ["Calls", 3],
-    ["Meetings", 2],
-    ["Cadences", 1]
-  ]
-};
-
 export const coldBulkMailingData = {
+  badge: "Module",
   title: "Cold Bulk Mailing",
-  // No top-level stats card here (deliberately) — those numbers used to be
-  // fabricated ("12,480 sent", "58.4% open") and never reflected anything
-  // real. The real per-campaign sent/open/click/reply numbers are in the
-  // Campaigns table below, sourced from the backend's ActivityLog
-  // aggregation (see GET /campaigns' engagement field) once reachable.
+  description:
+    "Mass email campaigns, warm-up-aware sending limits, multi-step cadences and full deliverability telemetry.",
+  stats: [
+    { label: "Emails Sent (30d)", value: "12,480", note: "Limit 2,000/day", noteTone: "pink" },
+    { label: "Open Rate", value: "58.4%", note: "+6.1pts", noteTone: "green" },
+    { label: "Reply Rate", value: "6.9%", note: "Qualified 2.1%", noteTone: "cyan" },
+    { label: "Bounce Rate", value: "0.7%", note: "Healthy", noteTone: "amber" }
+  ],
   campaigns: [
     ["Q3 Renewables Founders — Benelux", "Sending", "1840", "61%", "18%", "7%"],
     ["Family Office Co-Invest Outreach", "Scheduled", "0", "0%", "0%", "0%"],
     ["Manufacturing Buyout Teaser", "Completed", "2960", "54%", "14%", "5%"],
     ["MENA Infrastructure Intro Sequence", "Draft", "0", "0%", "0%", "0%"]
+  ],
+  deliverability: [
+    ["SPF", "Aligned"],
+    ["DKIM", "Signed"],
+    ["DMARC", "p=quarantine"],
+    ["Domain warm-up", "Day 21 of 30"],
+    ["Spam complaints", "0.02%"]
   ],
   cadenceSteps: [
     ["Day 0 · Intro email", "Mandate fit + one-line credibility proof", "100% engaged", "100%"],
@@ -142,38 +100,27 @@ export const coldBulkMailingData = {
   ]
 };
 
-export const whatsappBusinessData = {
-  badge: "Module",
-  title: "WhatsApp Business",
-  description:
-    "Two-way WhatsApp messaging with approved templates, broadcast campaigns and every conversation logged against the lead record.",
-  stats: [
-    { label: "Active Conversations", value: "87", note: "24h window", noteTone: "green" },
-    { label: "Template Messages", value: "1,240", note: "30 days", noteTone: "cyan" },
-    { label: "Read Rate", value: "94%", note: "+11pts vs email", noteTone: "blue" },
-    { label: "Reply Rate", value: "38%", note: "Median 12m", noteTone: "indigo" }
-  ],
-  conversations: [
-    ["DP", "Deepa Paul", "Sharing the FY26 numbers tonight.", "2m", "2"],
-    ["HP", "Harsha Pillai", "Can we move the call to Thursday?", "1h", ""],
-    ["ND", "Nitin Das", "Deck received, thank you.", "4h", ""],
-    ["RK", "Ritu Kapoor", "Who signs the NDA on your side?", "1d", "1"]
-  ],
- messages: [
-    ["left", "Hi Vijay — we received the teaser, looks aligned.", "09:32"],
-    ["right", "Great. Shall I send the NDA so we can open the data room?", "09:35"],
-    ["left", "Yes please, to deepa.paul@nordwind.de", "09:36"],
-    ["right", "Sent via the NDA module — signature link valid 7 days.", "09:41"],
-    ["left", "Sharing the FY26 numbers tonight.", "10:04"]
-  ],
-  templates: [
-    ["intro_investment_mandate", "Approved", "green"],
-    ["nda_signature_reminder", "Approved", "green"],
-    ["meeting_confirmation", "Approved", "green"],
-    ["quarterly_portfolio_update", "In review", "amber"]
-  ]
-};
-
 export const templatesCadencesData = {
-  title: "Templates & Cadences"
+  badge: "Module",
+  title: "Templates & Cadences",
+  description:
+    "One approved library for email, WhatsApp and document templates, wired into automated multi-step outreach cadences.",
+  stats: [
+    { label: "Templates", value: "64", note: "Unlimited plan", noteTone: "amber" },
+    { label: "Active Cadences", value: "9", note: "760 contacts", noteTone: "violet" },
+    { label: "Merge Fields", value: "38", note: "CRM-linked", noteTone: "cyan" },
+    { label: "Best Performer", value: "61%", note: "Cold intro", noteTone: "green" }
+  ],
+  templateRows: [
+    ["Cold intro — Renewables founder", "Email", "1840", "61%"],
+    ["Follow-up — Sector teaser", "Email", "1210", "48%"],
+    ["NDA reminder", "WhatsApp", "320", "94%"],
+    ["IOI cover letter", "Document", "96", "—"],
+    ["Portfolio quarterly update", "Email", "210", "72%"]
+  ],
+  cadences: [
+    ["Cold outbound — 5 touch", "5 steps · 412 contacts active", "Reply 6.9%"],
+    ["Warm referral — 3 touch", "3 steps · 88 contacts active", "Reply 18.2%"],
+    ["Dormant lead re-activation", "4 steps · 260 contacts active", "Reply 4.1%"]
+  ]
 };

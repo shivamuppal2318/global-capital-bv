@@ -84,7 +84,7 @@ emailAccountsRouter.post("/:id/deactivate", asyncHandler(async (req, res) => {
 }));
 
 emailAccountsRouter.delete("/:id", asyncHandler(async (req, res) => {
-  const campaignsUsingAccount = await prisma.campaign.count({ where: { emailAccountId: req.params.id } });
+  const campaignsUsingAccount = await prisma.emailCampaign.count({ where: { emailAccountId: req.params.id } });
   if (campaignsUsingAccount > 0) {
     return res.status(409).json({
       error: `${campaignsUsingAccount} campaign(s) are still assigned to this account. Reassign them first, or use POST /:id/deactivate instead of deleting.`

@@ -103,7 +103,7 @@ async function processOneSignal(raw, defaultCampaignId, summary) {
             matchedLeadId: matchedLead.id
           }
         }),
-        prisma.activityLog.create({
+        prisma.emailActivityLog.create({
           data: {
             leadId: matchedLead.id,
             kind: "MANUAL_NOTE",
@@ -147,7 +147,7 @@ async function createLeadFromSignal(signal, processed, defaultCampaignId, summar
     // deal-sourcing context, not a placeholder.
     const apolloResult = await apolloLookupCompany(processed.entityName);
 
-    const newLead = await prisma.lead.create({
+    const newLead = await prisma.emailLead.create({
       data: {
         name: apolloResult.contact?.name ?? "Unknown contact",
         company: processed.entityName,
@@ -162,7 +162,7 @@ async function createLeadFromSignal(signal, processed, defaultCampaignId, summar
     // created — nothing recorded it anywhere. Logging it here is what
     // makes "feed the entity into Apollo and extract the details" actually
     // mean something beyond picking one contact's name and email.
-    await prisma.activityLog.create({
+    await prisma.emailActivityLog.create({
       data: {
         leadId: newLead.id,
         kind: "MANUAL_NOTE",

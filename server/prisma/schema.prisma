@@ -3,14 +3,388 @@ generator client {
 }
 
 // NOTE: local-dev only — swapped to sqlite because no Postgres/Docker was
-// reachable on this machine. Production/real deployment should point this
-// back at "postgresql" with a real DATABASE_URL (see .env.example).
+// reachable on this machine. Revert to "postgresql" for a real deployment.
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
+enum ConversationStatus {
+  NEW
+  ASSIGNED
+  REPLIED
+  RESOLVED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  NEGOTIATION
+  CONVERTED
+  LOST
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum TemplateCategory {
+  MARKETING
+  UTILITY
+  AUTHENTICATION
+}
+
+enum TemplateStatus {
+  APPROVED
+  IN_REVIEW
+  REJECTED
+}
+
 enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+}
+
+enum SequenceStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum MatchType {
+  CONTAINS
+  EXACT
+}
+
+enum RuleStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum FlowStepType {
+  TRIGGER
+  MESSAGE
+  QUESTION
+  CONDITION
+  ACTION
+}
+
+enum TriggerStatus {
+  ACTIVE
+  DRAFT
+}
+
+enum AgentStatus {
+  ONLINE
+  AWAY
+  OFFLINE
+}
+
+model Agent {
+  id              String         @id @default(cuid())
+  name            String
+  role            String
+  status          AgentStatus    @default(OFFLINE)
+  assignedCount   Int            @default(0)
+  resolvedCount   Int            @default(0)
+  avgResponseMins Int            @default(0)
+  csat            Float          @default(0)
+  conversations   Conversation[]
+  createdAt       DateTime       @default(now())
+}
+
+model Contact {
+  id            String         @id @default(cuid())
+  initials      String
+  name          String
+  company       String?
+  phone         String         @unique
+  stage         String?
+  owner         String?
+  tone          String         @default("blue")
+  conversations Conversation[]
+  createdAt     DateTime       @default(now())
+}
+
+model Lead {
+  id               String     @id @default(cuid())
+  initials         String
+  name             String
+  company          String
+  email            String?
+  mobile           String?
+  capitalAsk       String
+  status           LeadStatus @default(NEW)
+  qualified        Boolean    @default(false)
+  tone             String     @default("blue")
+  owner            String?
+  leadSource       String?
+  territory        String?
+  engagementStage  String?
+  consentGdpr      String?
+  notes            String?
+  rawPayload       Json?
+  meetings         Meeting[]
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([status])
+}
+
+model ZoomSettings {
+  id           String    @id @default(cuid())
+  accountId    String?
+  clientId     String?
+  clientSecret String?
+  hostEmail    String?
+  connected    Boolean   @default(false)
+  lastTestedAt DateTime?
+}
+
+model Meeting {
+  id              String    @id @default(cuid())
+  leadId          String?
+  lead            Lead?     @relation(fields: [leadId], references: [id])
+  topic           String
+  startTime       DateTime
+  durationMinutes Int       @default(30)
+  zoomMeetingId   String?
+  joinUrl         String?
+  startUrl        String?
+  status          String    @default("Scheduled")
+  createdAt       DateTime  @default(now())
+
+  @@index([startTime])
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  contactId     String
+  contact       Contact            @relation(fields: [contactId], references: [id])
+  agentId       String?
+  agent         Agent?             @relation(fields: [agentId], references: [id])
+  status        ConversationStatus @default(NEW)
+  lastPreview   String?
+  lastMessageAt DateTime           @default(now())
+  unreadCount   Int                @default(0)
+  messages      Message[]
+  createdAt     DateTime           @default(now())
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
+  direction      MessageDirection
+  body           String
+  templateName   String?
+  status         MessageStatus    @default(SENT)
+  sentAt         DateTime         @default(now())
+
+  @@index([sentAt])
+  @@index([conversationId])
+}
+
+model Template {
+  id         String           @id @default(cuid())
+  name       String           @unique
+  category   TemplateCategory
+  language   String           @default("English")
+  status     TemplateStatus   @default(IN_REVIEW)
+  bodyText   String
+  footerText String?
+  uses       Int              @default(0)
+  readRate   Float            @default(0)
+  replyRate  Float            @default(0)
+  lastSentAt DateTime?
+  campaigns  Campaign[]
+  createdAt  DateTime         @default(now())
+}
+
+model Campaign {
+  id             String         @id @default(cuid())
+  name           String
+  templateId     String
+  template       Template       @relation(fields: [templateId], references: [id])
+  audienceLabel  String
+  status         CampaignStatus @default(DRAFT)
+  sentCount      Int            @default(0)
+  deliveredCount Int            @default(0)
+  readCount      Int            @default(0)
+  repliedCount   Int            @default(0)
+  scheduledAt    DateTime?
+  createdAt      DateTime       @default(now())
+}
+
+model DripSequence {
+  id             String         @id @default(cuid())
+  name           String
+  trigger        String
+  enrolledCount  Int            @default(0)
+  completionRate Float          @default(0)
+  status         SequenceStatus @default(ACTIVE)
+  steps          DripStep[]
+  createdAt      DateTime       @default(now())
+}
+
+model DripStep {
+  id             String       @id @default(cuid())
+  sequenceId     String
+  sequence       DripSequence @relation(fields: [sequenceId], references: [id])
+  stepOrder      Int
+  title          String
+  delayLabel     String
+  message        String
+  engagementRate Float        @default(0)
+}
+
+model AutoReplySettings {
+  id              String  @id @default(cuid())
+  greetingEnabled Boolean @default(true)
+  greetingMessage String
+  awayEnabled     Boolean @default(true)
+  awayMessage     String
+  awayHours       String
+}
+
+model AutoReplyRule {
+  id        String     @id @default(cuid())
+  keyword   String
+  matchType MatchType  @default(CONTAINS)
+  reply     String
+  status    RuleStatus @default(ACTIVE)
+  triggered Int        @default(0)
+  createdAt DateTime   @default(now())
+}
+
+model BotFlow {
+  id             String        @id @default(cuid())
+  name           String
+  trigger        String
+  completionRate Float?
+  active         Boolean       @default(true)
+  usersCount     Int           @default(0)
+  steps          BotFlowStep[]
+  createdAt      DateTime      @default(now())
+}
+
+model BotFlowStep {
+  id        String       @id @default(cuid())
+  flowId    String
+  flow      BotFlow      @relation(fields: [flowId], references: [id])
+  stepOrder Int
+  type      FlowStepType
+  label     String
+  detail    String
+}
+
+model CrmTrigger {
+  id              String        @id @default(cuid())
+  event           String
+  action          String
+  status          TriggerStatus @default(ACTIVE)
+  lastTriggeredAt DateTime?
+  createdAt       DateTime      @default(now())
+}
+
+model AutomationRule {
+  id         String  @id @default(cuid())
+  name       String
+  condition  String
+  action     String
+  enabled    Boolean @default(true)
+  executions Int     @default(0)
+  createdAt  DateTime @default(now())
+}
+
+model BusinessSettings {
+  id          String   @id @default(cuid())
+  phone       String
+  displayName String
+  category    String
+  wabaId      String
+  tier        String
+  quality     String
+  status      String   @default("Connected")
+  webhookUrl  String
+  webhookVerifyToken String
+  appIdMasked String
+  tokenStatus String
+  lastPingAt  DateTime @default(now())
+
+  // WhatsApp Cloud API connection (Embedded Signup / manual credentials)
+  embeddedSignupConfigId String?
+  phoneNumberId          String?
+  accessToken            String?
+  appId                  String?
+  appSecret              String?
+  campaignBatchSize      Int     @default(50)
+
+  // Defaults applied when auto-creating a CRM lead from an unknown inbound number
+  autoCreateLead        Boolean @default(false)
+  leadDefaultStatus      String  @default("Default")
+  leadDefaultSource      String  @default("Default")
+  leadDefaultAssignedTo  String  @default("Default")
+
+  // API key external platforms use to POST leads into /api/leads/inbound
+  leadWebhookApiKey String?
+}
+
+model WhatsappPhoneNumber {
+  id            String   @id @default(cuid())
+  phoneNumber   String
+  displayName   String
+  qualityRating String   @default("Unknown")
+  status        String   @default("Connected")
+  isSending     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+model BusinessHour {
+  id         String @id @default(cuid())
+  dayLabel   String
+  hoursLabel String
+  sortOrder  Int    @default(0)
+}
+
+model NotificationPreference {
+  id      String  @id @default(cuid())
+  label   String
+  enabled Boolean @default(true)
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  who       String
+  what      String
+  tone      String   @default("blue")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ============================================================================
+// Email cold-outreach domain (campaigns/leads/cadence/templates/market
+// intelligence) — merged in from the `crm` branch. Named distinctly from the
+// WhatsApp-domain models above (EmailCampaign vs. Campaign, EmailLead vs.
+// Lead, EmailTemplate vs. Template, EmailActivityLog vs. ActivityLog) even
+// though the concepts rhyme, because the two are genuinely different data
+// shapes for different channels — collapsing them into one model would lose
+// real fields on both sides. EmailAccount/CadenceStep/ReplyEvent/MarketSignal
+// had no name collision and keep their original names.
+// ============================================================================
+
+enum EmailCampaignStatus {
   DRAFT
   SCHEDULED
   SENDING
@@ -24,7 +398,7 @@ enum ReplyType {
   NO_REPLY
 }
 
-enum ActivityKind {
+enum EmailActivityKind {
   BULK_INTRO_SENT
   REPLY_RECEIVED
   BRANCH_EMAIL_QUEUED
@@ -47,56 +421,54 @@ enum BounceKind {
   COMPLAINT
 }
 
-model Campaign {
-  id            String         @id @default(cuid())
+model EmailCampaign {
+  id            String              @id @default(cuid())
   name          String
-  status        CampaignStatus @default(DRAFT)
+  status        EmailCampaignStatus @default(DRAFT)
   audience      String
   template      String
-  dailyLimit    Int            @default(2000)
-  delayDays     Int            @default(3)
-  followUpCount Int            @default(3)
-  abTest        Boolean        @default(true)
-  autoPause     Boolean        @default(true)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  dailyLimit    Int                 @default(2000)
+  delayDays     Int                 @default(3)
+  followUpCount Int                 @default(3)
+  abTest        Boolean             @default(true)
+  autoPause     Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   // Which mailbox this campaign sends through. Null = fall back to the
-  // single global EMAIL_PROVIDER/.env-configured provider (unchanged
-  // behavior from before multi-account support existed) — this keeps
-  // every campaign that predates this feature working exactly as before.
+  // single global EMAIL_PROVIDER/.env-configured provider.
   emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id])
   emailAccountId String?
 
-  leads         Lead[]
-  cadenceSteps  CadenceStep[]
+  leads        EmailLead[]
+  cadenceSteps CadenceStep[]
 
   @@index([status])
 }
 
 model EmailAccount {
-  id          String   @id @default(cuid())
-  label       String
-  smtpHost    String
-  smtpPort    Int
-  smtpSecure  Boolean  @default(true)
-  smtpUser    String
+  id         String  @id @default(cuid())
+  label      String
+  smtpHost   String
+  smtpPort   Int
+  smtpSecure Boolean @default(true)
+  smtpUser   String
   // AES-256-GCM ciphertext (see src/lib/credentialCrypto.js), never the
   // plaintext password — decrypted in memory only at the moment of
   // building an SMTP transporter.
   smtpPassEncrypted String
-  fromAddress String
-  dailyLimit  Int      @default(500)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  fromAddress       String
+  dailyLimit        Int      @default(500)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  campaigns Campaign[]
+  campaigns EmailCampaign[]
 }
 
 model CadenceStep {
-  id           String   @id @default(cuid())
-  campaign     Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  id           String        @id @default(cuid())
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   campaignId   String
   stepIndex    Int
   title        String
@@ -106,24 +478,22 @@ model CadenceStep {
   @@unique([campaignId, stepIndex])
 }
 
-model Lead {
+model EmailLead {
   id           String    @id @default(cuid())
   name         String
   company      String
   email        String
   owner        String
-  campaign     Campaign  @relation(fields: [campaignId], references: [id])
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id])
   campaignId   String
   replyType    ReplyType @default(NO_REPLY)
   stage        String    @default("Reminder Pending")
   unsubscribed Boolean   @default(false)
   // A hard bounce or spam complaint suppresses this lead permanently; a
   // soft bounce (mailbox full, temp DNS failure) does not — see
-  // src/routes/bounces.js. Repeatedly emailing addresses that hard-bounce
-  // is one of the fastest ways to tank sender reputation and land the
-  // whole domain in spam, so this is enforced at send time, not advisory.
-  bounced      Boolean   @default(false)
-  bounceKind   BounceKind?
+  // src/routes/bounces.js.
+  bounced    Boolean     @default(false)
+  bounceKind BounceKind?
   // A lightweight "clickwrap" e-signature (typed name + IP + timestamp),
   // not a certified signature the way DocuSign/HelloSign produce one — see
   // routes/nda.js for what this actually captures and its limits.
@@ -133,18 +503,18 @@ model Lead {
   // Calendly tells you a meeting was booked (invitee.created) or canceled
   // (invitee.canceled) via webhook — it does NOT tell you whether anyone
   // actually showed up. callCompletedAt is a manual confirmation
-  // (POST /leads/:id/mark-call-completed), not something Calendly reports.
+  // (POST /email/leads/:id/mark-call-completed), not something Calendly reports.
   callBookedAt     DateTime?
   callScheduledFor DateTime?
   callCanceledAt   DateTime?
   callCompletedAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  replyEvents  ReplyEvent[]
-  activityLog  ActivityLog[]
-  matchedBySignals MarketSignal[] @relation("MarketSignalMatchedLead")
-  createdBySignals MarketSignal[] @relation("MarketSignalCreatedLead")
+  replyEvents      ReplyEvent[]
+  activityLog      EmailActivityLog[]
+  matchedBySignals MarketSignal[]     @relation("MarketSignalMatchedLead")
+  createdBySignals MarketSignal[]     @relation("MarketSignalCreatedLead")
 
   @@index([campaignId])
   @@index([email])
@@ -152,7 +522,7 @@ model Lead {
 
 model ReplyEvent {
   id          String    @id @default(cuid())
-  lead        Lead      @relation(fields: [leadId], references: [id])
+  lead        EmailLead @relation(fields: [leadId], references: [id])
   leadId      String
   rawBody     String
   matchedRule String?
@@ -160,23 +530,23 @@ model ReplyEvent {
   receivedAt  DateTime  @default(now())
 }
 
-model ActivityLog {
-  id        String       @id @default(cuid())
-  lead      Lead         @relation(fields: [leadId], references: [id])
+model EmailActivityLog {
+  id        String            @id @default(cuid())
+  lead      EmailLead         @relation(fields: [leadId], references: [id])
   leadId    String
-  kind      ActivityKind
+  kind      EmailActivityKind
   title     String
   detail    String
-  createdAt DateTime     @default(now())
+  createdAt DateTime          @default(now())
 
   @@index([leadId, createdAt])
 }
 
-model Template {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  subject   String
-  body      String
+model EmailTemplate {
+  id      String  @id @default(cuid())
+  key     String  @unique
+  subject String
+  body    String
   // Optional branded HTML version. When null, the send path wraps `body`
   // in a default branded shell (see src/lib/renderTemplate.js) rather than
   // sending plain text with no company identity/unsubscribe link.
@@ -204,53 +574,46 @@ enum SignalType {
 }
 
 enum SignalStatus {
-  PENDING       // fetched, not yet AI-processed
-  PROCESSED     // AI-processed, routed (matched existing lead or created new one)
-  DUPLICATE     // matched contentHash of an already-seen signal, discarded
-  IGNORED       // processed but below relevance threshold / no entity match, no action taken
-  FAILED        // a source or AI-processing error stopped this signal short — see failureReason
+  PENDING // fetched, not yet AI-processed
+  PROCESSED // AI-processed, routed (matched existing lead or created new one)
+  DUPLICATE // matched contentHash of an already-seen signal, discarded
+  IGNORED // processed but below relevance threshold / no entity match, no action taken
+  FAILED // a source or AI-processing error stopped this signal short — see failureReason
 }
 
 // One row per raw item pulled from a source, carrying it through AI
-// processing and routing. Deliberately NOT normalized into a separate
-// "Company" entity — matches against the existing Lead.company free-text
-// field, since that's the only company concept this schema has today. A
-// real "many market signals about one company" story would want a proper
-// Company model; out of scope for this first pass.
+// processing and routing. Matches against EmailLead.company free-text.
 model MarketSignal {
-  id              String       @id @default(cuid())
-  source          SignalSource
-  sourceUrl       String
-  rawTitle        String
-  rawContent      String
-  rawPublishedAt  DateTime?
-  fetchedAt       DateTime     @default(now())
+  id             String       @id @default(cuid())
+  source         SignalSource
+  sourceUrl      String
+  rawTitle       String
+  rawContent     String
+  rawPublishedAt DateTime?
+  fetchedAt      DateTime     @default(now())
 
   // SHA-256 of source + normalized rawTitle, used for dedup (see
-  // lib/marketIntelligence/dedup.js) — two sources reporting the same
-  // event with slightly different article text would otherwise both
-  // create signals.
-  contentHash     String       @unique
+  // lib/marketIntelligence/dedup.js).
+  contentHash String @unique
 
-  status          SignalStatus @default(PENDING)
-  failureReason   String?
+  status        SignalStatus @default(PENDING)
+  failureReason String?
 
   // Filled in by AI processing (lib/marketIntelligence/aiProcessor.js) —
   // null until status moves past PENDING.
-  entityName      String?
-  signalType      SignalType?
-  relevanceScore  Int?         // 0-100
-  aiSummary       String?
+  entityName     String?
+  signalType     SignalType?
+  relevanceScore Int? // 0-100
+  aiSummary      String?
 
-  // Routing outcome (lib/marketIntelligence/companyMatcher.js): either an
-  // existing lead this signal updated, or a newly-created one from an
-  // Apollo lookup — never both.
-  matchedLeadId   String?
-  matchedLead     Lead?        @relation("MarketSignalMatchedLead", fields: [matchedLeadId], references: [id])
-  createdLeadId   String?
-  createdLead     Lead?        @relation("MarketSignalCreatedLead", fields: [createdLeadId], references: [id])
+  // Routing outcome: either an existing lead this signal updated, or a
+  // newly-created one from an Apollo lookup — never both.
+  matchedLeadId String?
+  matchedLead   EmailLead? @relation("MarketSignalMatchedLead", fields: [matchedLeadId], references: [id])
+  createdLeadId String?
+  createdLead   EmailLead? @relation("MarketSignalCreatedLead", fields: [createdLeadId], references: [id])
 
-  createdAt       DateTime     @default(now())
+  createdAt DateTime @default(now())
 
   @@index([status])
   @@index([entityName])

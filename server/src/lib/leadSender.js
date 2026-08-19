@@ -35,7 +35,7 @@ function httpError(status, message) {
 // cap are both classic ways a sending domain's reputation gets downgraded,
 // so these are hard blocks, not warnings.
 export async function loadSendableLead(leadId) {
-  const lead = await prisma.lead.findUnique({
+  const lead = await prisma.emailLead.findUnique({
     where: { id: leadId },
     include: { campaign: { include: { emailAccount: true } } }
   });
@@ -78,14 +78,14 @@ export async function loadSendableLead(leadId) {
 // sending, instead of being created only after a successful send like
 // every other write in this file used to work.
 async function createPendingSendActivity(leadId, title) {
-  return prisma.activityLog.create({
+  return prisma.emailActivityLog.create({
     data: { leadId, kind: "BRANCH_EMAIL_SENT", title, detail: "Sending…" }
   });
 }
 
 async function finalizeSendActivity(activityId, { detail, warnings }) {
   const fullDetail = warnings?.length ? `${detail}\n\nDeliverability warnings:\n- ${warnings.join("\n- ")}` : detail;
-  return prisma.activityLog.update({ where: { id: activityId }, data: { detail: fullDetail } });
+  return prisma.emailActivityLog.update({ where: { id: activityId }, data: { detail: fullDetail } });
 }
 
 // Embeds the open-tracking pixel and rewrites links for click-tracking —
@@ -125,7 +125,7 @@ export async function sendRawEmail(leadId, { subject, body, html }) {
 export async function sendTemplateEmail(leadId, templateKey) {
   const lead = await loadSendableLead(leadId);
 
-  const template = await prisma.template.findUnique({ where: { key: templateKey } });
+  const template = await prisma.emailTemplate.findUnique({ where: { key: templateKey } });
   if (!template) {
     throw httpError(404, `Template "${templateKey}" not found`);
   }
