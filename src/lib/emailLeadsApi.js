@@ -1,4 +1,6 @@
-const API_BASE_URL = "http://localhost:4000/api/email/leads";
+import { API_ROOT } from "./config";
+
+const API_BASE_URL = `${API_ROOT}/api/email/leads`;
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {

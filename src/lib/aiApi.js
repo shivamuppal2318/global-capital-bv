@@ -1,4 +1,6 @@
-const API_BASE_URL = "http://localhost:4000/api/ai";
+import { API_ROOT } from "./config";
+
+const API_BASE_URL = `${API_ROOT}/api/ai`;
 
 export async function sendChatMessage(message, history) {
   const response = await fetch(`${API_BASE_URL}/chat`, {

@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-global_capital_bv}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-global_capital_bv}?schema=public
+      PORT: 4000
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      APP_BASE_URL: ${APP_BASE_URL}
+
+      # AI (WhatsApp chat assistant, market-intelligence signal processing)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}
+
+      # Email cold-outreach domain
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      REDIS_URL: ${REDIS_URL}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-dev}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS}
+      DKIM_DOMAIN: ${DKIM_DOMAIN}
+      DKIM_SELECTOR: ${DKIM_SELECTOR}
+      DKIM_PRIVATE_KEY: ${DKIM_PRIVATE_KEY}
+      IMAP_HOST: ${IMAP_HOST}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_SECURE: ${IMAP_SECURE:-true}
+      IMAP_POLL_INTERVAL_MS: ${IMAP_POLL_INTERVAL_MS:-60000}
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      SES_FROM_ADDRESS: ${SES_FROM_ADDRESS}
+      POSTMARK_SERVER_TOKEN: ${POSTMARK_SERVER_TOKEN}
+      POSTMARK_FROM_ADDRESS: ${POSTMARK_FROM_ADDRESS}
+      INBOUND_WEBHOOK_SECRET: ${INBOUND_WEBHOOK_SECRET}
+      UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      NDA_SIGN_SECRET: ${NDA_SIGN_SECRET}
+      CALENDLY_WEBHOOK_SIGNING_KEY: ${CALENDLY_WEBHOOK_SIGNING_KEY}
+      TRACKING_SECRET: ${TRACKING_SECRET}
+
+      # Market intelligence engine
+      NEWSAPI_AI_KEY: ${NEWSAPI_AI_KEY}
+      EXA_API_KEY: ${EXA_API_KEY}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY}
+      APOLLO_API_KEY: ${APOLLO_API_KEY}
+      MARKET_INTELLIGENCE_INTERVAL_MS: ${MARKET_INTELLIGENCE_INTERVAL_MS:-21600000}
+      MARKET_INTELLIGENCE_QUERY: ${MARKET_INTELLIGENCE_QUERY:-private equity funding acquisition}
+      MARKET_INTELLIGENCE_DEFAULT_CAMPAIGN_ID: ${MARKET_INTELLIGENCE_DEFAULT_CAMPAIGN_ID}
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:
