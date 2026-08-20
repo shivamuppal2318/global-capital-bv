@@ -29,6 +29,7 @@ import {
   whatsappBusinessData
 } from "./data/crmData";
 import {
+  askMarketIntelligenceChat,
   assignCampaignEmailAccount,
   bulkCreateLeads,
   createCampaign,
@@ -1684,7 +1685,7 @@ function ColdBulkMailingPage({ mailing }) {
             <h2 className="text-[16px] font-semibold text-[#102246]">Automation Builder</h2>
             <span className="rounded-full bg-[#dff5e7] px-3 py-1 text-[12px] font-semibold text-[#2b9b60]">Live</span>
           </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="mt-5 space-y-4">
             <Field label="Campaign name">
               <input
                 value={automationForm.campaignName}
@@ -1715,26 +1716,30 @@ function ColdBulkMailingPage({ mailing }) {
                 <option>Portfolio quarterly update</option>
               </select>
             </Field>
-            <Field label="Daily sending cap">
-              <input
-                type="number"
-                value={automationForm.dailyLimit}
-                onChange={(event) => handleFormChange("dailyLimit", event.target.value)}
-                className="w-full rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[15px] text-[#102246] outline-none"
-              />
-            </Field>
-            <Field label="Delay between steps">
-              <select
-                value={automationForm.delayDays}
-                onChange={(event) => handleFormChange("delayDays", event.target.value)}
-                className="w-full rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[15px] text-[#102246] outline-none"
-              >
-                <option value="2">2 days</option>
-                <option value="3">3 days</option>
-                <option value="5">5 days</option>
-                <option value="7">7 days</option>
-              </select>
-            </Field>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Daily sending cap">
+                <input
+                  type="number"
+                  value={automationForm.dailyLimit}
+                  onChange={(event) => handleFormChange("dailyLimit", event.target.value)}
+                  className="w-full rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[15px] text-[#102246] outline-none"
+                />
+              </Field>
+              <Field label="Delay between steps">
+                <select
+                  value={automationForm.delayDays}
+                  onChange={(event) => handleFormChange("delayDays", event.target.value)}
+                  className="w-full rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[15px] text-[#102246] outline-none"
+                >
+                  <option value="2">2 days</option>
+                  <option value="3">3 days</option>
+                  <option value="5">5 days</option>
+                  <option value="7">7 days</option>
+                </select>
+              </Field>
+            </div>
+
             <Field label="Follow-up count">
               <select
                 value={automationForm.followUpCount}
@@ -1770,7 +1775,7 @@ function ColdBulkMailingPage({ mailing }) {
             </Field>
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div className="mt-5 space-y-2.5">
             <ToggleCard
               title="A/B subject testing"
               desc="Split first-touch subject line across two variants."
@@ -2222,11 +2227,44 @@ const signalSourceLabel = {
   FIRECRAWL: "Firecrawl"
 };
 
+// No AI provider configured — this is a plain keyword search over the real
+// captured signals, not a language model. Still genuinely useful (real
+// data, real matches), just not "understanding" the question the way the
+// real assistant (askMarketIntelligenceChat, once an AI key exists) does.
+// Kept honestly labeled as a fallback in the UI rather than dressed up to
+// look smarter than it is.
+function buildFallbackAnswer(message, signals) {
+  const terms = message
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word.length > 2);
+
+  const matches = signals.filter((signal) => {
+    const haystack = `${signal.entityName ?? ""} ${signal.rawTitle} ${signal.rawContent ?? ""}`.toLowerCase();
+    return terms.some((term) => haystack.includes(term));
+  });
+
+  if (!matches.length) {
+    return `No captured signals matched "${message}". Try different keywords, or connect an AI provider for a real understanding of the question.`;
+  }
+
+  const preview = matches
+    .slice(0, 5)
+    .map((signal) => `• ${signal.entityName ?? signal.rawTitle}`)
+    .join("\n");
+  const remainder = matches.length > 5 ? `\n…and ${matches.length - 5} more.` : "";
+  return `Found ${matches.length} captured signal${matches.length === 1 ? "" : "s"} matching "${message}":\n${preview}${remainder}`;
+}
+
 function MarketIntelligencePage() {
   const [status, setStatus] = useState(null);
   const [signals, setSignals] = useState([]);
   const [notice, setNotice] = useState("Checking backend connectivity…");
   const [running, setRunning] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
 
   const loadStatusAndSignals = () => {
     fetchMarketIntelligenceStatus()
@@ -2283,6 +2321,55 @@ function MarketIntelligencePage() {
       ]
     : [];
 
+  // Real counts computed from the signals actually stored in the DB — not
+  // fabricated. Duplicates aren't included: the pipeline detects and skips
+  // those before a MarketSignal row is ever created, so there's nothing to
+  // count here (see server/.../pipeline.js's dedup check).
+  const signalStats = {
+    total: signals.length,
+    processed: signals.filter((s) => s.status === "PROCESSED").length,
+    matched: signals.filter((s) => s.matchedLeadId).length,
+    created: signals.filter((s) => s.createdLeadId).length,
+    failed: signals.filter((s) => s.status === "FAILED").length
+  };
+
+  const filteredSignals = searchText.trim()
+    ? signals.filter((s) => `${s.entityName ?? ""} ${s.rawTitle}`.toLowerCase().includes(searchText.trim().toLowerCase()))
+    : signals;
+
+  const chatEnabled = Boolean(status?.aiProcessor);
+
+  async function handleSendChat() {
+    const message = chatInput.trim();
+    if (!message || chatLoading) {
+      return;
+    }
+    const history = chatMessages.map((m) => ({ role: m.role, content: m.content }));
+    setChatMessages((current) => [...current, { role: "user", content: message }]);
+    setChatInput("");
+
+    // No AI provider connected — answer with a real (if dumb) keyword
+    // search over the actual captured signals instead of leaving the input
+    // unusable until someone wires ANTHROPIC_API_KEY/Gemini.
+    if (!chatEnabled) {
+      setChatMessages((current) => [...current, { role: "assistant", content: buildFallbackAnswer(message, signals), isFallback: true }]);
+      return;
+    }
+
+    setChatLoading(true);
+    try {
+      const { reply } = await askMarketIntelligenceChat(message, history);
+      setChatMessages((current) => [...current, { role: "assistant", content: reply }]);
+    } catch (error) {
+      setChatMessages((current) => [
+        ...current,
+        { role: "assistant", content: `Couldn't get a response (${error.message}).`, isError: true }
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
   return (
     <section className="space-y-6">
       <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
@@ -2295,7 +2382,7 @@ function MarketIntelligencePage() {
         </div>
 
         {status ? (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
             {services.map((service) => (
               <div key={service.key} className="rounded-[14px] border border-[#e7edf5] px-3 py-3">
                 <p className="text-[13px] font-medium text-[#102246]">{service.label}</p>
@@ -2318,13 +2405,99 @@ function MarketIntelligencePage() {
         </div>
       </div>
 
-      <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="text-[16px] font-semibold text-[#102246]">Captured signals</h2>
-          <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">{signals.length}</span>
+      {signals.length > 0 ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {[
+            { label: "Captured", value: signalStats.total },
+            { label: "Processed", value: signalStats.processed },
+            { label: "Matched to lead", value: signalStats.matched },
+            { label: "New leads created", value: signalStats.created },
+            { label: "Failed (AI not configured)", value: signalStats.failed }
+          ].map((stat) => (
+            <div key={stat.label} className="rounded-[16px] border border-[#d6deea] bg-white px-4 py-3 shadow-[0_2px_8px_rgba(30,48,87,0.04)]">
+              <p className="text-[1.6rem] font-semibold leading-none text-[#102246]">{stat.value}</p>
+              <p className="mt-1.5 text-[12px] text-[#8593ac]">{stat.label}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-[22px] border border-[#d6deea] bg-white shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[#e7edf5] bg-[linear-gradient(90deg,#2a3d8f_0%,#5a3fa8_100%)] px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="grid size-9 place-items-center rounded-full bg-white/15">
+              <SparklesIcon className="size-4 text-white" />
+            </span>
+            <div>
+              <p className="text-[15px] font-semibold text-white">Signals assistant</p>
+              <p className="text-[12px] text-white/70">
+                Grounded in {signals.length} captured signal{signals.length === 1 ? "" : "s"} — won't invent companies or news
+              </p>
+            </div>
+          </div>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold ${
+              chatEnabled ? "bg-[#2b9b60] text-white" : "bg-white/15 text-white/85"
+            }`}
+          >
+            <span className={`size-1.5 rounded-full ${chatEnabled ? "bg-white" : "bg-white/60"}`} />
+            {chatEnabled ? "Online — AI answers" : "Offline — keyword search only"}
+          </span>
         </div>
 
-        {signals.length > 0 ? (
+        <div className="max-h-[360px] space-y-3 overflow-y-auto bg-[#f8faff] p-4">
+          {chatMessages.length === 0 ? (
+            <ChatBubble role="assistant">
+              {chatEnabled
+                ? `Hi! Ask me anything about the ${signals.length} captured signal${signals.length === 1 ? "" : "s"} — e.g. "any renewable energy funding signals?" or "summarize the most relevant one."`
+                : `No AI provider connected yet, so I can't truly understand questions — but ask me anything and I'll keyword-search the ${signals.length} captured signal${signals.length === 1 ? "" : "s"} for you. Connect ANTHROPIC_API_KEY (see "AI processing" above) for real AI answers.`}
+            </ChatBubble>
+          ) : null}
+
+          {chatMessages.map((message, index) => (
+            <ChatBubble key={index} role={message.role} isError={message.isError} isFallback={message.isFallback}>
+              {message.content}
+            </ChatBubble>
+          ))}
+          {chatLoading ? <ChatBubble role="assistant" typing /> : null}
+        </div>
+
+        <div className="flex gap-3 border-t border-[#e7edf5] bg-white p-4">
+          <input
+            value={chatInput}
+            onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                handleSendChat();
+              }
+            }}
+            placeholder="Ask a question about the captured signals…"
+            className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+          />
+          <ActionButton label={chatLoading ? "Asking…" : "Ask"} icon={SendIcon} primary onClick={handleSendChat} disabled={chatLoading} />
+        </div>
+      </div>
+
+      <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <h2 className="text-[16px] font-semibold text-[#102246]">Captured signals</h2>
+            <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">
+              {filteredSignals.length}{filteredSignals.length !== signals.length ? ` of ${signals.length}` : ""}
+            </span>
+          </div>
+          {signals.length > 0 ? (
+            <input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Search captured headlines…"
+              className="w-full max-w-[280px] rounded-[10px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[13px] text-[#102246] outline-none focus:border-[#3046b2]"
+            />
+          ) : null}
+        </div>
+
+        {filteredSignals.length > 0 ? (
           <div className="mt-5 overflow-x-auto">
             <table className="w-full min-w-[780px] text-left">
               <thead>
@@ -2338,7 +2511,7 @@ function MarketIntelligencePage() {
                 </tr>
               </thead>
               <tbody>
-                {signals.map((signal) => (
+                {filteredSignals.map((signal) => (
                   <tr key={signal.id} className="border-t border-[#e7edf5]">
                     <td className="max-w-[320px] py-4 text-[15px] font-medium text-[#102246]">
                       {signal.sourceUrl ? (
@@ -2372,11 +2545,47 @@ function MarketIntelligencePage() {
           </div>
         ) : (
           <p className="mt-4 text-[14px] text-[#9aa6ba]">
-            No signals captured yet — either the backend's unreachable, or every source is unconfigured (see above).
+            {signals.length > 0
+              ? `No captured headlines match "${searchText}".`
+              : "No signals captured yet — either the backend's unreachable, or every source is unconfigured (see above)."}
           </p>
         )}
       </div>
+
     </section>
+  );
+}
+
+function ChatBubble({ role, children, isError, isFallback, typing }) {
+  const isUser = role === "user";
+  return (
+    <div className={`flex items-end gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
+      {!isUser ? (
+        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#eef1ff] text-[10px] font-bold text-[#3046b2]">AI</span>
+      ) : null}
+      <div
+        className={`max-w-[80%] rounded-[14px] px-4 py-2.5 text-[14px] leading-6 whitespace-pre-line ${
+          isUser ? "bg-[#3046b2] text-white" : isError ? "bg-[#ffe4ee] text-[#a13a56]" : "border border-[#e7edf5] bg-white text-[#102246]"
+        }`}
+      >
+        {typing ? (
+          <span className="inline-flex gap-1">
+            <span className="size-1.5 animate-bounce rounded-full bg-[#9aa6ba] [animation-delay:-0.3s]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-[#9aa6ba] [animation-delay:-0.15s]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-[#9aa6ba]" />
+          </span>
+        ) : (
+          <>
+            {isFallback ? (
+              <span className="mb-1.5 inline-flex rounded-full bg-[#edf2f7] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#748096]">
+                Keyword search
+              </span>
+            ) : null}
+            <div>{children}</div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -2661,23 +2870,21 @@ function ToggleCard({ title, desc, checked, onChange }) {
     <button
       type="button"
       onClick={onChange}
-      className={`rounded-[18px] border px-4 py-4 text-left transition ${
+      className={`flex w-full items-center justify-between gap-4 rounded-[18px] border px-4 py-3.5 text-left transition ${
         checked ? "border-[#b8d1ff] bg-[#f2f6ff]" : "border-[#d6deea] bg-white"
       }`}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[15px] font-semibold text-[#102246]">{title}</p>
-          <p className="mt-1 text-[14px] leading-6 text-[#5f6f89]">{desc}</p>
-        </div>
-        <span
-          className={`mt-1 inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${
-            checked ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#748096]"
-          }`}
-        >
-          {checked ? "On" : "Off"}
-        </span>
+      <div className="min-w-0">
+        <p className="text-[15px] font-semibold text-[#102246]">{title}</p>
+        <p className="mt-0.5 text-[13px] leading-5 text-[#5f6f89]">{desc}</p>
       </div>
+      <span
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+          checked ? "bg-[#3046b2]" : "bg-[#d6deea]"
+        }`}
+      >
+        <span className={`inline-block size-[18px] transform rounded-full bg-white shadow transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`} />
+      </span>
     </button>
   );
 }
@@ -2694,13 +2901,14 @@ function StatCard({ card }) {
   );
 }
 
-function ActionButton({ label, icon: Icon, primary, external, hero, onClick }) {
+function ActionButton({ label, icon: Icon, primary, external, hero, onClick, disabled }) {
   if (hero) {
     return (
       <button
         type="button"
         onClick={onClick}
-        className={`inline-flex items-center gap-2 rounded-[14px] px-5 py-3 text-[15px] font-semibold ${
+        disabled={disabled}
+        className={`inline-flex items-center gap-2 rounded-[14px] px-5 py-3 text-[15px] font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
           primary ? "bg-white text-[#21439b]" : "border border-white/35 bg-white/6 text-white"
         }`}
       >
@@ -2715,7 +2923,8 @@ function ActionButton({ label, icon: Icon, primary, external, hero, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-[14px] border px-4 py-3 text-[15px] font-semibold shadow-[0_2px_8px_rgba(30,48,87,0.04)] ${
+      disabled={disabled}
+      className={`inline-flex items-center gap-2 rounded-[14px] border px-4 py-3 text-[15px] font-semibold shadow-[0_2px_8px_rgba(30,48,87,0.04)] disabled:cursor-not-allowed disabled:opacity-50 ${
         primary
           ? "border-[#3046b2] bg-[#3046b2] text-white"
           : "border-[#d6deea] bg-white text-[#102246]"

@@ -44,7 +44,6 @@ export const topBarMeta = {
 };
 
 export const marketIntelligenceData = {
-  badge: "Module",
   title: "Market Intelligence",
   description:
     "Scans news, the open web, and press pages for funding/acquisition/expansion signals, then matches them to existing deals or sources a new one via Apollo."

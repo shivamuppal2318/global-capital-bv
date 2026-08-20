@@ -185,6 +185,16 @@ export function fetchMarketSignals() {
   return request(`/market-intelligence/signals`, { method: "GET" });
 }
 
+// Grounded Q&A over the real captured signals (see server/.../chatAssistant.js)
+// — history is the full prior transcript, oldest first, since nothing is
+// persisted server-side between requests.
+export function askMarketIntelligenceChat(message, history = []) {
+  return request(`/market-intelligence/chat`, {
+    method: "POST",
+    body: JSON.stringify({ message, history })
+  });
+}
+
 // Classifies textBody exactly like a real inbound reply would (same rules
 // as the UI's chips), via the authenticated equivalent of the inbound-email
 // webhook — see the comment on POST /leads/:id/simulate-reply server-side
