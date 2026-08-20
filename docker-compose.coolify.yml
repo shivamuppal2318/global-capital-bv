@@ -29,8 +29,14 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-global_capital_bv}?schema=public
       PORT: 4000
-      CORS_ORIGIN: ${CORS_ORIGIN}
-      APP_BASE_URL: ${APP_BASE_URL}
+      # :- defaults match this repo's actual Coolify deployment domains —
+      # Coolify only substitutes plain ${VAR} (no default) via variables it
+      # auto-manages from an explicit `environment:` default; ones we set
+      # ourselves without a `:-default` resolve to an empty string at deploy
+      # time instead of the value entered in its UI, which silently broke
+      # CORS. Override via Coolify's env var UI if deploying elsewhere.
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://global-capital-bv.avptechsolution.com}
+      APP_BASE_URL: ${APP_BASE_URL:-https://api-global-capital-bv.avptechsolution.com}
 
       # AI (WhatsApp chat assistant, market-intelligence signal processing)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
@@ -79,7 +85,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL}
+        VITE_API_URL: ${VITE_API_URL:-https://api-global-capital-bv.avptechsolution.com}
     restart: unless-stopped
     depends_on:
       - backend
