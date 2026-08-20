@@ -22,8 +22,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "4000:4000"
+    # No host port binding — Coolify's reverse proxy reaches this container
+    # over the internal Docker network using the port set in its Domains
+    # config (4000), so publishing 4000:4000 on the host would collide with
+    # whatever else Coolify runs there.
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-global_capital_bv}?schema=public
       PORT: 4000
@@ -81,8 +83,9 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    ports:
-      - "80:80"
+    # Same reasoning as backend above — Coolify's proxy already owns host
+    # port 80/443; it reaches this container internally via the Domains
+    # config (port 80), not through a published host port.
 
 volumes:
   postgres_data:
