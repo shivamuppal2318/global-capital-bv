@@ -27,9 +27,31 @@ async function ensureAdminUser() {
         data: { passwordHash: await bcrypt.hash(pinnedPassword, 12), role: "ADMIN", status: "ACTIVE" }
       });
       console.log(`Admin ${email} already existed — password re-synced from ADMIN_PASSWORD.`);
-    } else {
-      console.log(`Admin ${email} already exists — leaving it untouched (no ADMIN_PASSWORD set).`);
+      return;
     }
+
+    // An account that has never been logged into is unusable if its
+    // one-time generated password scrolled out of the logs, which would
+    // lock everyone out permanently. Re-issuing a password for an account
+    // nobody has ever signed into gives up nothing (there's no session or
+    // work to hijack) and makes the deploy self-healing. Once someone logs
+    // in, lastLoginAt is set and this stops touching the account.
+    if (!existingByEmail.lastLoginAt) {
+      const reissued = crypto.randomBytes(9).toString("base64url");
+      await prisma.user.update({
+        where: { id: existingByEmail.id },
+        data: { passwordHash: await bcrypt.hash(reissued, 12), status: "ACTIVE" }
+      });
+      console.log("=".repeat(60));
+      console.log("Admin account exists but has never been used — password re-issued:");
+      console.log(`  email:    ${email}`);
+      console.log(`  password: ${reissued}`);
+      console.log("Log in and change it; this stops re-issuing after the first login.");
+      console.log("=".repeat(60));
+      return;
+    }
+
+    console.log(`Admin ${email} already exists and has been used — leaving it untouched.`);
     return;
   }
 
