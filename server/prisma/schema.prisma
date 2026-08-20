@@ -88,6 +88,15 @@ enum AgentStatus {
   OFFLINE
 }
 
+// Server-managed secrets that must survive restarts but should never live in
+// the repo or a compose file — currently just the JWT signing key, which is
+// generated on first boot when JWT_SECRET isn't supplied via the environment.
+model AppSecret {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+}
+
 enum UserRole {
   ADMIN
   EMPLOYEE

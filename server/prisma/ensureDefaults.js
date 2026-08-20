@@ -10,18 +10,33 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function ensureAdminUser() {
-  const existing = await prisma.user.findFirst({ where: { role: "ADMIN" } });
-  if (existing) {
-    console.log("An admin user already exists — skipping admin bootstrap.");
+  const email = (process.env.ADMIN_EMAIL || "admin@globalcapital.local").trim().toLowerCase();
+  const pinnedPassword = process.env.ADMIN_PASSWORD;
+
+  const existingByEmail = await prisma.user.findUnique({ where: { email } });
+
+  if (existingByEmail) {
+    // Setting ADMIN_PASSWORD is an explicit "these are the credentials"
+    // instruction, so it's re-applied on every boot — that's what makes it a
+    // usable break-glass recovery path when the admin password is lost.
+    // Trade-off: an in-app password change for THIS account is reverted on
+    // the next deploy. Clear ADMIN_PASSWORD once real accounts exist.
+    if (pinnedPassword) {
+      await prisma.user.update({
+        where: { id: existingByEmail.id },
+        data: { passwordHash: await bcrypt.hash(pinnedPassword, 12), role: "ADMIN", status: "ACTIVE" }
+      });
+      console.log(`Admin ${email} already existed — password re-synced from ADMIN_PASSWORD.`);
+    } else {
+      console.log(`Admin ${email} already exists — leaving it untouched (no ADMIN_PASSWORD set).`);
+    }
     return;
   }
 
-  const email = (process.env.ADMIN_EMAIL || "admin@globalcapital.local").trim().toLowerCase();
-  // ADMIN_PASSWORD lets an operator pin a known password via Coolify's env
-  // var UI; without it, a random one is generated and logged ONCE here —
-  // there is no other way to recover it, so whoever deploys must grab it
-  // from the deployment logs (or set ADMIN_PASSWORD before first boot).
-  const password = process.env.ADMIN_PASSWORD || crypto.randomBytes(9).toString("base64url");
+  // A differently-addressed admin may already exist (e.g. created by an
+  // earlier deploy before ADMIN_EMAIL was configured). Adding the requested
+  // one is still correct — extra admins are harmless and removable in-app.
+  const password = pinnedPassword || crypto.randomBytes(9).toString("base64url");
 
   await prisma.user.create({
     data: {
@@ -35,7 +50,7 @@ async function ensureAdminUser() {
   console.log("=".repeat(60));
   console.log("Created bootstrap admin account:");
   console.log(`  email:    ${email}`);
-  if (!process.env.ADMIN_PASSWORD) {
+  if (!pinnedPassword) {
     console.log(`  password: ${password}  (generated — save this now, it will not be shown again)`);
   } else {
     console.log("  password: (set from ADMIN_PASSWORD env var)");

@@ -7,12 +7,12 @@
 # API still starts (endpoints touching a missing table will error, which is
 # visible and debuggable, unlike a boot loop).
 
-# Presence only — never the value. A missing JWT_SECRET makes src/index.js
-# refuse to boot, and that distinction is otherwise invisible from the logs.
+# Presence only — never the value. Empty is fine: the server then generates
+# and persists its own signing key (see src/lib/auth.js).
 if [ -n "$JWT_SECRET" ]; then
-  echo "==> JWT_SECRET is present"
+  echo "==> JWT_SECRET supplied via environment"
 else
-  echo "==> WARNING: JWT_SECRET is EMPTY — the API will refuse to start"
+  echo "==> JWT_SECRET not set — the server will use its database-stored key"
 fi
 
 echo "==> [1/3] prisma migrate deploy"

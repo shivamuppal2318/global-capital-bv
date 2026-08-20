@@ -1,15 +1,53 @@
+import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { prisma } from "../db.js";
 
 const TOKEN_TTL = "7d";
 const SALT_ROUNDS = 12;
+const JWT_SECRET_KEY = "jwt_secret";
+
+let cachedSecret = null;
+
+// Resolved once at boot (see src/index.js). Prefers an operator-supplied
+// JWT_SECRET, but falls back to a self-generated key persisted in the
+// database so the app works out of the box on a fresh deploy — without a
+// signing key ever being committed to the repo or pasted into a dashboard.
+// It lives in Postgres, so it survives restarts; rotating it just means
+// deleting the row (which invalidates existing sessions).
+export async function initJwtSecret() {
+  const fromEnv = process.env.JWT_SECRET;
+  if (fromEnv) {
+    cachedSecret = fromEnv;
+    return { source: "environment" };
+  }
+
+  const existing = await prisma.appSecret.findUnique({ where: { key: JWT_SECRET_KEY } });
+  if (existing) {
+    cachedSecret = existing.value;
+    return { source: "database" };
+  }
+
+  const generated = crypto.randomBytes(32).toString("hex");
+  // Concurrent boots (e.g. a rolling restart) can race here; whoever loses
+  // the create re-reads the winner's value so both agree on one secret.
+  try {
+    const created = await prisma.appSecret.create({ data: { key: JWT_SECRET_KEY, value: generated } });
+    cachedSecret = created.value;
+    return { source: "generated" };
+  } catch {
+    const raced = await prisma.appSecret.findUnique({ where: { key: JWT_SECRET_KEY } });
+    if (!raced) throw new Error("Could not create or read the JWT signing secret.");
+    cachedSecret = raced.value;
+    return { source: "database" };
+  }
+}
 
 function jwtSecret() {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("JWT_SECRET is not set — required to sign/verify login sessions.");
+  if (!cachedSecret) {
+    throw new Error("JWT secret not initialised — initJwtSecret() must run before signing/verifying.");
   }
-  return secret;
+  return cachedSecret;
 }
 
 export function hashPassword(plaintext) {
