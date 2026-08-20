@@ -34,6 +34,10 @@ export const navSections = [
       { id: "pipeline", label: "Pipeline", icon: "pipeline" },
       { id: "deals", label: "Deals", icon: "briefcase" }
     ]
+  },
+  {
+    title: "Administration",
+    items: [{ id: "admin-panel", label: "Admin Panel", icon: "shield" }]
   }
 ];
 

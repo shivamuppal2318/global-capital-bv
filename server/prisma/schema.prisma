@@ -88,6 +88,34 @@ enum AgentStatus {
   OFFLINE
 }
 
+enum UserRole {
+  ADMIN
+  EMPLOYEE
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+// A real login account (bcrypt-hashed password, JWT auth) — distinct from
+// Agent above, which is just a display/assignment label for WhatsApp
+// conversations and predates this model having no credentials of its own.
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         UserRole   @default(EMPLOYEE)
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // Personal SMTP mailboxes this employee owns (see EmailAccount.ownerId).
+  emailAccounts EmailAccount[]
+}
+
 model Agent {
   id              String         @id @default(cuid())
   name            String
@@ -461,7 +489,15 @@ model EmailAccount {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  // null = a shared/company mailbox (managed by an Admin, usable in any
+  // campaign). Set = a personal mailbox owned by that employee — only they
+  // (or an Admin) can see or edit it.
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId String?
+
   campaigns EmailCampaign[]
+
+  @@index([ownerId])
 }
 
 model CadenceStep {

@@ -50,7 +50,7 @@ const tabContent = {
   settings: SettingsTab
 };
 
-export function WhatsappBusinessModule() {
+export function WhatsappBusinessModule({ onNavigate }) {
   const [activeTab, setActiveTab] = useState("dashboard");
   const ActiveContent = tabContent[activeTab] ?? DashboardTab;
 
@@ -106,7 +106,7 @@ export function WhatsappBusinessModule() {
         })}
       </nav>
 
-      <ActiveContent />
+      <ActiveContent onNavigate={onNavigate} />
     </div>
   );
 }

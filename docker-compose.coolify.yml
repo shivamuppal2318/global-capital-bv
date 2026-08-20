@@ -41,6 +41,18 @@ services:
       CORS_ORIGIN: https://global-capital-bv.avptechsolution.com
       APP_BASE_URL: https://api-global-capital-bv.avptechsolution.com
 
+      # Login/session signing (see server/src/lib/auth.js) — the server
+      # refuses to start without this. Set a real random value in Coolify's
+      # env var UI (e.g. `openssl rand -hex 32`); plain ${VAR} with no
+      # default is one of the ones Coolify substitutes correctly (unlike
+      # ${VAR:-default} above — see the CORS_ORIGIN comment's history).
+      JWT_SECRET: ${JWT_SECRET}
+      # Bootstrap admin, created once on first boot if no admin exists yet
+      # (server/prisma/ensureDefaults.js). Leave ADMIN_PASSWORD unset to get
+      # a random one printed to the deployment logs instead.
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+
       # AI (WhatsApp chat assistant, market-intelligence signal processing)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}

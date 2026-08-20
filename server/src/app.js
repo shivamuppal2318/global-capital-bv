@@ -1,5 +1,8 @@
 import express from "express";
 import cors from "cors";
+import authRouter from "./routes/auth.js";
+import adminRouter from "./routes/admin.js";
+import { requireAuth } from "./middleware/requireAuth.js";
 import overviewRouter from "./routes/overview.js";
 import dashboardRouter from "./routes/dashboard.js";
 import chatRouter from "./routes/chat.js";
@@ -43,7 +46,24 @@ app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+app.use("/api/auth", authRouter);
 
+// Everything below this line requires a logged-in user, except the handful
+// of endpoints external systems/people hit directly (not through the app
+// UI): the lead-ingestion webhook (its own x-api-key check), and the
+// email cold-outreach domain's public-facing links (unsubscribe, NDA
+// signing, tracking pixels/redirects, and inbound webhooks from bounce/
+// Calendly/other external senders). Matches the app.js comment this
+// replaces — auth was deliberately deferred until it could be done as one
+// real pass instead of piecemeal.
+const PUBLIC_PREFIXES = ["/api/webhooks", "/api/unsubscribe", "/api/nda", "/api/track"];
+app.use((req, res, next) => {
+  if (req.method === "POST" && req.path === "/api/leads/inbound") return next();
+  if (PUBLIC_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
+  return requireAuth(req, res, next);
+});
+
+app.use("/api/admin", adminRouter);
 app.use("/api/whatsapp/overview", overviewRouter);
 app.use("/api/whatsapp/dashboard", dashboardRouter);
 app.use("/api/whatsapp/chat", chatRouter);
@@ -60,9 +80,11 @@ app.use("/api/ai", aiChatRouter);
 app.use("/api/zoom", zoomRouter);
 app.use("/api/meetings", meetingsRouter);
 
-// Email cold-outreach domain — no requireApiKey gate, matching the rest of
-// this app (no global auth exists yet; retrofitting that is a separate,
-// deliberate decision for later, not something to do piecemeal here).
+// Email cold-outreach domain. Everything here already passed the global
+// requireAuth gate above except the four public-facing routers at the
+// bottom of this block (bounce/Calendly webhooks, unsubscribe, NDA
+// signing, tracking) — those are hit directly by external senders/leads,
+// never through the logged-in app UI.
 app.use("/api/email/campaigns", emailCampaignsRouter);
 app.use("/api/email/leads", emailLeadsRouter);
 app.use("/api/email/templates", emailTemplatesRouter);

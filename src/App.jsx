@@ -4,6 +4,7 @@ import {
   ChatBubbleIcon,
   FunnelIcon,
   GridIcon,
+  LogOutIcon,
   MailIcon,
   NoteIcon,
   PhoneIcon,
@@ -11,6 +12,7 @@ import {
   RadarIcon,
   SearchIcon,
   SendIcon,
+  ShieldIcon,
   SparklesIcon,
   UserCheckIcon,
   UsersIcon
@@ -25,6 +27,9 @@ import { MeetingsModule } from "./components/meetings/MeetingsModule";
 import { EmailOutreachModule } from "./components/emailOutreach/EmailOutreachModule";
 import { EmailTemplatesCadencesModule } from "./components/emailTemplates/EmailTemplatesCadencesModule";
 import { MarketIntelligenceModule } from "./components/marketIntelligence/MarketIntelligenceModule";
+import { AdminPanelModule } from "./components/admin/AdminPanelModule";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { LoginPage } from "./components/auth/LoginPage";
 import {
   coldBulkMailingData,
   commandCenterData,
@@ -48,7 +53,8 @@ const iconMap = {
   chat: MailIcon,
   calendar: CalendarIcon,
   pipeline: SendIcon,
-  briefcase: GridIcon
+  briefcase: GridIcon,
+  shield: ShieldIcon
 };
 
 const barToneClass = {
@@ -101,7 +107,7 @@ const pageMeta = {
   "templates-cadences": templatesCadencesData
 };
 
-function App() {
+function AppShell() {
   const [activePage, setActivePage] = useState("crm-workspace");
   const currentPage = pageMeta[activePage] ?? commandCenterData;
   const actions = pageActions[activePage] ?? [];
@@ -127,7 +133,7 @@ function App() {
             {activePage === "command-center" ? (
               <CommandCenterPage />
             ) : activePage === "whatsapp-business" ? (
-              <WhatsappBusinessModule />
+              <WhatsappBusinessModule onNavigate={setActivePage} />
             ) : activePage === "crm-workspace" ? (
               <CrmWorkspaceModule />
             ) : activePage === "meetings" ? (
@@ -138,6 +144,8 @@ function App() {
               <EmailTemplatesCadencesModule />
             ) : activePage === "market-intelligence" ? (
               <MarketIntelligenceModule />
+            ) : activePage === "admin-panel" ? (
+              <AdminPanelModule />
             ) : (
               <>
                 <PageHeader pageId={activePage} page={currentPage} actions={actions} />
@@ -226,6 +234,17 @@ function Sidebar({ navSections, onChange }) {
 }
 
 function TopBar() {
+  const { user, logout } = useAuth();
+  const initials = user
+    ? user.name
+        .trim()
+        .split(/\s+/)
+        .map((part) => part[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase()
+    : topBarMeta.initials;
+
   return (
     <div className="border-b border-[#d9e2ef] bg-[#f7f9fc] px-5 py-4">
       <div className="flex items-center justify-between gap-4">
@@ -243,9 +262,29 @@ function TopBar() {
           <p className="text-[14px] text-[#6a7790]">
             {topBarMeta.location} · {topBarMeta.cycle}
           </p>
-          <div className="grid size-9 place-items-center rounded-full bg-[#2d47aa] text-sm font-semibold text-white">
-            {topBarMeta.initials}
-          </div>
+          {user ? (
+            <div className="flex items-center gap-2">
+              <div className="text-right">
+                <p className="text-[13px] font-medium leading-tight text-[#18263e]">{user.name}</p>
+                <p className="text-[11px] leading-tight text-[#8592ab]">{user.role === "ADMIN" ? "Admin" : "Employee"}</p>
+              </div>
+              <div className="grid size-9 place-items-center rounded-full bg-[#2d47aa] text-sm font-semibold text-white">
+                {initials}
+              </div>
+              <button
+                type="button"
+                onClick={logout}
+                title="Log out"
+                className="grid size-9 place-items-center rounded-full border border-[#d6deea] bg-white text-[#5f6f89] hover:bg-[#f4f7fb]"
+              >
+                <LogOutIcon className="size-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="grid size-9 place-items-center rounded-full bg-[#2d47aa] text-sm font-semibold text-white">
+              {initials}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -506,6 +545,22 @@ function PlaceholderPage() {
     <div className="rounded-[22px] border border-[#d6deea] bg-white px-6 py-10 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
       <p className="text-[16px] font-medium text-[#102246]">This view is intentionally left simple for now.</p>
     </div>
+  );
+}
+
+function AuthGate() {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return <div className="grid min-h-screen place-items-center bg-[#1b295f] text-white/70">Loading…</div>;
+  }
+  return user ? <AppShell /> : <LoginPage />;
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
   );
 }
 
