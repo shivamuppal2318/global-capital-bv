@@ -29,14 +29,17 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-global_capital_bv}?schema=public
       PORT: 4000
-      # :- defaults match this repo's actual Coolify deployment domains —
-      # Coolify only substitutes plain ${VAR} (no default) via variables it
-      # auto-manages from an explicit `environment:` default; ones we set
-      # ourselves without a `:-default` resolve to an empty string at deploy
-      # time instead of the value entered in its UI, which silently broke
-      # CORS. Override via Coolify's env var UI if deploying elsewhere.
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://global-capital-bv.avptechsolution.com}
-      APP_BASE_URL: ${APP_BASE_URL:-https://api-global-capital-bv.avptechsolution.com}
+      # Hardcoded (not ${VAR:-default}) — Coolify's docker-compose deploy
+      # stores every `environment:` entry it auto-detects as a "managed"
+      # variable and injects that RAW string into the container as-is; it
+      # does not run shell-style ${VAR:-default} interpolation on it, so a
+      # `:-default` fallback here was silently passed through literally
+      # (breaking CORS: the origin check compared against the literal text
+      # "${CORS_ORIGIN:-https://...}" instead of a real URL). A plain literal
+      # value has nothing to (mis)substitute. Edit these directly if the
+      # deployment domain ever changes.
+      CORS_ORIGIN: https://global-capital-bv.avptechsolution.com
+      APP_BASE_URL: https://api-global-capital-bv.avptechsolution.com
 
       # AI (WhatsApp chat assistant, market-intelligence signal processing)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
@@ -85,7 +88,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-https://api-global-capital-bv.avptechsolution.com}
+        VITE_API_URL: https://api-global-capital-bv.avptechsolution.com
     restart: unless-stopped
     depends_on:
       - backend
