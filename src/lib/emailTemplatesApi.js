@@ -10,9 +10,10 @@ function request(path, options = {}) {
 export const emailTemplatesApi = {
   list: () => request(""),
   get: (key) => request(`/${key}`),
-  // Upserts by key — persists the editable subject/body draft as a reusable
-  // Template.
-  save: (key, { subject, body }) => request(`/${key}`, { method: "PUT", body: { subject, body } }),
+  // Upserts by key — persists the editable subject/body/html draft as a
+  // reusable Template. `html` is optional — omitted, the backend falls back
+  // to auto-wrapping `body` as plain text (see server/src/lib/renderTemplate.js).
+  save: (key, { subject, body, html }) => request(`/${key}`, { method: "PUT", body: { subject, body, html } }),
   // Renders the saved template with sample placeholder data (merge fields
   // filled, HTML wrapped/branded exactly like a real send).
   preview: (key) => request(`/${key}/preview`),

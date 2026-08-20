@@ -71,6 +71,17 @@ emailLeadsRouter.post("/", asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "Campaign not found" });
   }
 
+  // Same email can legitimately appear in different campaigns (different
+  // pitches to the same prospect), so the check is scoped to this campaign
+  // — but adding it twice to the SAME one would silently double-enroll
+  // them in the cadence, sending the same prospect duplicate follow-ups.
+  const existing = await prisma.emailLead.findFirst({
+    where: { campaignId: parsed.data.campaignId, email: parsed.data.email }
+  });
+  if (existing) {
+    return res.status(409).json({ error: `${parsed.data.email} is already in this campaign.`, leadId: existing.id });
+  }
+
   const lead = await prisma.emailLead.create({ data: parsed.data });
   const scheduledCount = await scheduleCadenceSteps(lead, campaign.cadenceSteps);
 
@@ -128,9 +139,30 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
 
   const created = [];
   const failed = [];
+  const duplicates = [];
+  // Rows within the same CSV paste count against each other too (a pasted
+  // list with the same email twice), not just against what's already in
+  // the DB — checked in-memory so a duplicate earlier in this same batch
+  // is caught without a redundant query.
+  const seenInBatch = new Set();
 
   for (const [index, leadInput] of parsed.data.leads.entries()) {
+    const rowNumber = index + 1;
+    if (seenInBatch.has(leadInput.email)) {
+      duplicates.push({ row: rowNumber, email: leadInput.email, reason: "Duplicate email earlier in this same import." });
+      continue;
+    }
+
     try {
+      const existing = await prisma.emailLead.findFirst({
+        where: { campaignId: campaign.id, email: leadInput.email }
+      });
+      if (existing) {
+        duplicates.push({ row: rowNumber, email: leadInput.email, reason: "Already in this campaign." });
+        seenInBatch.add(leadInput.email);
+        continue;
+      }
+
       const lead = await prisma.emailLead.create({ data: { ...leadInput, campaignId: campaign.id } });
       const scheduledCount = await scheduleCadenceSteps(lead, campaign.cadenceSteps);
 
@@ -145,13 +177,22 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
         }
       });
 
+      seenInBatch.add(leadInput.email);
       created.push({ id: lead.id, email: lead.email });
     } catch (err) {
-      failed.push({ row: index + 1, email: leadInput.email, reason: err.message });
+      seenInBatch.add(leadInput.email);
+      failed.push({ row: rowNumber, email: leadInput.email, reason: err.message });
     }
   }
 
-  res.status(201).json({ createdCount: created.length, failedCount: failed.length, created, failed });
+  res.status(201).json({
+    createdCount: created.length,
+    failedCount: failed.length,
+    duplicateCount: duplicates.length,
+    created,
+    failed,
+    duplicates
+  });
 }));
 
 emailLeadsRouter.get("/:id/activity", asyncHandler(async (req, res) => {

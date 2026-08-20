@@ -2,14 +2,19 @@ import { runIntelligencePipeline } from "./pipeline.js";
 import { isNewsApiConfigured } from "./sources/newsApiSource.js";
 import { isExaConfigured } from "./sources/exaSource.js";
 import { isFirecrawlConfigured } from "./sources/firecrawlSource.js";
+import { isGoogleNewsConfigured } from "./sources/googleNewsRssSource.js";
 
 // News/deal signals don't need minute-level freshness the way an inbound
-// email reply does — 6 hours is a reasonable default poll cadence, tune
-// via MARKET_INTELLIGENCE_INTERVAL_MS.
-const DEFAULT_INTERVAL_MS = 6 * 60 * 60 * 1000;
+// email reply does — weekly matches Google News RSS's own "when:7d" scope
+// (see googleNewsRssSource.js) so each run picks up exactly what's new
+// since the last one. Tune via MARKET_INTELLIGENCE_INTERVAL_MS.
+const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Google News needs no API key, so it alone is enough to make a scheduled
+// run worthwhile — without this, the scheduler stayed off in the (common)
+// case where nobody's paid for NewsAPI/Exa/Firecrawl yet.
 export function isMarketIntelligenceSchedulerEnabled() {
-  return isNewsApiConfigured() || isExaConfigured() || isFirecrawlConfigured();
+  return isGoogleNewsConfigured() || isNewsApiConfigured() || isExaConfigured() || isFirecrawlConfigured();
 }
 
 let intervalHandle = null;

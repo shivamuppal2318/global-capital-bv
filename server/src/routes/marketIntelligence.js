@@ -82,7 +82,12 @@ marketIntelligenceRouter.post("/chat", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
+  // PROCESSED/IGNORED are the only statuses carrying real AI-extracted
+  // fields (entityName/signalType/relevanceScore/aiSummary) — PENDING/
+  // FAILED/DUPLICATE rows would otherwise crowd out real context with
+  // near-empty entries once a backlog of unprocessed signals exists.
   const signals = await prisma.marketSignal.findMany({
+    where: { status: { in: ["PROCESSED", "IGNORED"] } },
     orderBy: { fetchedAt: "desc" },
     take: 40
   });

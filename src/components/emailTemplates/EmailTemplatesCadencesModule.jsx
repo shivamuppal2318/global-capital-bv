@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { ActionButton } from "../ui.jsx";
+import { ActionButton, Field } from "../ui.jsx";
 import { NoteIcon, PlusIcon, PencilIcon, SearchIcon, TagIcon } from "../Icons.jsx";
-import { Field } from "../emailOutreach/CampaignsTab.jsx";
 import { emailTemplatesApi } from "../../lib/emailTemplatesApi.js";
+import { RichTextEditor } from "./RichTextEditor.jsx";
 
 // The auto-responder maps a classified reply straight to one of these 4
 // keys (see server/src/lib/autoRespond.js) — deleting one would silently
@@ -10,7 +10,36 @@ import { emailTemplatesApi } from "../../lib/emailTemplatesApi.js";
 // this mirrors that same set client-side to hide the Delete button for them
 // before the user hits that error at all.
 const PROTECTED_TEMPLATE_KEYS = new Set(["interested", "zoom-request", "info-request", "no-reply"]);
-const BLANK_TEMPLATE_FORM = { key: "", subject: "", body: "" };
+const BLANK_TEMPLATE_FORM = { key: "", subject: "", html: "" };
+
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Starting point when editing an older template saved before the rich
+// editor existed (html is null, only the plain-text body was ever set) —
+// same paragraph-splitting convention as the server's own
+// wrapPlainTextAsHtml (src/lib/renderTemplate.js), just without the
+// branded email-shell wrapper since that's only added at send time.
+function plainTextToHtml(text) {
+  return text
+    .split(/\n{2,}/)
+    .filter((paragraph) => paragraph.trim())
+    .map((paragraph) => `<p>${paragraph.split("\n").map(escapeHtml).join("<br>")}</p>`)
+    .join("");
+}
+
+// The backend still keeps a plain-text `body` alongside `html` — used as
+// the plain-text MIME part of a real send (some mail clients and spam
+// filters only look at that part), so it has to stay in sync with whatever
+// the rich editor produces rather than going stale.
+function htmlToPlainText(html) {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  container.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
+  container.querySelectorAll("p, div, li").forEach((el) => el.append("\n"));
+  return container.textContent.replace(/\n{3,}/g, "\n\n").trim();
+}
 
 // Real Template CRUD for the email cold-outreach domain — create/edit/
 // delete/preview, all backed by the real EmailTemplate table. Editing one
@@ -53,19 +82,20 @@ export function EmailTemplatesCadencesModule() {
 
   function handleEditTemplate(template) {
     setEditingKey(template.key);
-    setForm({ key: template.key, subject: template.subject, body: template.body });
+    setForm({ key: template.key, subject: template.subject, html: template.html ?? plainTextToHtml(template.body) });
     setPreviewHtml(null);
     setNotice(null);
   }
 
   async function handleSaveTemplate() {
     const key = editingKey ?? form.key.trim();
-    if (!key || !form.subject.trim() || !form.body.trim()) {
+    const plainTextBody = htmlToPlainText(form.html);
+    if (!key || !form.subject.trim() || !plainTextBody) {
       setNotice("Fill in a key, subject, and body before saving.");
       return;
     }
     try {
-      await emailTemplatesApi.save(key, { subject: form.subject, body: form.body });
+      await emailTemplatesApi.save(key, { subject: form.subject, body: plainTextBody, html: form.html });
       setNotice(`Template "${key}" saved to the backend.`);
       setEditingKey(key);
       setForm((current) => ({ ...current, key }));
@@ -245,12 +275,10 @@ export function EmailTemplatesCadencesModule() {
                 />
               </Field>
               <Field label="Body">
-                <textarea
-                  value={form.body}
-                  onChange={(event) => handleFormChange("body", event.target.value)}
-                  rows={8}
+                <RichTextEditor
+                  value={form.html}
+                  onChange={(html) => handleFormChange("html", html)}
                   placeholder="Merge fields: {{leadName}}, {{company}}, {{unsubscribeUrl}}, {{ndaSignUrl}}"
-                  className="w-full rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[14px] leading-6 text-[#435471] outline-none focus:border-[#3046b2]"
                 />
               </Field>
             </div>

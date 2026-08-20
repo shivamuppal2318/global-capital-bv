@@ -494,6 +494,13 @@ export function useEmailOutreachState() {
       setAutomationNotice("Fill in name, company, and email before adding a lead.");
       return;
     }
+    // Same pattern as the CSV path (csvLeads.js) — catches a typo'd email
+    // before it reaches the backend, whose own validation error message
+    // isn't a plain string and wouldn't display cleanly here.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newLeadForm.email)) {
+      setAutomationNotice(`"${newLeadForm.email}" doesn't look like a valid email address.`);
+      return;
+    }
     if (!selectedCampaign) {
       setAutomationNotice("Select a campaign first.");
       return;
@@ -510,7 +517,15 @@ export function useEmailOutreachState() {
       setAutomationNotice(`${newLeadForm.name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`);
       setNewLeadForm({ name: "", company: "", email: "" });
     } catch (error) {
-      setAutomationNotice(`Could not add lead via the backend (${error.message}). No local-only fallback for this action.`);
+      // The backend 409s on a duplicate (same email already in this
+      // campaign) rather than silently double-enrolling them in the
+      // cadence — surfaced as its own case so it doesn't read like a
+      // generic backend failure.
+      setAutomationNotice(
+        error.message.includes("already in this campaign")
+          ? `${newLeadForm.email} is already in "${selectedCampaign.name}" — not added again.`
+          : `Could not add lead via the backend (${error.message}). No local-only fallback for this action.`
+      );
     }
   }
 
@@ -536,8 +551,9 @@ export function useEmailOutreachState() {
       if (errors.length) {
         console.warn("CSV parse errors:", errors);
       }
+      const duplicateNote = result.duplicateCount ? `, ${result.duplicateCount} already in this campaign (skipped)` : "";
       setAutomationNotice(
-        `CSV import: ${result.createdCount} lead(s) added to "${selectedCampaign.name}", ${result.failedCount} failed on the backend.${parseErrorNote}`
+        `CSV import: ${result.createdCount} lead(s) added to "${selectedCampaign.name}"${duplicateNote}, ${result.failedCount} failed on the backend.${parseErrorNote}`
       );
       setCsvText("");
     } catch (error) {
