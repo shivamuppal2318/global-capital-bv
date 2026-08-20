@@ -10,8 +10,8 @@ RUN npx prisma generate
 
 EXPOSE 4000
 
-# Applies any pending migrations, then fills in required singleton config
-# rows (e.g. BusinessSettings) if missing — both are no-ops when there's
-# nothing to do, so safe to run on every boot. Does NOT run seed.js, which
-# wipes all data and would destroy real leads collected in production.
-CMD ["sh", "-c", "npx prisma migrate deploy && node prisma/ensureDefaults.js && node src/index.js"]
+# Migrations + config bootstrap + server, each phase logged separately so a
+# failure is diagnosable from the container logs. See docker-entrypoint.sh.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+CMD ["/usr/local/bin/docker-entrypoint.sh"]
