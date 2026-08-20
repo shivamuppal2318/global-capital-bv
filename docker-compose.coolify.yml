@@ -1,0 +1,112 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-global_capital_bv}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # No host port binding — Coolify's reverse proxy reaches this container
+    # over the internal Docker network using the port set in its Domains
+    # config (4000), so publishing 4000:4000 on the host would collide with
+    # whatever else Coolify runs there.
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-global_capital_bv}?schema=public
+      PORT: 4000
+      # Hardcoded (not ${VAR:-default}) — Coolify's docker-compose deploy
+      # stores every `environment:` entry it auto-detects as a "managed"
+      # variable and injects that RAW string into the container as-is; it
+      # does not run shell-style ${VAR:-default} interpolation on it, so a
+      # `:-default` fallback here was silently passed through literally
+      # (breaking CORS: the origin check compared against the literal text
+      # "${CORS_ORIGIN:-https://...}" instead of a real URL). A plain literal
+      # value has nothing to (mis)substitute. Edit these directly if the
+      # deployment domain ever changes.
+      CORS_ORIGIN: https://global-capital-bv.avptechsolution.com
+      APP_BASE_URL: https://api-global-capital-bv.avptechsolution.com
+
+      # Login/session signing (see server/src/lib/auth.js) — the server
+      # refuses to start without this. Set a real random value in Coolify's
+      # env var UI (e.g. `openssl rand -hex 32`); plain ${VAR} with no
+      # default is one of the ones Coolify substitutes correctly (unlike
+      # ${VAR:-default} above — see the CORS_ORIGIN comment's history).
+      JWT_SECRET: ${JWT_SECRET}
+      # Bootstrap admin, created once on first boot if no admin exists yet
+      # (server/prisma/ensureDefaults.js). Leave ADMIN_PASSWORD unset to get
+      # a random one printed to the deployment logs instead.
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+
+      # AI (WhatsApp chat assistant, market-intelligence signal processing)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}
+
+      # Email cold-outreach domain
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      REDIS_URL: ${REDIS_URL}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-dev}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS}
+      DKIM_DOMAIN: ${DKIM_DOMAIN}
+      DKIM_SELECTOR: ${DKIM_SELECTOR}
+      DKIM_PRIVATE_KEY: ${DKIM_PRIVATE_KEY}
+      IMAP_HOST: ${IMAP_HOST}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_SECURE: ${IMAP_SECURE:-true}
+      IMAP_POLL_INTERVAL_MS: ${IMAP_POLL_INTERVAL_MS:-60000}
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      SES_FROM_ADDRESS: ${SES_FROM_ADDRESS}
+      POSTMARK_SERVER_TOKEN: ${POSTMARK_SERVER_TOKEN}
+      POSTMARK_FROM_ADDRESS: ${POSTMARK_FROM_ADDRESS}
+      INBOUND_WEBHOOK_SECRET: ${INBOUND_WEBHOOK_SECRET}
+      UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      NDA_SIGN_SECRET: ${NDA_SIGN_SECRET}
+      CALENDLY_WEBHOOK_SIGNING_KEY: ${CALENDLY_WEBHOOK_SIGNING_KEY}
+      TRACKING_SECRET: ${TRACKING_SECRET}
+
+      # Market intelligence engine
+      NEWSAPI_AI_KEY: ${NEWSAPI_AI_KEY}
+      EXA_API_KEY: ${EXA_API_KEY}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY}
+      APOLLO_API_KEY: ${APOLLO_API_KEY}
+      MARKET_INTELLIGENCE_INTERVAL_MS: ${MARKET_INTELLIGENCE_INTERVAL_MS:-21600000}
+      MARKET_INTELLIGENCE_QUERY: ${MARKET_INTELLIGENCE_QUERY:-private equity funding acquisition}
+      MARKET_INTELLIGENCE_DEFAULT_CAMPAIGN_ID: ${MARKET_INTELLIGENCE_DEFAULT_CAMPAIGN_ID}
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: https://api-global-capital-bv.avptechsolution.com
+    restart: unless-stopped
+    depends_on:
+      - backend
+    # Same reasoning as backend above — Coolify's proxy already owns host
+    # port 80/443; it reaches this container internally via the Domains
+    # config (port 80), not through a published host port.
+
+volumes:
+  postgres_data:

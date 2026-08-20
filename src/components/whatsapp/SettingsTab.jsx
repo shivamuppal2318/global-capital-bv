@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { ChartBarIcon, ClockIcon, CogIcon, LinkIcon, SparklesIcon, UsersIcon, ZapIcon } from "../Icons";
-import { Card, SectionTitle, Toggle } from "../ui";
+import { ChartBarIcon, ClockIcon, CogIcon, LinkIcon, ShieldIcon, SparklesIcon, UsersIcon, ZapIcon } from "../Icons";
+import { ActionButton, Card, SectionTitle, Toggle } from "../ui";
 import { settingsData } from "../../data/whatsappData";
-import { ConnectionPanel } from "./settings/ConnectionPanel";
 import { IntegrationsPanel } from "./settings/IntegrationsPanel";
 import { PlaceholderPanel } from "./settings/PlaceholderPanel";
 
@@ -20,7 +19,7 @@ const statusDot = {
   Offline: "bg-[#b7c2d6]"
 };
 
-export function SettingsTab() {
+export function SettingsTab({ onNavigate }) {
   const [activeTab, setActiveTab] = useState("connection");
   const [notifications, setNotifications] = useState(settingsData.notifications);
 
@@ -52,7 +51,12 @@ export function SettingsTab() {
 
       {activeTab === "connection" ? (
         <>
-          <ConnectionPanel />
+          <Card className="flex flex-wrap items-center justify-between gap-4 px-5 py-5">
+            <SectionTitle icon={ShieldIcon} iconClass="text-[#3046b2]" subtitle="WhatsApp Cloud API credentials (Embedded Signup, phone numbers, access tokens) moved to Admin Panel, so they live in one admin-only place.">
+              WhatsApp API credentials
+            </SectionTitle>
+            <ActionButton label="Go to Admin Panel" icon={ShieldIcon} primary small onClick={() => onNavigate?.("admin-panel")} />
+          </Card>
 
           <div className="grid gap-4 xl:grid-cols-2">
             <Card className="px-5 py-5">

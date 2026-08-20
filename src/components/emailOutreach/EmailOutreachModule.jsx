@@ -1,22 +1,71 @@
-import { useState } from "react";
-import { MailIcon, UsersIcon } from "../Icons.jsx";
-import { noteToneClass } from "../ui.jsx";
+import { useEffect, useState } from "react";
+import { MailIcon, UsersIcon, WorkflowIcon, CogIcon } from "../Icons.jsx";
+import { noteToneClass, StatCard } from "../ui.jsx";
 import { useEmailOutreachState } from "./useEmailOutreachState.js";
 import { CampaignsTab } from "./CampaignsTab.jsx";
 import { LeadsTab } from "./LeadsTab.jsx";
+import { AutomationTab } from "./AutomationTab.jsx";
+import { SettingsTab } from "./SettingsTab.jsx";
 
 const tabs = [
   { id: "campaigns", label: "Campaigns", icon: MailIcon },
-  { id: "leads", label: "Leads", icon: UsersIcon }
+  { id: "leads", label: "Leads", icon: UsersIcon },
+  { id: "automation", label: "Automation", icon: WorkflowIcon },
+  { id: "settings", label: "Settings", icon: CogIcon }
 ];
 
-// Cold email outreach: campaign setup + mailbox management (Campaigns tab)
-// and what happens once a lead actually replies (Leads tab). Both tabs
-// share one state hook (useEmailOutreachState) so switching tabs never
-// desyncs which campaign/lead is selected.
+const tabContent = {
+  campaigns: CampaignsTab,
+  leads: LeadsTab,
+  automation: AutomationTab,
+  settings: SettingsTab
+};
+
+// Cold email outreach, split the same way WhatsApp Business is: one tab per
+// concern (which campaigns exist, what happens once a lead replies, the
+// sequence config, mailbox setup) instead of all four crammed onto one
+// screen. All tabs share one state hook (useEmailOutreachState) so
+// switching tabs never desyncs which campaign/lead is selected.
 export function EmailOutreachModule({ initialTab = "campaigns" }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const mailing = useEmailOutreachState();
+
+  // The sidebar's "Cold Bulk Mailing" and "Leads" entries both render this
+  // same component at the same position in App.jsx's tree (just with a
+  // different initialTab) — React reuses the existing instance rather than
+  // remounting it, so useState's initial value alone would only apply once
+  // and silently ignore every later switch between the two entry points.
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+  const ActiveContent = tabContent[activeTab] ?? CampaignsTab;
+
+  const stats = [
+    {
+      label: "Active campaigns",
+      value: String(mailing.campaigns.filter((c) => c.status === "Sending").length),
+      note: `${mailing.campaigns.length} total`,
+      noteTone: "blue"
+    },
+    {
+      label: "Connected mailboxes",
+      value: String(mailing.emailAccounts.filter((a) => a.isActive).length),
+      note: `${mailing.emailAccounts.length} registered`,
+      noteTone: "cyan"
+    },
+    {
+      label: "Replied leads",
+      value: String(mailing.repliedLeads.length),
+      note: `${mailing.repliedLeads.filter((l) => l.movedToWorkflow).length} in workflow`,
+      noteTone: "green"
+    },
+    {
+      label: "Next sequence length",
+      value: String(mailing.liveSteps.length),
+      note: "touches per lead",
+      noteTone: "violet"
+    }
+  ];
 
   return (
     <div className="space-y-6">
@@ -27,6 +76,12 @@ export function EmailOutreachModule({ initialTab = "campaigns" }) {
             Cold email campaigns, warm-up-aware sending limits, multi-step cadences, and the reply-classify-auto-respond loop that
             fires once a lead writes back.
           </p>
+        </div>
+
+        <div className="mt-7 grid gap-4 xl:grid-cols-4">
+          {stats.map((card) => (
+            <StatCard key={card.label} card={card} />
+          ))}
         </div>
       </section>
 
@@ -59,7 +114,7 @@ export function EmailOutreachModule({ initialTab = "campaigns" }) {
         })}
       </nav>
 
-      {activeTab === "leads" ? <LeadsTab mailing={mailing} /> : <CampaignsTab mailing={mailing} />}
+      <ActiveContent mailing={mailing} />
     </div>
   );
 }

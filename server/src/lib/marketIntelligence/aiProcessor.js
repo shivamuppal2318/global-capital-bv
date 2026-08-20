@@ -11,14 +11,23 @@ export function isAiProcessorConfigured() {
 }
 
 // Pure — testable without any network access or API key.
+//
+// Google News RSS (the always-on, no-key source) only ever supplies a
+// headline, never real article body text — "Content" below is frequently
+// identical to "Title". The instruction against inventing specifics exists
+// because of that: without it, a model asked for financial/deal detail it
+// doesn't actually have tends to fill the gap with a plausible-sounding
+// guess rather than admitting the headline is all there is.
 export function buildProcessingPrompt(rawSignal) {
   return `You are analyzing a news/web signal for a private equity deal-sourcing CRM. Extract the following from the article below.
 
 Title: ${rawSignal.rawTitle}
 Content: ${rawSignal.rawContent.slice(0, 4000)}
 
+If Content adds nothing beyond Title (they're the same or nearly so), base your answer on the headline alone — do not invent a deal size, valuation, investor names, or other specifics that aren't actually stated.
+
 Return ONLY valid JSON, no other text, in exactly this shape:
-{"entityName": "the primary company this signal is about", "signalType": one of ${JSON.stringify(VALID_SIGNAL_TYPES)}, "relevanceScore": integer 0-100 (how relevant this is to a PE firm sourcing deals), "summary": "one sentence summary"}`;
+{"entityName": "the primary company this signal is about", "signalType": one of ${JSON.stringify(VALID_SIGNAL_TYPES)}, "relevanceScore": integer 0-100 (how relevant this is to a PE firm sourcing deals), "summary": "one sentence summary, stating only what the headline/content actually says"}`;
 }
 
 // Pure — testable with any mock LLM response string, real or fabricated.

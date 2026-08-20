@@ -23,13 +23,16 @@ function decodeXmlEntities(str) {
 }
 
 function extractTag(itemXml, tag) {
-  const match = itemXml.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
+  const match = itemXml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`));
   return match ? decodeXmlEntities(match[1]) : null;
 }
 
-// Pure — testable without any network access. Drops items missing a title
-// or link rather than passing through a half-formed signal that would fail
-// confusingly further down the pipeline.
+// Google's RSS <description> is always just the title re-wrapped in an <a>
+// tag plus a <font> repeating the publisher name — never real article body
+// text (verified against live responses). Sending that raw HTML to the AI
+// processor as "content" is pure noise that reads as more substance than it
+// is, so this uses the title alone (Google already appends " - Publisher"
+// to it) rather than a description that adds nothing but markup.
 export function parseGoogleNewsRss(xml) {
   const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
   return items
@@ -37,20 +40,24 @@ export function parseGoogleNewsRss(xml) {
       const title = extractTag(itemXml, "title");
       const link = extractTag(itemXml, "link");
       const pubDate = extractTag(itemXml, "pubDate");
-      const description = extractTag(itemXml, "description");
       return {
         source: "GOOGLE_NEWS",
         sourceUrl: link,
         rawTitle: title,
-        rawContent: description ?? title,
+        rawContent: title,
         rawPublishedAt: pubDate ? new Date(pubDate) : null
       };
     })
     .filter((item) => item.rawTitle && item.sourceUrl);
 }
 
-export async function fetchGoogleNewsSignals({ query = "private equity funding acquisition" } = {}) {
-  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+// Restricts results to the last 7 days via Google's own "when:" search
+// operator (server-side filtering, not a client-side date guess) — matches
+// the weekly pipeline cadence so each run only pulls what's new since the
+// last one, instead of re-surfacing the same old articles every time.
+export async function fetchGoogleNewsSignals({ query = "private equity funding acquisition", withinDays = 7 } = {}) {
+  const scopedQuery = withinDays ? `${query} when:${withinDays}d` : query;
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(scopedQuery)}&hl=en-US&gl=US&ceid=US:en`;
   // Google News RSS 403s on requests with no User-Agent — this isn't
   // impersonating a browser for scraping purposes, just satisfying that
   // check with a realistic value.

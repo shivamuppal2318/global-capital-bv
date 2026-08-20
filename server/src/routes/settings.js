@@ -2,8 +2,14 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { prisma } from "../db.js";
 import { formatRelativeTime } from "../utils.js";
+import { requireAdmin } from "../middleware/requireAuth.js";
 
 const router = Router();
+
+// WhatsApp Cloud API credentials and business config are Admin Panel
+// territory now (see AdminPanelModule.jsx) — an employee logged in for
+// day-to-day chat/lead work has no reason to read or change these.
+router.use(requireAdmin);
 
 function maskSecret(value) {
   if (!value) return null;

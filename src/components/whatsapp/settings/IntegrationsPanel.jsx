@@ -50,11 +50,7 @@ export function IntegrationsPanel() {
   }
 
   if (loadError) {
-    return (
-      <Card className="px-5 py-6 text-[14px] text-[#e0483f]">
-        Could not reach the backend at http://localhost:4000 — is the API server running? ({loadError})
-      </Card>
-    );
+    return <Card className="px-5 py-6 text-[14px] text-[#e0483f]">{loadError}</Card>;
   }
 
   const curlExample = `curl -X POST ${data.webhookUrl} \\

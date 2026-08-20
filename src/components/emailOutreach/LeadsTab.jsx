@@ -1,5 +1,6 @@
-import { ActionButton, noteToneClass } from "../ui.jsx";
-import { UsersIcon, SendIcon, MailIcon, TagIcon, SearchIcon } from "../Icons.jsx";
+import { useState } from "react";
+import { ActionButton, Field, noteToneClass } from "../ui.jsx";
+import { UsersIcon, SendIcon, MailIcon, TagIcon, SearchIcon, InboxIcon, ChartBarIcon, ClockIcon, WorkflowIcon, PlusIcon, UploadIcon } from "../Icons.jsx";
 import { replyRules } from "./useEmailOutreachState.js";
 
 const callStatusToneClass = {
@@ -17,11 +18,105 @@ export function LeadsTab({ mailing }) {
     repliedLeads, selectedLeadId, selectedLead, selectedLeadTimeline, loadLeadIntoWorkflow,
     automationForm, activeReplyRule, handleApplyRule, replyAction, handleTemplateDraftChange,
     handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, previewHtml, setPreviewHtml,
-    simulateIncomingReply, liveSteps, workflowSteps
+    simulateIncomingReply, liveSteps, workflowSteps,
+    selectedCampaign, newLeadForm, setNewLeadForm, handleAddLead, csvText, setCsvText, handleImportCsv, automationNotice
   } = mailing;
+  // Purely a UI toggle (which entry method is showing) — doesn't need to
+  // survive switching tabs, so it stays local instead of living in the
+  // shared mailing state.
+  const [leadEntryMode, setLeadEntryMode] = useState("single");
 
   return (
     <section className="space-y-6">
+      <div className="rounded-[22px] border border-[#d6deea] bg-white">
+        <div className="flex items-center justify-between gap-4 border-b border-[#e7edf5] px-4 py-3.5">
+          <div>
+            <div className="flex items-center gap-3">
+              <PlusIcon className="size-5 text-[#2b9b60]" />
+              <p className="text-[15px] font-semibold text-[#102246]">Add leads</p>
+            </div>
+            <p className="mt-0.5 pl-8 text-[13px] text-[#8593ac]">
+              Enrolls into {selectedCampaign?.name ?? "the selected campaign"}'s no-reply cadence via the backend.
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-1 rounded-[10px] bg-[#f0f3f9] p-1">
+            <button
+              type="button"
+              onClick={() => setLeadEntryMode("single")}
+              className={`rounded-[8px] px-3 py-1.5 text-[13px] font-semibold transition ${
+                leadEntryMode === "single" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"
+              }`}
+            >
+              Single lead
+            </button>
+            <button
+              type="button"
+              onClick={() => setLeadEntryMode("csv")}
+              className={`rounded-[8px] px-3 py-1.5 text-[13px] font-semibold transition ${
+                leadEntryMode === "csv" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"
+              }`}
+            >
+              CSV import
+            </button>
+          </div>
+        </div>
+
+        <div className="px-4 py-4">
+          {leadEntryMode === "single" ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="Name">
+                  <input
+                    value={newLeadForm.name}
+                    onChange={(event) => setNewLeadForm((current) => ({ ...current, name: event.target.value }))}
+                    className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+                  />
+                </Field>
+                <Field label="Company">
+                  <input
+                    value={newLeadForm.company}
+                    onChange={(event) => setNewLeadForm((current) => ({ ...current, company: event.target.value }))}
+                    className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+                  />
+                </Field>
+                <Field label="Email">
+                  <input
+                    type="email"
+                    value={newLeadForm.email}
+                    onChange={(event) => setNewLeadForm((current) => ({ ...current, email: event.target.value }))}
+                    className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+                  />
+                </Field>
+              </div>
+              <div className="mt-4">
+                <ActionButton label="Add lead" icon={PlusIcon} primary onClick={handleAddLead} />
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[13px] leading-5 text-[#6a7790]">
+                Paste rows with a header of <code className="rounded bg-[#f0f3f9] px-1.5 py-0.5 text-[12px]">name,company,email,owner</code> (owner is
+                optional). One bad row won't block the rest of the batch.
+              </p>
+              <textarea
+                rows={5}
+                placeholder={"name,company,email,owner\nDeepa Paul,Nordwind Energy,deepa@nordwind.de,Rahul R"}
+                value={csvText}
+                onChange={(event) => setCsvText(event.target.value)}
+                className="mt-3 w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2.5 text-[13px] font-mono text-[#102246] outline-none focus:border-[#3046b2]"
+              />
+              <div className="mt-4">
+                <ActionButton label="Import CSV" icon={UploadIcon} primary onClick={handleImportCsv} />
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="border-t border-[#e7edf5] bg-[#f8faff] px-4 py-3">
+          <p className="text-[13px] font-medium text-[#102246]">{automationNotice}</p>
+        </div>
+      </div>
+
       <div className="rounded-[22px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -43,7 +138,10 @@ export function LeadsTab({ mailing }) {
         <div className="rounded-[22px] border border-[#d6deea] bg-white shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
           <div className="border-b border-[#e7edf5] px-5 py-4">
             <div className="flex items-center justify-between gap-4">
-              <h2 className="text-[16px] font-semibold text-[#102246]">Replied leads</h2>
+              <div className="flex items-center gap-3">
+                <InboxIcon className="size-5 text-[#4766cc]" />
+                <h2 className="text-[16px] font-semibold text-[#102246]">Replied leads</h2>
+              </div>
               <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">
                 From bulk campaigns
               </span>
@@ -113,8 +211,11 @@ export function LeadsTab({ mailing }) {
         <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-[16px] font-semibold text-[#102246]">Next automated email</h2>
-              <p className="mt-1 text-[14px] text-[#5f6f89]">
+              <div className="flex items-center gap-3">
+                <MailIcon className="size-5 text-[#ef5b8f]" />
+                <h2 className="text-[16px] font-semibold text-[#102246]">Next automated email</h2>
+              </div>
+              <p className="mt-1 pl-8 text-[14px] text-[#5f6f89]">
                 Reply-based follow-up for {selectedLead?.name} at {selectedLead?.company}
               </p>
             </div>
@@ -236,7 +337,10 @@ export function LeadsTab({ mailing }) {
         </div>
 
         <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-          <h2 className="text-[16px] font-semibold text-[#102246]">Sequence summary</h2>
+          <div className="flex items-center gap-3">
+            <ChartBarIcon className="size-5 text-[#5769d4]" />
+            <h2 className="text-[16px] font-semibold text-[#102246]">Sequence summary</h2>
+          </div>
           <div className="mt-5 space-y-3 text-[14px] text-[#435471]">
             <p>Audience: <span className="font-medium text-[#102246]">{automationForm.audience}</span></p>
             <p>Template: <span className="font-medium text-[#102246]">{automationForm.template}</span></p>
@@ -251,8 +355,11 @@ export function LeadsTab({ mailing }) {
       <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-[16px] font-semibold text-[#102246]">Lead activity timeline</h2>
-            <p className="mt-1 text-[14px] text-[#5f6f89]">
+            <div className="flex items-center gap-3">
+              <ClockIcon className="size-5 text-[#5f6f89]" />
+              <h2 className="text-[16px] font-semibold text-[#102246]">Lead activity timeline</h2>
+            </div>
+            <p className="mt-1 pl-8 text-[14px] text-[#5f6f89]">
               Bulk campaign touchpoints and follow-up automation for {selectedLead?.name}
             </p>
           </div>
@@ -282,7 +389,10 @@ export function LeadsTab({ mailing }) {
 
       <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         <div className="flex items-center justify-between gap-4">
-          <h2 className="text-[16px] font-semibold text-[#102246]">Reply-triggered workflow</h2>
+          <div className="flex items-center gap-3">
+            <WorkflowIcon className="size-5 text-[#5769d4]" />
+            <h2 className="text-[16px] font-semibold text-[#102246]">Reply-triggered workflow</h2>
+          </div>
           <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">
             {automationForm.replyType === "no-reply" ? "Reminder path" : "Conditional path"}
           </span>

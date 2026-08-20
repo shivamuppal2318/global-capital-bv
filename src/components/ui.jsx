@@ -105,6 +105,39 @@ export function Toggle({ checked, onChange }) {
   );
 }
 
+export function Field({ label, children }) {
+  return (
+    <label className="block">
+      <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">{label}</p>
+      {children}
+    </label>
+  );
+}
+
+export function ToggleCard({ title, desc, checked, onChange }) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      className={`flex w-full items-center justify-between gap-4 rounded-[18px] border px-4 py-3.5 text-left transition ${
+        checked ? "border-[#b8d1ff] bg-[#f2f6ff]" : "border-[#d6deea] bg-white"
+      }`}
+    >
+      <div className="min-w-0">
+        <p className="text-[15px] font-semibold text-[#102246]">{title}</p>
+        <p className="mt-0.5 text-[13px] leading-5 text-[#5f6f89]">{desc}</p>
+      </div>
+      <span
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+          checked ? "bg-[#2b9b60]" : "bg-[#d6deea]"
+        }`}
+      >
+        <span className={`inline-block size-[18px] transform rounded-full bg-white shadow transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`} />
+      </span>
+    </button>
+  );
+}
+
 export function ProgressBar({ width, tone = "bg-[#3046b2]" }) {
   return (
     <div className="h-2 rounded-full bg-[#e8edf5]">

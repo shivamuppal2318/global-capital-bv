@@ -1,0 +1,4 @@
+# Shell scripts must keep LF endings — a CRLF shebang line makes Linux fail
+# the script with a confusing "no such file or directory", which matters for
+# server/docker-entrypoint.sh running inside the Alpine container.
+*.sh text eol=lf
