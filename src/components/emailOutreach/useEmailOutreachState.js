@@ -228,6 +228,17 @@ export function useEmailOutreachState() {
   // (from real inbound replies, or from clicking "Simulate reply" against
   // a real lead).
   const [repliedLeads, setRepliedLeads] = useState([]);
+  // Every lead in the selected campaign, replied or not — repliedLeads
+  // alone left a freshly-added lead invisible everywhere in the UI until
+  // it replied, which read as "nothing happened" even though the backend
+  // had genuinely saved it.
+  const [allLeads, setAllLeads] = useState([]);
+  // null while loading — lets the UI show nothing rather than a wrong
+  // "sending is off" banner for the split second before this resolves.
+  const [systemStatus, setSystemStatus] = useState(null);
+  // null = not tested this session yet; { pending: true } while in flight;
+  // { success, message } once the backend responds.
+  const [testConnectionResult, setTestConnectionResult] = useState(null);
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [leadActivity, setLeadActivity] = useState({});
   const [templateDrafts, setTemplateDrafts] = useState({
@@ -337,6 +348,17 @@ export function useEmailOutreachState() {
         });
         setRepliedLeads(mapped);
         setSelectedLeadId(mapped[0].id);
+        // Without this, the "Next automated email" panel showed whatever
+        // replyType/preferredPath the form happened to default to (always
+        // "interested"/"nda-first") rather than the auto-selected lead's
+        // actual reply — e.g. a zoom-request lead loaded with an NDA draft
+        // and the wrong workflow steps until manually re-clicked.
+        setAutomationForm((current) => ({
+          ...current,
+          campaignName: mapped[0].campaign,
+          replyType: mapped[0].replyType,
+          preferredPath: mapped[0].replyType === "zoom-request" ? "zoom-first" : "nda-first"
+        }));
         setAutomationNotice(`Loaded ${mapped.length} replied lead(s) from the backend.`);
       })
       .catch(() => {
@@ -344,6 +366,26 @@ export function useEmailOutreachState() {
         // showing fabricated leads.
       });
   }, []);
+
+  function loadAllLeadsForCampaign(campaignId) {
+    if (!campaignId) {
+      return;
+    }
+    emailLeadsApi
+      .list(campaignId)
+      .then((leads) => setAllLeads(leads))
+      .catch(() => {
+        // Backend unreachable — leave whatever was already loaded.
+      });
+  }
+
+  // Re-fetches whenever the selected campaign changes — including the
+  // switch from the local seed id to the real backend id once campaigns
+  // finish loading above, which is what makes this correct on first mount
+  // too, not just when the user later picks a different campaign.
+  useEffect(() => {
+    loadAllLeadsForCampaign(selectedCampaignId);
+  }, [selectedCampaignId]);
 
   // Refresh the activity timeline from the backend whenever the selected
   // lead changes.
@@ -381,7 +423,7 @@ export function useEmailOutreachState() {
     replyType: "interested",
     preferredPath: "nda-first"
   });
-  const [automationNotice, setAutomationNotice] = useState("Automation ready. Select a campaign or create a new sequence.");
+  const [automationNotice, setAutomationNotice] = useState("Automation ready. Select a campaign or create a new one.");
   const [newLeadForm, setNewLeadForm] = useState({ name: "", company: "", email: "" });
   const [csvText, setCsvText] = useState("");
   const [previewHtml, setPreviewHtml] = useState(null);
@@ -405,6 +447,15 @@ export function useEmailOutreachState() {
       .then((accounts) => setEmailAccounts(accounts))
       .catch(() => {
         // Backend unreachable — leave the list empty rather than erroring.
+      });
+  }, []);
+
+  useEffect(() => {
+    emailCampaignsApi
+      .systemStatus()
+      .then((status) => setSystemStatus(status))
+      .catch(() => {
+        // Backend unreachable — no banner rather than a wrong one.
       });
   }, []);
 
@@ -458,7 +509,21 @@ export function useEmailOutreachState() {
       replyType: lead.replyType,
       preferredPath: lead.replyType === "zoom-request" ? "zoom-first" : "nda-first"
     }));
-    setAutomationNotice(`${lead.name} moved from bulk replies into the workflow automation queue.`);
+    setAutomationNotice(`Loaded ${lead.name}'s reply into the follow-up panel.`);
+  }
+
+  async function handleDeleteLead(lead) {
+    try {
+      await emailLeadsApi.remove(lead.id);
+      setRepliedLeads((current) => current.filter((l) => l.id !== lead.id));
+      setAllLeads((current) => current.filter((l) => l.id !== lead.id));
+      if (selectedLeadId === lead.id) {
+        setSelectedLeadId(null);
+      }
+      setAutomationNotice(`${lead.name} (${lead.company}) deleted.`);
+    } catch (error) {
+      setAutomationNotice(`Could not delete ${lead.name} (${error.message}).`);
+    }
   }
 
   async function handleToggleCampaignStatus() {
@@ -514,8 +579,13 @@ export function useEmailOutreachState() {
         owner: "Rahul R",
         campaignId: selectedCampaign.id
       });
-      setAutomationNotice(`${newLeadForm.name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`);
+      setAutomationNotice(
+        result.cadenceScheduled > 0
+          ? `${newLeadForm.name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`
+          : `${newLeadForm.name} added to "${selectedCampaign.name}". No follow-up emails scheduled yet (this campaign has none set up, or the sending queue isn't running) — the lead was still saved.`
+      );
       setNewLeadForm({ name: "", company: "", email: "" });
+      loadAllLeadsForCampaign(selectedCampaign.id);
     } catch (error) {
       // The backend 409s on a duplicate (same email already in this
       // campaign) rather than silently double-enrolling them in the
@@ -556,6 +626,7 @@ export function useEmailOutreachState() {
         `CSV import: ${result.createdCount} lead(s) added to "${selectedCampaign.name}"${duplicateNote}, ${result.failedCount} failed on the backend.${parseErrorNote}`
       );
       setCsvText("");
+      loadAllLeadsForCampaign(selectedCampaign.id);
     } catch (error) {
       setAutomationNotice(`CSV import failed via the backend (${error.message}). No local-only fallback for this action.`);
     }
@@ -629,6 +700,16 @@ export function useEmailOutreachState() {
     }
   }
 
+  async function handleTestConnection() {
+    setTestConnectionResult({ pending: true });
+    try {
+      const result = await emailCampaignsApi.testConnection();
+      setTestConnectionResult(result);
+    } catch (error) {
+      setTestConnectionResult({ success: false, message: error.message });
+    }
+  }
+
   async function handleSaveAutomation() {
     const followUpCount = Number(automationForm.followUpCount) || 3;
     const dailyLimit = Number(automationForm.dailyLimit) || 2000;
@@ -655,7 +736,7 @@ export function useEmailOutreachState() {
       if (isEditingSelected) {
         const campaign = await emailCampaignsApi.update(selectedCampaign.id, payload);
         setCampaigns((current) => current.map((c) => (c.id === campaign.id ? { ...c, ...payload } : c)));
-        setAutomationNotice(`"${campaign.name}" updated on the backend — ${followUpCount + 1} automated touches, ${dailyLimit}/day cap.`);
+        setAutomationNotice(`"${campaign.name}" updated on the backend — ${followUpCount + 1} follow-up emails, ${dailyLimit}/day limit.`);
         return;
       }
 
@@ -673,7 +754,7 @@ export function useEmailOutreachState() {
       setCampaigns((current) => [mapped, ...current]);
       setSelectedCampaignId(mapped.id);
       setAutomationNotice(
-        `"${mapped.name}" saved to the backend — ${followUpCount + 1} automated touches, ${dailyLimit}/day cap. Note: it has no cadence steps yet.`
+        `"${mapped.name}" saved to the backend — ${followUpCount + 1} follow-up emails, ${dailyLimit}/day limit. Note: no leads are enrolled yet.`
       );
     } catch (error) {
       setAutomationNotice(`Could not save "${automationForm.campaignName}" — backend unreachable (${error.message}).`);
@@ -823,13 +904,13 @@ export function useEmailOutreachState() {
 
   return {
     campaigns, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
-    repliedLeads, selectedLeadId, leadActivity,
+    repliedLeads, allLeads, systemStatus, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
     automationForm, automationNotice, newLeadForm, setNewLeadForm,
     csvText, setCsvText, previewHtml, setPreviewHtml,
     emailAccounts, newAccountForm, setNewAccountForm,
     selectedCampaign, selectedLead, selectedLeadTimeline, activeReplyRule,
     liveSteps, workflowSteps, replyAction,
-    handleFormChange, handleTemplateDraftChange, handleApplyRule, loadLeadIntoWorkflow,
+    handleFormChange, handleTemplateDraftChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
     handleToggleCampaignStatus, handleAddLead, handleImportCsv, handleAddEmailAccount,
     handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation,
     handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, simulateIncomingReply

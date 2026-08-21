@@ -15,6 +15,7 @@ export const emailLeadsApi = {
   // client-side before anything reaches the database.
   bulkCreate: (campaignId, leads) => request("/bulk", { method: "POST", body: { campaignId, leads } }),
   activity: (id) => request(`/${id}/activity`),
+  remove: (id) => request(`/${id}`, { method: "DELETE" }),
   // Sends by resolving a saved Template server-side (merge fields, branded
   // HTML, unsubscribe link all applied automatically).
   sendTemplate: (id, templateKey) => request(`/${id}/send-template`, { method: "POST", body: { templateKey } }),

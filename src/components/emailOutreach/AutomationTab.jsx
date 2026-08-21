@@ -27,7 +27,7 @@ export function AutomationTab({ mailing }) {
               className="w-full rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[15px] text-[#102246] outline-none"
             />
           </Field>
-          <Field label="Audience segment">
+          <Field label="Who you're targeting">
             <select
               value={automationForm.audience}
               onChange={(event) => handleFormChange("audience", event.target.value)}
@@ -50,7 +50,7 @@ export function AutomationTab({ mailing }) {
               <option>Portfolio quarterly update</option>
             </select>
           </Field>
-          <Field label="Daily sending cap">
+          <Field label="Emails per day">
             <input
               type="number"
               value={automationForm.dailyLimit}
@@ -70,7 +70,7 @@ export function AutomationTab({ mailing }) {
               <option value="7">7 days</option>
             </select>
           </Field>
-          <Field label="Follow-up count">
+          <Field label="Number of follow-up emails">
             <select
               value={automationForm.followUpCount}
               onChange={(event) => handleFormChange("followUpCount", event.target.value)}
@@ -93,7 +93,7 @@ export function AutomationTab({ mailing }) {
               <option value="no-reply">No reply</option>
             </select>
           </Field>
-          <Field label="Preferred progression">
+          <Field label="What happens next">
             <select
               value={automationForm.preferredPath}
               onChange={(event) => handleFormChange("preferredPath", event.target.value)}
