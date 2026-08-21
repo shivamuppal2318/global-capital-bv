@@ -1,12 +1,16 @@
+// Only modules that are actually built out are listed. Lead Discovery,
+// Qualification, Telephony & SMS, Companies, Contacts, Communications and
+// Deals were placeholder entries that rendered an empty page, so they're
+// removed rather than shipped as dead links. Keep this in step with
+// server/src/lib/permissions.js — the ids there drive both the Admin Panel
+// checkboxes and the API's own access checks.
 export const navSections = [
   {
     title: "Intelligence",
     items: [
       { id: "command-center", label: "Command Center", icon: "grid" },
       { id: "market-intelligence", label: "Market Intelligence", icon: "radar", badge: "AI" },
-      { id: "lead-discovery", label: "Lead Discovery", icon: "sparkles", badge: "AI" },
-      { id: "leads", label: "Leads", icon: "users" },
-      { id: "qualification", label: "Qualification", icon: "funnel", badge: "AI" }
+      { id: "leads", label: "Leads", icon: "users" }
     ]
   },
   {
@@ -15,25 +19,16 @@ export const navSections = [
       { id: "crm-workspace", label: "CRM Workspace", icon: "users" },
       { id: "cold-bulk-mailing", label: "Cold Bulk Mailing", icon: "mailbox" },
       { id: "whatsapp-business", label: "WhatsApp Business", icon: "message" },
-      { id: "telephony-sms", label: "Telephony & SMS", icon: "phone" },
       { id: "templates-cadences", label: "Templates & Cadences", icon: "send" }
     ]
   },
   {
     title: "Relationships",
-    items: [
-      { id: "companies", label: "Companies", icon: "building" },
-      { id: "contacts", label: "Contacts", icon: "contact" },
-      { id: "communications", label: "Communications", icon: "chat" },
-      { id: "meetings", label: "Meetings", icon: "calendar" }
-    ]
+    items: [{ id: "meetings", label: "Meetings", icon: "calendar" }]
   },
   {
     title: "Deal Execution",
-    items: [
-      { id: "pipeline", label: "Pipeline", icon: "pipeline" },
-      { id: "deals", label: "Deals", icon: "briefcase" }
-    ]
+    items: [{ id: "pipeline", label: "Pipeline", icon: "pipeline" }]
   },
   {
     title: "Administration",

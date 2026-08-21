@@ -5,20 +5,13 @@
 export const MODULES = [
   { id: "command-center", label: "Command Center", group: "Intelligence" },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence" },
-  { id: "lead-discovery", label: "Lead Discovery", group: "Intelligence" },
   { id: "leads", label: "Leads", group: "Intelligence" },
-  { id: "qualification", label: "Qualification", group: "Intelligence" },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },
   { id: "cold-bulk-mailing", label: "Cold Bulk Mailing", group: "CRM & Outreach" },
   { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach" },
-  { id: "telephony-sms", label: "Telephony & SMS", group: "CRM & Outreach" },
   { id: "templates-cadences", label: "Templates & Cadences", group: "CRM & Outreach" },
-  { id: "companies", label: "Companies", group: "Relationships" },
-  { id: "contacts", label: "Contacts", group: "Relationships" },
-  { id: "communications", label: "Communications", group: "Relationships" },
   { id: "meetings", label: "Meetings", group: "Relationships" },
-  { id: "pipeline", label: "Pipeline", group: "Deal Execution" },
-  { id: "deals", label: "Deals", group: "Deal Execution" }
+  { id: "pipeline", label: "Pipeline", group: "Deal Execution" }
 ];
 
 export const MODULE_IDS = MODULES.map((m) => m.id);
@@ -31,7 +24,16 @@ export const MODULE_IDS = MODULES.map((m) => m.id);
 // module (see App.jsx), so granting it hands over campaign sending too.
 // "crm-workspace" already covers day-to-day lead handling, so outreach
 // stays something an admin turns on per person rather than a default.
-export const DEFAULT_EMPLOYEE_MODULES = ["crm-workspace", "companies", "contacts", "communications", "meetings"];
+export const DEFAULT_EMPLOYEE_MODULES = ["crm-workspace", "meetings"];
+
+// Drops ids that no longer exist. Accounts granted a module before it was
+// retired still carry it in the database; reporting those back would
+// overstate what someone can actually reach ("6 modules" when only 2 are
+// real). They're cleaned from storage the next time an admin saves.
+export function liveModules(permissions) {
+  if (!Array.isArray(permissions)) return [];
+  return permissions.filter((id) => MODULE_IDS.includes(id));
+}
 
 export function isAdmin(user) {
   return user?.role === "ADMIN";

@@ -5,7 +5,7 @@ import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { hashPassword } from "../lib/auth.js";
 import { requireAdmin } from "../middleware/requireAuth.js";
-import { MODULES, MODULE_IDS, DEFAULT_EMPLOYEE_MODULES } from "../lib/permissions.js";
+import { MODULES, MODULE_IDS, DEFAULT_EMPLOYEE_MODULES, liveModules } from "../lib/permissions.js";
 import { encryptSecret } from "../lib/credentialCrypto.js";
 import { getSystemEmailSettings, verifySystemEmail, sendSystemEmail, welcomeEmail } from "../lib/systemMailer.js";
 import { getAiConfig, getAiSettingsRow, saveAiSettings, clearAiSettings, testAiConnection, DEFAULT_MODEL } from "../lib/aiSettings.js";
@@ -24,7 +24,7 @@ function publicUser(user) {
     email: user.email,
     role: user.role,
     status: user.status,
-    permissions: user.permissions ?? [],
+    permissions: liveModules(user.permissions),
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt
   };

@@ -5,6 +5,7 @@ import { hashPassword, verifyPassword, signToken } from "../lib/auth.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
+import { liveModules } from "../lib/permissions.js";
 import { appBaseUrl } from "../lib/appUrl.js";
 
 const router = Router();
@@ -18,7 +19,7 @@ function publicUser(user) {
     email: user.email,
     role: user.role,
     status: user.status,
-    permissions: user.permissions ?? []
+    permissions: liveModules(user.permissions)
   };
 }
 
