@@ -14,5 +14,12 @@ export const adminApi = {
   createEmployee: (body) => request("/employees", { method: "POST", body }),
   updateEmployee: (id, body) => request(`/employees/${id}`, { method: "PATCH", body }),
   resetPassword: (id) => request(`/employees/${id}/reset-password`, { method: "POST" }),
-  removeEmployee: (id) => request(`/employees/${id}`, { method: "DELETE" })
+  removeEmployee: (id) => request(`/employees/${id}`, { method: "DELETE" }),
+  // Grantable modules come from the backend so the checkbox list can't
+  // drift from what the API actually enforces.
+  listModules: () => request("/modules"),
+  getSystemEmail: () => request("/system-email"),
+  saveSystemEmail: (body) => request("/system-email", { method: "PUT", body }),
+  // Omit `to` to only verify the credentials without sending anything.
+  testSystemEmail: (to) => request("/system-email/test", { method: "POST", body: { to } })
 };

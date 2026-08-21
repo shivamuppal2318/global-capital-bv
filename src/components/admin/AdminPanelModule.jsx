@@ -5,10 +5,12 @@ import { EmployeesPanel } from "./EmployeesPanel";
 import { WhatsappApiPanel } from "./WhatsappApiPanel";
 import { MailboxManager } from "./MailboxManager";
 import { MyAccountPanel } from "./MyAccountPanel";
+import { SystemEmailPanel } from "./SystemEmailPanel";
 
 const ADMIN_TABS = [
   { id: "employees", label: "Employees", icon: UsersIcon },
   { id: "whatsapp-api", label: "WhatsApp API", icon: LinkIcon },
+  { id: "system-email", label: "System Email", icon: MailIcon },
   { id: "email-accounts", label: "Email Accounts", icon: MailIcon }
 ];
 const EVERYONE_TABS = [
@@ -61,6 +63,7 @@ export function AdminPanelModule() {
 
       {currentTab.id === "employees" ? <EmployeesPanel /> : null}
       {currentTab.id === "whatsapp-api" ? <WhatsappApiPanel /> : null}
+      {currentTab.id === "system-email" ? <SystemEmailPanel /> : null}
       {currentTab.id === "email-accounts" ? <MailboxManager scope="all" /> : null}
       {currentTab.id === "my-account" ? (
         <div className="space-y-4">

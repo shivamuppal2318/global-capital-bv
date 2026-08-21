@@ -121,8 +121,47 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  // Module ids (see src/lib/permissions.js) this employee may open. Only
+  // consulted for EMPLOYEE — an ADMIN always has every module, so revoking
+  // an admin's access means demoting them first.
+  permissions String[] @default([])
+
   // Personal SMTP mailboxes this employee owns (see EmailAccount.ownerId).
   emailAccounts EmailAccount[]
+  passwordResets PasswordResetToken[]
+}
+
+// Single row holding the company-wide "system" mailbox used for
+// transactional mail the app sends about itself — password resets and new
+// account handoffs. Deliberately separate from EmailAccount, which is for
+// outbound sales campaigns: those are per-user and get rotated/paused, and
+// password reset delivery must not depend on a salesperson's mailbox.
+model SystemEmailSettings {
+  id                String   @id @default(cuid())
+  smtpHost          String
+  smtpPort          Int      @default(587)
+  smtpSecure        Boolean  @default(false)
+  smtpUser          String
+  // AES-256-GCM ciphertext, same scheme as EmailAccount (lib/credentialCrypto.js).
+  smtpPassEncrypted String
+  fromAddress       String
+  fromName          String   @default("Global Capital BV")
+  lastTestedAt      DateTime?
+  updatedAt         DateTime @updatedAt
+}
+
+model PasswordResetToken {
+  id String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  // Only the SHA-256 of the emailed token is stored, so a database leak
+  // can't be replayed to take over accounts.
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Agent {

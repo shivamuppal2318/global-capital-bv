@@ -12,6 +12,11 @@ export const authApi = {
   me: () => apiFetch(`${API_BASE_URL}/me`),
   changePassword: (currentPassword, newPassword) =>
     apiFetch(`${API_BASE_URL}/me/password`, { method: "PATCH", body: { currentPassword, newPassword } }),
+  // Always resolves with the same generic message whether or not the
+  // address exists — the API deliberately doesn't reveal that.
+  forgotPassword: (email) => apiFetch(`${API_BASE_URL}/forgot-password`, { method: "POST", body: { email } }),
+  resetPassword: (token, newPassword) =>
+    apiFetch(`${API_BASE_URL}/reset-password`, { method: "POST", body: { token, newPassword } }),
   logout: () => setToken(null),
   hasToken: () => Boolean(getToken())
 };
