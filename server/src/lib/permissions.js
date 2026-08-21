@@ -26,7 +26,12 @@ export const MODULE_IDS = MODULES.map((m) => m.id);
 // What a newly created employee gets before an admin tailors it — the
 // day-to-day CRM surface, without the AI/intelligence tooling or the
 // company-wide outreach machinery.
-export const DEFAULT_EMPLOYEE_MODULES = ["crm-workspace", "leads", "companies", "contacts", "communications", "meetings"];
+//
+// Deliberately excludes "leads": that nav item opens the Email Outreach
+// module (see App.jsx), so granting it hands over campaign sending too.
+// "crm-workspace" already covers day-to-day lead handling, so outreach
+// stays something an admin turns on per person rather than a default.
+export const DEFAULT_EMPLOYEE_MODULES = ["crm-workspace", "companies", "contacts", "communications", "meetings"];
 
 export function isAdmin(user) {
   return user?.role === "ADMIN";
