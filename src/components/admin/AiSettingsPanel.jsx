@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { adminApi } from "../../lib/adminApi";
 import { ActionButton, Badge, Card, SectionTitle } from "../ui";
-import { SparklesIcon, ZapIcon } from "../Icons";
+import { SparklesIcon, XIcon, ZapIcon } from "../Icons";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
@@ -52,6 +52,21 @@ export function AiSettingsPanel() {
       setMessage({ ok: true, text: "Saved. The AI Assistant and Market Intelligence will use this immediately." });
     } catch (err) {
       setMessage({ ok: false, text: typeof err.message === "string" ? err.message : "Could not save." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    setSaving(true);
+    setMessage(null);
+    setTestResult(null);
+    try {
+      setStatus(await adminApi.removeAiKey());
+      setApiKey("");
+      setMessage({ ok: true, text: "Key removed. The AI features are switched off until a new one is saved." });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
     } finally {
       setSaving(false);
     }
@@ -148,6 +163,9 @@ export function AiSettingsPanel() {
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <ActionButton label={saving ? "Saving…" : "Save"} primary small onClick={handleSave} disabled={saving} />
+          {status.hasKey && status.source === "admin-panel" ? (
+            <ActionButton label="Remove key" icon={XIcon} small onClick={handleRemove} disabled={saving} />
+          ) : null}
           {message ? (
             <p className={`text-[13px] font-medium ${message.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>{message.text}</p>
           ) : null}

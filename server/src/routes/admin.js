@@ -8,7 +8,7 @@ import { requireAdmin } from "../middleware/requireAuth.js";
 import { MODULES, MODULE_IDS, DEFAULT_EMPLOYEE_MODULES } from "../lib/permissions.js";
 import { encryptSecret } from "../lib/credentialCrypto.js";
 import { getSystemEmailSettings, verifySystemEmail, sendSystemEmail, welcomeEmail } from "../lib/systemMailer.js";
-import { getAiConfig, getAiSettingsRow, saveAiSettings, testAiConnection, DEFAULT_MODEL } from "../lib/aiSettings.js";
+import { getAiConfig, getAiSettingsRow, saveAiSettings, clearAiSettings, testAiConnection, DEFAULT_MODEL } from "../lib/aiSettings.js";
 import { appBaseUrl } from "../lib/appUrl.js";
 
 const router = Router();
@@ -254,6 +254,16 @@ router.put("/ai-settings", asyncHandler(async (req, res) => {
 
 router.post("/ai-settings/test", asyncHandler(async (_req, res) => {
   res.json(await testAiConnection());
+}));
+
+// Clears the stored key (rotation, or backing out a wrong one). The AI
+// features fall back to ANTHROPIC_API_KEY if that's set, otherwise to
+// their "not configured" behaviour — which is honest, rather than leaving
+// a key that's shown as configured but rejected on every call.
+router.delete("/ai-settings", asyncHandler(async (_req, res) => {
+  await clearAiSettings();
+  const config = await getAiConfig();
+  res.json({ model: config.model, hasKey: Boolean(config.apiKey), keyPreview: null, source: config.source });
 }));
 
 export default router;

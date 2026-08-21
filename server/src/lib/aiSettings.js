@@ -68,6 +68,11 @@ export async function saveAiSettings({ apiKey, model }) {
   return saved;
 }
 
+export async function clearAiSettings() {
+  await prisma.aiSettings.deleteMany();
+  invalidateAiConfigCache();
+}
+
 // Cheapest possible real call that proves the key works — asks the model
 // for a single token rather than trusting that a well-formed key is valid.
 export async function testAiConnection() {

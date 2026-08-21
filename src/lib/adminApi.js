@@ -26,5 +26,6 @@ export const adminApi = {
   // which source (database vs env var) is currently in effect.
   getAiSettings: () => request("/ai-settings"),
   saveAiSettings: (body) => request("/ai-settings", { method: "PUT", body }),
-  testAiSettings: () => request("/ai-settings/test", { method: "POST" })
+  testAiSettings: () => request("/ai-settings/test", { method: "POST" }),
+  removeAiKey: () => request("/ai-settings", { method: "DELETE" })
 };
