@@ -38,8 +38,8 @@ services:
       # "${CORS_ORIGIN:-https://...}" instead of a real URL). A plain literal
       # value has nothing to (mis)substitute. Edit these directly if the
       # deployment domain ever changes.
-      CORS_ORIGIN: https://global-capital-bv.avptechsolution.com
-      APP_BASE_URL: https://api-global-capital-bv.avptechsolution.com
+      CORS_ORIGIN: https://global-capital-bv.31.97.235.52.sslip.io
+      APP_BASE_URL: https://api-global-capital-bv.31.97.235.52.sslip.io
 
       # Login/session signing (see server/src/lib/auth.js) — the server
       # refuses to start without this. Set a real random value in Coolify's
@@ -100,7 +100,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: https://api-global-capital-bv.avptechsolution.com
+        VITE_API_URL: https://api-global-capital-bv.31.97.235.52.sslip.io
     restart: unless-stopped
     depends_on:
       - backend
