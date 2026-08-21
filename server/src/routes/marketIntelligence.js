@@ -17,16 +17,18 @@ export const marketIntelligenceRouter = Router();
 // way the email/Calendly integrations do) — this is a manual/cron-callable
 // trigger. Point an actual cron job (or CronCreate-style scheduler) at this
 // once it's worth running unattended.
-marketIntelligenceRouter.get("/status", (_req, res) => {
+marketIntelligenceRouter.get("/status", asyncHandler(async (_req, res) => {
   res.json({
     newsApi: isNewsApiConfigured(),
     exa: isExaConfigured(),
     firecrawl: isFirecrawlConfigured(),
     googleNews: isGoogleNewsConfigured(),
     apollo: isApolloConfigured(),
-    aiProcessor: isAiProcessorConfigured()
+    // Async now that the Claude key can come from the database rather than
+    // only the environment (see lib/aiSettings.js).
+    aiProcessor: await isAiProcessorConfigured()
   });
-});
+}));
 
 const runSchema = z.object({
   query: z.string().optional(),
@@ -67,14 +69,14 @@ const chatSchema = z.object({
 });
 
 // Grounded in whatever's actually in the MarketSignal table (see
-// chatAssistant.js's system prompt) — same ANTHROPIC_API_KEY as the AI
-// processing stage, not a separate credential. Checked up front (rather
+// chatAssistant.js's system prompt) — same Claude credentials as the AI
+// processing stage, not a separate one. Checked up front (rather
 // than letting askChatAssistant's own throw fall through to the generic
 // 500 handler in index.js) so the frontend gets a clear, actionable 503
 // instead of an opaque "Internal server error".
 marketIntelligenceRouter.post("/chat", asyncHandler(async (req, res) => {
-  if (!isChatAssistantConfigured()) {
-    return res.status(503).json({ error: "AI processing is not configured — set ANTHROPIC_API_KEY on the server." });
+  if (!(await isChatAssistantConfigured())) {
+    return res.status(503).json({ error: "AI processing is not configured — add a Claude API key under Admin Panel → AI Assistant." });
   }
 
   const parsed = chatSchema.safeParse(req.body ?? {});

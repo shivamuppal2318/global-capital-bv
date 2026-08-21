@@ -21,5 +21,10 @@ export const adminApi = {
   getSystemEmail: () => request("/system-email"),
   saveSystemEmail: (body) => request("/system-email", { method: "PUT", body }),
   // Omit `to` to only verify the credentials without sending anything.
-  testSystemEmail: (to) => request("/system-email/test", { method: "POST", body: { to } })
+  testSystemEmail: (to) => request("/system-email/test", { method: "POST", body: { to } }),
+  // The Claude key is never returned — only hasKey / a masked preview and
+  // which source (database vs env var) is currently in effect.
+  getAiSettings: () => request("/ai-settings"),
+  saveAiSettings: (body) => request("/ai-settings", { method: "PUT", body }),
+  testAiSettings: () => request("/ai-settings/test", { method: "POST" })
 };

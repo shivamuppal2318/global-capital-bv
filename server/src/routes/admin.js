@@ -8,6 +8,7 @@ import { requireAdmin } from "../middleware/requireAuth.js";
 import { MODULES, MODULE_IDS, DEFAULT_EMPLOYEE_MODULES } from "../lib/permissions.js";
 import { encryptSecret } from "../lib/credentialCrypto.js";
 import { getSystemEmailSettings, verifySystemEmail, sendSystemEmail, welcomeEmail } from "../lib/systemMailer.js";
+import { getAiConfig, getAiSettingsRow, saveAiSettings, testAiConnection, DEFAULT_MODEL } from "../lib/aiSettings.js";
 import { appBaseUrl } from "../lib/appUrl.js";
 
 const router = Router();
@@ -207,6 +208,52 @@ router.post("/system-email/test", asyncHandler(async (req, res) => {
       ? { success: true, message: `Connected, and a test email was sent to ${to}.` }
       : { success: false, message: `Credentials are valid, but sending failed: ${delivery.reason}` }
   );
+}));
+
+// --- Claude API key (AI Assistant + Market Intelligence) ----------------
+
+router.get("/ai-settings", asyncHandler(async (_req, res) => {
+  const [row, config] = await Promise.all([getAiSettingsRow(), getAiConfig()]);
+  res.json({
+    model: row?.model ?? config.model ?? DEFAULT_MODEL,
+    // The key itself is never sent back — only enough to show it's set and
+    // which of the two sources is currently winning.
+    hasKey: Boolean(config.apiKey),
+    keyPreview: config.apiKey ? `sk-…${config.apiKey.slice(-4)}` : null,
+    source: config.source,
+    updatedAt: row?.updatedAt ?? null
+  });
+}));
+
+const aiSettingsSchema = z.object({
+  // Optional on update so the model can be changed without re-pasting the key.
+  apiKey: z.string().min(1).optional(),
+  model: z.string().min(1).default(DEFAULT_MODEL)
+});
+
+router.put("/ai-settings", asyncHandler(async (req, res) => {
+  const parsed = aiSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const existing = await getAiSettingsRow();
+  if (!existing && !parsed.data.apiKey) {
+    return res.status(400).json({ error: "An API key is required the first time you set this up." });
+  }
+
+  await saveAiSettings(parsed.data);
+  const config = await getAiConfig();
+  res.json({
+    model: config.model,
+    hasKey: Boolean(config.apiKey),
+    keyPreview: config.apiKey ? `sk-…${config.apiKey.slice(-4)}` : null,
+    source: config.source
+  });
+}));
+
+router.post("/ai-settings/test", asyncHandler(async (_req, res) => {
+  res.json(await testAiConnection());
 }));
 
 export default router;

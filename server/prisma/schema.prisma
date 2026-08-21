@@ -150,6 +150,19 @@ model SystemEmailSettings {
   updatedAt         DateTime @updatedAt
 }
 
+// Claude credentials for the AI Assistant and Market Intelligence, set
+// from Admin Panel → AI Assistant. Stored here rather than relying on
+// ANTHROPIC_API_KEY because env vars set in Coolify's UI don't reliably
+// reach the container — see src/lib/aiSettings.js for the lookup order.
+model AiSettings {
+  id String @id @default(cuid())
+  // AES-256-GCM ciphertext, same scheme as EmailAccount (lib/credentialCrypto.js).
+  apiKeyEncrypted String
+  model           String   @default("claude-sonnet-5")
+  lastTestedAt    DateTime?
+  updatedAt       DateTime @updatedAt
+}
+
 model PasswordResetToken {
   id String @id @default(cuid())
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
