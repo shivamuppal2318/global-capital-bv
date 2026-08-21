@@ -84,8 +84,8 @@ async function processOneSignal(raw, defaultCampaignId, summary) {
   });
 
   try {
-    if (!isAiProcessorConfigured()) {
-      throw new Error("AI processor not configured — see aiProcessor.js");
+    if (!(await isAiProcessorConfigured())) {
+      throw new Error("AI processor not configured — add a Claude API key under Admin Panel → AI Assistant");
     }
     const processed = await processSignalWithAi(raw);
     const matchedLead = await findExistingLeadByCompany(processed.entityName);

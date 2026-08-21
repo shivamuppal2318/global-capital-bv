@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAnthropicClient, ANTHROPIC_MODEL } from "../lib/anthropic.js";
+import { getAnthropicClient, getAnthropicModel } from "../lib/anthropic.js";
 import { buildBusinessContext } from "../lib/businessContext.js";
 
 const router = Router();
@@ -20,11 +20,11 @@ function buildSystemPrompt(context) {
 
 router.post("/chat", async (req, res, next) => {
   try {
-    const anthropic = getAnthropicClient();
+    const anthropic = await getAnthropicClient();
     if (!anthropic) {
       return res.json({
         reply:
-          "The AI assistant isn't configured yet — add an ANTHROPIC_API_KEY to server/.env (get one at console.anthropic.com), then restart the backend."
+          "The AI assistant isn't set up yet — an admin can add a Claude API key under Admin Panel → AI Assistant (get one at console.anthropic.com)."
       });
     }
 
@@ -37,7 +37,7 @@ router.post("/chat", async (req, res, next) => {
     const trimmedHistory = Array.isArray(history) ? history.slice(-MAX_HISTORY_TURNS) : [];
 
     const response = await anthropic.messages.create({
-      model: ANTHROPIC_MODEL,
+      model: await getAnthropicModel(),
       max_tokens: 1024,
       system: buildSystemPrompt(context),
       messages: [...trimmedHistory, { role: "user", content: message }]
@@ -52,7 +52,7 @@ router.post("/chat", async (req, res, next) => {
     res.json({ reply: reply || "I didn't get a response back — try rephrasing that." });
   } catch (err) {
     if (err.status === 401) {
-      return res.json({ reply: "The Anthropic API rejected the configured key — double-check ANTHROPIC_API_KEY in server/.env." });
+      return res.json({ reply: "The Anthropic API rejected the configured key — an admin can check it under Admin Panel → AI Assistant." });
     }
     next(err);
   }

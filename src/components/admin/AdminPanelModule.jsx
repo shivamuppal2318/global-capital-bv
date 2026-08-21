@@ -1,14 +1,18 @@
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { LinkIcon, LockIcon, MailIcon, ShieldIcon, UsersIcon } from "../Icons";
+import { LinkIcon, LockIcon, MailIcon, ShieldIcon, SparklesIcon, UsersIcon } from "../Icons";
 import { EmployeesPanel } from "./EmployeesPanel";
 import { WhatsappApiPanel } from "./WhatsappApiPanel";
 import { MailboxManager } from "./MailboxManager";
 import { MyAccountPanel } from "./MyAccountPanel";
+import { SystemEmailPanel } from "./SystemEmailPanel";
+import { AiSettingsPanel } from "./AiSettingsPanel";
 
 const ADMIN_TABS = [
   { id: "employees", label: "Employees", icon: UsersIcon },
+  { id: "ai-assistant", label: "AI Assistant", icon: SparklesIcon },
   { id: "whatsapp-api", label: "WhatsApp API", icon: LinkIcon },
+  { id: "system-email", label: "System Email", icon: MailIcon },
   { id: "email-accounts", label: "Email Accounts", icon: MailIcon }
 ];
 const EVERYONE_TABS = [
@@ -60,7 +64,9 @@ export function AdminPanelModule() {
       </div>
 
       {currentTab.id === "employees" ? <EmployeesPanel /> : null}
+      {currentTab.id === "ai-assistant" ? <AiSettingsPanel /> : null}
       {currentTab.id === "whatsapp-api" ? <WhatsappApiPanel /> : null}
+      {currentTab.id === "system-email" ? <SystemEmailPanel /> : null}
       {currentTab.id === "email-accounts" ? <MailboxManager scope="all" /> : null}
       {currentTab.id === "my-account" ? (
         <div className="space-y-4">

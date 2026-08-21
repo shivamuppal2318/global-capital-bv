@@ -1,13 +1,14 @@
 // Real LLM call (per explicit choice over a rule-based heuristic) — uses
-// the Claude Messages API. No ANTHROPIC_API_KEY is configured in this
-// environment, so the actual network call has never run; the prompt
-// format and response-parsing below ARE fully tested against realistic
-// mock model output, just not against a real model response.
-const REQUIRED_ENV = "ANTHROPIC_API_KEY";
+// the Claude Messages API. Credentials come from Admin Panel → AI
+// Assistant, falling back to ANTHROPIC_API_KEY (see lib/aiSettings.js).
+// The prompt format and response-parsing below are fully tested against
+// realistic mock model output.
+import { getAiConfig, isAiConfigured } from "../aiSettings.js";
+
 const VALID_SIGNAL_TYPES = ["FUNDING", "ACQUISITION", "EXPANSION", "LEADERSHIP_CHANGE", "DISTRESS", "OTHER"];
 
 export function isAiProcessorConfigured() {
-  return Boolean(process.env[REQUIRED_ENV]);
+  return isAiConfigured();
 }
 
 // Pure — testable without any network access or API key.
@@ -62,19 +63,20 @@ export function parseProcessingResponse(rawResponseText) {
 }
 
 export async function processSignalWithAi(rawSignal) {
-  if (!isAiProcessorConfigured()) {
-    throw new Error(`AI processor is not configured — set ${REQUIRED_ENV}.`);
+  const { apiKey, model } = await getAiConfig();
+  if (!apiKey) {
+    throw new Error("AI processor is not configured — add a Claude API key under Admin Panel → AI Assistant.");
   }
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
-      "x-api-key": process.env[REQUIRED_ENV],
+      "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      model: "claude-sonnet-5",
+      model,
       max_tokens: 500,
       messages: [{ role: "user", content: buildProcessingPrompt(rawSignal) }]
     })
