@@ -53,3 +53,20 @@ export function parseLeadsCsv(text) {
 
   return { rows, errors };
 }
+
+function escapeCsvCell(value) {
+  const normalized = String(value ?? "");
+  if (normalized.includes(",") || normalized.includes('"') || normalized.includes("\n")) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  return normalized;
+}
+
+// Builds CSV text (header + rows) for both the "download a starter template"
+// and "download the rows that will actually be imported" cases — same shape
+// parseLeadsCsv expects back, so a downloaded/re-uploaded file round-trips.
+export function buildLeadsCsv(rows) {
+  const header = ["name", "company", "email", "owner"];
+  const lines = [header.join(","), ...rows.map((row) => header.map((field) => escapeCsvCell(row[field])).join(","))];
+  return lines.join("\n");
+}

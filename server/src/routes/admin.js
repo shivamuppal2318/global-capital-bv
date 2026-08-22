@@ -9,6 +9,8 @@ import { MODULES, MODULE_IDS, DEFAULT_EMPLOYEE_MODULES, liveModules } from "../l
 import { encryptSecret } from "../lib/credentialCrypto.js";
 import { getSystemEmailSettings, verifySystemEmail, sendSystemEmail, welcomeEmail } from "../lib/systemMailer.js";
 import { getAiConfig, getAiSettingsRow, saveAiSettings, clearAiSettings, testAiConnection, DEFAULT_MODEL } from "../lib/aiSettings.js";
+import { getProviderKey, getMarketIntelSettingsRow, saveMarketIntelSettings, clearProviderKey } from "../lib/marketIntelligenceSettings.js";
+import { testProviderConnection } from "../lib/marketIntelligenceProviderTest.js";
 import { appBaseUrl } from "../lib/appUrl.js";
 
 const router = Router();
@@ -264,6 +266,58 @@ router.delete("/ai-settings", asyncHandler(async (_req, res) => {
   await clearAiSettings();
   const config = await getAiConfig();
   res.json({ model: config.model, hasKey: Boolean(config.apiKey), keyPreview: null, source: config.source });
+}));
+
+// --- Market Intelligence data-source API keys (Exa, NewsAPI.ai, Firecrawl, Apollo) ----
+
+const MARKET_INTEL_PROVIDERS = ["exa", "newsapi", "firecrawl", "apollo"];
+
+function requireKnownProvider(req, res, next) {
+  if (!MARKET_INTEL_PROVIDERS.includes(req.params.provider)) {
+    return res.status(404).json({ error: `Unknown provider "${req.params.provider}".` });
+  }
+  next();
+}
+
+router.get("/market-intelligence-settings", asyncHandler(async (_req, res) => {
+  const row = await getMarketIntelSettingsRow();
+  const providers = {};
+  for (const provider of MARKET_INTEL_PROVIDERS) {
+    const { apiKey, source } = await getProviderKey(provider);
+    providers[provider] = {
+      hasKey: Boolean(apiKey),
+      keyPreview: apiKey ? `…${apiKey.slice(-4)}` : null,
+      source
+    };
+  }
+  res.json({ providers, updatedAt: row?.updatedAt ?? null });
+}));
+
+const providerKeySchema = z.object({ apiKey: z.string().min(1) });
+
+router.put("/market-intelligence-settings/:provider", requireKnownProvider, asyncHandler(async (req, res) => {
+  const parsed = providerKeySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  await saveMarketIntelSettings({ [req.params.provider]: parsed.data.apiKey });
+  const { apiKey, source } = await getProviderKey(req.params.provider);
+  res.json({ hasKey: Boolean(apiKey), keyPreview: apiKey ? `…${apiKey.slice(-4)}` : null, source });
+}));
+
+router.post("/market-intelligence-settings/:provider/test", requireKnownProvider, asyncHandler(async (req, res) => {
+  res.json(await testProviderConnection(req.params.provider));
+}));
+
+// Clears the stored key for one provider (rotation, or backing out a wrong
+// one). Falls back to that provider's env var if any, otherwise to
+// "unconfigured" — the source is simply skipped by the pipeline, same as
+// today when no key has ever been set.
+router.delete("/market-intelligence-settings/:provider", requireKnownProvider, asyncHandler(async (req, res) => {
+  await clearProviderKey(req.params.provider);
+  const { apiKey, source } = await getProviderKey(req.params.provider);
+  res.json({ hasKey: Boolean(apiKey), keyPreview: apiKey ? `…${apiKey.slice(-4)}` : null, source });
 }));
 
 export default router;

@@ -58,8 +58,9 @@ app.use("/api/auth", authRouter);
 // replaces — auth was deliberately deferred until it could be done as one
 // real pass instead of piecemeal.
 const PUBLIC_PREFIXES = ["/api/webhooks", "/api/unsubscribe", "/api/nda", "/api/track"];
+const INBOUND_WEBHOOK_PATHS = ["/api/leads/inbound", "/api/email/leads/inbound"];
 app.use((req, res, next) => {
-  if (req.method === "POST" && req.path === "/api/leads/inbound") return next();
+  if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
   if (PUBLIC_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
   return requireAuth(req, res, next);
 });
@@ -82,7 +83,20 @@ app.use("/api/whatsapp/bot-flows", wa, botFlowsRouter);
 app.use("/api/whatsapp/crm-triggers", wa, crmTriggersRouter);
 app.use("/api/whatsapp/automation", wa, automationRouter);
 app.use("/api/whatsapp/settings", settingsRouter);
-app.use("/api/leads", requireModule("crm-workspace", "leads"), leadsRouter);
+app.use(
+  "/api/leads",
+  (req, res, next) => {
+    // Mirrors the requireAuth bypass above: an external platform's
+    // API-key-authenticated POST to /inbound has no req.user (requireAuth
+    // never ran for it), so requireModule's permission check must be
+    // skipped here too — otherwise every inbound webhook call gets
+    // rejected as "no access" before it ever reaches the route's own
+    // x-api-key check.
+    if (req.method === "POST" && req.path === "/inbound") return next();
+    return requireModule("crm-workspace", "leads")(req, res, next);
+  },
+  leadsRouter
+);
 app.use("/api/ai", aiChatRouter);
 app.use("/api/zoom", requireModule("meetings"), zoomRouter);
 app.use("/api/meetings", requireModule("meetings"), meetingsRouter);
@@ -94,7 +108,18 @@ app.use("/api/meetings", requireModule("meetings"), meetingsRouter);
 // never through the logged-in app UI.
 const outreach = requireModule("cold-bulk-mailing", "leads");
 app.use("/api/email/campaigns", outreach, emailCampaignsRouter);
-app.use("/api/email/leads", outreach, emailLeadsRouter);
+app.use(
+  "/api/email/leads",
+  (req, res, next) => {
+    // Same reasoning as the /api/leads/inbound bypass above: this call has
+    // no req.user (requireAuth already skipped it), so the module gate must
+    // skip it too, or every external POST dies here with a 403 before ever
+    // reaching the route's own x-api-key check.
+    if (req.method === "POST" && req.path === "/inbound") return next();
+    return outreach(req, res, next);
+  },
+  emailLeadsRouter
+);
 app.use("/api/email/templates", requireModule("cold-bulk-mailing", "templates-cadences"), emailTemplatesRouter);
 // Not module-gated: everyone manages their own mailbox from Admin Panel →
 // My Account, and the router itself already scopes non-admins to the

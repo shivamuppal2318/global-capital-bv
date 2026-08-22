@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
-import { MailIcon, UsersIcon, WorkflowIcon, CogIcon } from "../Icons.jsx";
+import { MailIcon, UsersIcon, InboxIcon, WorkflowIcon, CogIcon } from "../Icons.jsx";
 import { noteToneClass, StatCard } from "../ui.jsx";
 import { useEmailOutreachState } from "./useEmailOutreachState.js";
 import { CampaignsTab } from "./CampaignsTab.jsx";
 import { LeadsTab } from "./LeadsTab.jsx";
+import { RepliesTab } from "./RepliesTab.jsx";
 import { AutomationTab } from "./AutomationTab.jsx";
 import { SettingsTab } from "./SettingsTab.jsx";
 
 const tabs = [
   { id: "campaigns", label: "Campaigns", icon: MailIcon },
   { id: "leads", label: "Leads", icon: UsersIcon },
+  { id: "replies", label: "Replies", icon: InboxIcon },
   { id: "automation", label: "Automation", icon: WorkflowIcon },
   { id: "settings", label: "Settings", icon: CogIcon }
 ];
@@ -17,6 +19,7 @@ const tabs = [
 const tabContent = {
   campaigns: CampaignsTab,
   leads: LeadsTab,
+  replies: RepliesTab,
   automation: AutomationTab,
   settings: SettingsTab
 };
@@ -98,7 +101,7 @@ export function EmailOutreachModule({ initialTab = "campaigns" }) {
       <nav className="flex flex-wrap gap-2 rounded-[18px] border border-[#d6deea] bg-white p-2 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         {tabs.map((tab) => {
           const active = tab.id === activeTab;
-          const badgeCount = tab.id === "leads" ? mailing.repliedLeads.length : null;
+          const badgeCount = tab.id === "replies" ? mailing.repliedLeads.length : null;
           return (
             <button
               key={tab.id}

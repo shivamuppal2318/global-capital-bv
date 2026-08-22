@@ -27,5 +27,12 @@ export const adminApi = {
   getAiSettings: () => request("/ai-settings"),
   saveAiSettings: (body) => request("/ai-settings", { method: "PUT", body }),
   testAiSettings: () => request("/ai-settings/test", { method: "POST" }),
-  removeAiKey: () => request("/ai-settings", { method: "DELETE" })
+  removeAiKey: () => request("/ai-settings", { method: "DELETE" }),
+  // Market Intelligence's data-source keys (Exa, NewsAPI.ai, Firecrawl,
+  // Apollo) — same never-returned-key / hasKey+preview+source shape as AI
+  // settings above, one provider at a time.
+  getMarketIntelSettings: () => request("/market-intelligence-settings"),
+  saveMarketIntelProviderKey: (provider, apiKey) => request(`/market-intelligence-settings/${provider}`, { method: "PUT", body: { apiKey } }),
+  testMarketIntelProvider: (provider) => request(`/market-intelligence-settings/${provider}/test`, { method: "POST" }),
+  removeMarketIntelProviderKey: (provider) => request(`/market-intelligence-settings/${provider}`, { method: "DELETE" })
 };

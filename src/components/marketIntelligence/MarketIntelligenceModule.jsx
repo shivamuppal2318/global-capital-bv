@@ -199,39 +199,6 @@ export function MarketIntelligenceModule() {
         </div>
       </section>
 
-      <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <RadarIcon className="size-5 text-[#8853d0]" />
-            <h2 className="text-[16px] font-semibold text-[#102246]">Source connections</h2>
-          </div>
-          <ActionButton label={running ? "Running…" : "Run pipeline now"} icon={SendIcon} primary onClick={handleRunPipeline} />
-        </div>
-
-        {status ? (
-          <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
-            {services.map((service) => (
-              <div key={service.key} className="rounded-[14px] border border-[#e7edf5] px-3 py-3">
-                <p className="text-[13px] font-medium text-[#102246]">{service.label}</p>
-                <span
-                  className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                    status[service.key] ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#748096]"
-                  }`}
-                >
-                  {status[service.key] ? "Connected" : "Not configured"}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-4 text-[14px] text-[#9aa6ba]">No status available — backend unreachable.</p>
-        )}
-
-        <div className="mt-5 rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3">
-          <p className="text-[13px] text-[#5f6f89]">{notice}</p>
-        </div>
-      </div>
-
       {signals.length > 0 ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {[
@@ -277,7 +244,7 @@ export function MarketIntelligenceModule() {
             <ChatBubble role="assistant">
               {chatEnabled
                 ? `Hi! Ask me anything about the ${signals.length} captured signal${signals.length === 1 ? "" : "s"} — e.g. "any renewable energy funding signals?" or "summarize the most relevant one."`
-                : `No AI provider connected yet, so I can't truly understand questions — but ask me anything and I'll keyword-search the ${signals.length} captured signal${signals.length === 1 ? "" : "s"} for you. Connect ANTHROPIC_API_KEY (see "AI processing" above) for real AI answers.`}
+                : `No AI provider connected yet, so I can't truly understand questions — but ask me anything and I'll keyword-search the ${signals.length} captured signal${signals.length === 1 ? "" : "s"} for you. Connect ANTHROPIC_API_KEY (see "Data sources" below) for real AI answers.`}
             </ChatBubble>
           ) : null}
 
@@ -394,9 +361,40 @@ export function MarketIntelligenceModule() {
           <p className="mt-4 text-[14px] text-[#9aa6ba]">
             {signals.length > 0
               ? `No captured headlines match "${searchText}".`
-              : "No signals captured yet — either the backend's unreachable, or every source is unconfigured (see above)."}
+              : "No signals captured yet — either the backend's unreachable, or a data source needs configuring below."}
           </p>
         )}
+      </div>
+
+      <div className="rounded-[18px] border border-[#e7edf5] bg-[#f8faff] px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <RadarIcon className="size-4 text-[#8853d0]" />
+            <h2 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-[#5f6f89]">Data sources (technical)</h2>
+          </div>
+          <ActionButton label={running ? "Running…" : "Run pipeline now"} icon={SendIcon} onClick={handleRunPipeline} />
+        </div>
+
+        {status ? (
+          <div className="mt-4 grid gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+            {services.map((service) => (
+              <div key={service.key} className="rounded-[12px] border border-[#e7edf5] bg-white px-3 py-2.5">
+                <p className="text-[12px] font-medium text-[#334463]">{service.label}</p>
+                <span
+                  className={`mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    status[service.key] ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#94a0b3]"
+                  }`}
+                >
+                  {status[service.key] ? "Connected" : "Not configured"}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-[13px] text-[#9aa6ba]">No status available — backend unreachable.</p>
+        )}
+
+        <p className="mt-3 text-[12px] text-[#8593ac]">{notice}</p>
       </div>
     </div>
   );

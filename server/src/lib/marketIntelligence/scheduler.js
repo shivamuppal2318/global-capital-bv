@@ -12,9 +12,13 @@ const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Google News needs no API key, so it alone is enough to make a scheduled
 // run worthwhile — without this, the scheduler stayed off in the (common)
-// case where nobody's paid for NewsAPI/Exa/Firecrawl yet.
-export function isMarketIntelligenceSchedulerEnabled() {
-  return isGoogleNewsConfigured() || isNewsApiConfigured() || isExaConfigured() || isFirecrawlConfigured();
+// case where nobody's paid for NewsAPI/Exa/Firecrawl yet. Async now that a
+// source's key can come from the database (see
+// lib/marketIntelligenceSettings.js), not just the environment.
+export async function isMarketIntelligenceSchedulerEnabled() {
+  if (isGoogleNewsConfigured()) return true;
+  const [newsApi, exa, firecrawl] = await Promise.all([isNewsApiConfigured(), isExaConfigured(), isFirecrawlConfigured()]);
+  return newsApi || exa || firecrawl;
 }
 
 let intervalHandle = null;
@@ -23,8 +27,8 @@ let intervalHandle = null;
 // on an interval. Deliberately does nothing (not even the initial run) if
 // no source is configured — this was previously the entire gap: nothing
 // called POST /market-intelligence/run automatically at all.
-export function startMarketIntelligenceScheduler() {
-  if (!isMarketIntelligenceSchedulerEnabled()) {
+export async function startMarketIntelligenceScheduler() {
+  if (!(await isMarketIntelligenceSchedulerEnabled())) {
     console.log("[market-intelligence-scheduler] no source configured — scheduler not started.");
     return null;
   }
