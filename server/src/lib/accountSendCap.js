@@ -21,7 +21,7 @@ export async function isAccountUnderDailyCap(account, client = prisma) {
   const startOfDayUtc = new Date();
   startOfDayUtc.setUTCHours(0, 0, 0, 0);
 
-  const sentToday = await client.activityLog.count({
+  const sentToday = await client.emailActivityLog.count({
     where: {
       kind: "BRANCH_EMAIL_SENT",
       createdAt: { gte: startOfDayUtc },

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { isAccountUnderDailyCap } from "../src/lib/accountSendCap.js";
 
 function fakeClient(count) {
-  return { activityLog: { count: async () => count } };
+  return { emailActivityLog: { count: async () => count } };
 }
 
 test("returns true (no cap to check) when no account is assigned", async () => {
@@ -28,7 +28,7 @@ test("returns false when sent count exceeds the account's dailyLimit", async () 
 test("scopes the count query to sends across every campaign sharing this account", async () => {
   let capturedArgs;
   const client = {
-    activityLog: {
+    emailActivityLog: {
       count: async (args) => {
         capturedArgs = args;
         return 0;

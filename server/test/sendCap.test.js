@@ -6,7 +6,7 @@ import { isUnderDailyCap } from "../src/lib/sendCap.js";
 // singleton) specifically so it's testable without a live Postgres or
 // having to mock Prisma's proxy-based model delegates.
 function fakeClient(count) {
-  return { activityLog: { count: async () => count } };
+  return { emailActivityLog: { count: async () => count } };
 }
 
 // Fully-ramped (created 365 days ago) so the warm-up schedule in warmup.js
@@ -35,7 +35,7 @@ test("isUnderDailyCap returns true when nothing has been sent yet", async () => 
 test("isUnderDailyCap scopes the count query to BRANCH_EMAIL_SENT, today, and the given campaign", async () => {
   let capturedArgs;
   const client = {
-    activityLog: {
+    emailActivityLog: {
       count: async (args) => {
         capturedArgs = args;
         return 0;

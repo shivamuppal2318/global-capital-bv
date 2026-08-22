@@ -49,7 +49,7 @@ export function parseChatResponse(data) {
   return text.trim();
 }
 
-export async function askChatAssistant(message, { signals = [], history = [] } = {}) {
+async function callAnthropic(message, { signals, history }) {
   const { apiKey, model } = await getAiConfig();
   if (!apiKey) {
     throw new Error("AI processor is not configured — add a Claude API key under Admin Panel → AI Assistant.");
@@ -76,4 +76,20 @@ export async function askChatAssistant(message, { signals = [], history = [] } =
 
   const data = await response.json();
   return parseChatResponse(data);
+}
+
+// Anthropic occasionally returns a 200 with no text content for reasons
+// that aren't surfaced (observed intermittently, not tied to any
+// particular question) — a same-request retry has reliably succeeded when
+// tested, so it's worth one silent retry before actually failing the
+// user's question.
+export async function askChatAssistant(message, { signals = [], history = [] } = {}) {
+  try {
+    return await callAnthropic(message, { signals, history });
+  } catch (err) {
+    if (!err.message.includes("empty response")) {
+      throw err;
+    }
+    return await callAnthropic(message, { signals, history });
+  }
 }

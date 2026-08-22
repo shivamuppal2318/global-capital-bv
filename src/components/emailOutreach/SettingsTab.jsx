@@ -1,14 +1,83 @@
 import { ActionButton } from "../ui.jsx";
-import { PlusIcon, CogIcon } from "../Icons.jsx";
+import { PlusIcon, CogIcon, ZapIcon, CheckCircleIcon } from "../Icons.jsx";
 
 // Mailbox (SMTP account) management — separated out from Campaigns so
 // adding/rotating sending mailboxes doesn't compete for space with the
 // campaign list and lead intake.
 export function SettingsTab({ mailing }) {
-  const { emailAccounts, newAccountForm, setNewAccountForm, handleAddEmailAccount, handleDeactivateAccount, automationNotice } = mailing;
+  const {
+    emailAccounts, newAccountForm, setNewAccountForm, handleAddEmailAccount, handleDeactivateAccount, automationNotice,
+    systemStatus, testConnectionResult, handleTestConnection
+  } = mailing;
 
   return (
     <section className="space-y-6">
+      <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+        <div className="flex items-center gap-3">
+          <ZapIcon className="size-5 text-[#f29b3a]" />
+          <h2 className="text-[16px] font-semibold text-[#102246]">System status</h2>
+        </div>
+        <p className="mt-1 pl-8 text-[14px] text-[#5f6f89]">What's actually configured on the server right now — set via environment variables, not from this UI.</p>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-[14px] border border-[#e7edf5] px-4 py-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[13px] font-semibold text-[#102246]">Email sending</p>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  systemStatus?.emailProvider === "smtp" ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#748096]"
+                }`}
+              >
+                {systemStatus ? (systemStatus.emailProvider === "smtp" ? "SMTP configured" : `${systemStatus.emailProvider} mode`) : "Checking…"}
+              </span>
+            </div>
+            {systemStatus?.emailProvider === "smtp" ? (
+              <p className="mt-2 text-[12px] text-[#6a7790]">
+                {systemStatus.smtpHost} · sending as {systemStatus.smtpFromAddress}
+              </p>
+            ) : (
+              <p className="mt-2 text-[12px] text-[#6a7790]">Emails are only logged to the server console, not delivered.</p>
+            )}
+            {systemStatus?.emailProvider === "smtp" ? (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={testConnectionResult?.pending}
+                  className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#3046b2] transition hover:bg-[#f4f7fb] disabled:opacity-50"
+                >
+                  {testConnectionResult?.pending ? "Testing…" : "Test connection"}
+                </button>
+                {testConnectionResult && !testConnectionResult.pending ? (
+                  <p className={`mt-2 flex items-start gap-1.5 text-[12px] ${testConnectionResult.success ? "text-[#2b9b60]" : "text-[#c94b6b]"}`}>
+                    {testConnectionResult.success ? <CheckCircleIcon className="mt-0.5 size-3.5 shrink-0" /> : null}
+                    {testConnectionResult.message}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-[14px] border border-[#e7edf5] px-4 py-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[13px] font-semibold text-[#102246]">Automatic follow-ups</p>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  systemStatus?.queueEnabled ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#748096]"
+                }`}
+              >
+                {systemStatus ? (systemStatus.queueEnabled ? "Running" : "Not running") : "Checking…"}
+              </span>
+            </div>
+            <p className="mt-2 text-[12px] text-[#6a7790]">
+              {systemStatus?.queueEnabled
+                ? "Scheduled follow-up emails are sent automatically."
+                : "Leads are saved, but scheduled follow-ups won't fire until REDIS_URL is configured."}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         <div className="flex items-center gap-3">
           <CogIcon className="size-5 text-[#5f6f89]" />

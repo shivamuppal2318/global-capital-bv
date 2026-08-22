@@ -9,13 +9,27 @@ const callStatusToneClass = {
   canceled: "bg-[#ffe4ee] text-[#ef5b8f]"
 };
 
+const leadStatusLabel = {
+  NO_REPLY: "No reply yet",
+  INTERESTED: "Interested",
+  ZOOM_REQUEST: "Wants Zoom",
+  INFO_REQUEST: "Asked for info"
+};
+
+const leadStatusToneClass = {
+  NO_REPLY: "bg-[#edf2f7] text-[#748096]",
+  INTERESTED: noteToneClass.green,
+  ZOOM_REQUEST: noteToneClass.indigo,
+  INFO_REQUEST: noteToneClass.amber
+};
+
 // What happens once a lead actually replies: classify → draft the
 // reply-based email → send it → track the workflow it moves through.
 // Pairs with CampaignsTab.jsx, which sets up the campaign this reply came
 // from; both share state via useEmailOutreachState.
 export function LeadsTab({ mailing }) {
   const {
-    repliedLeads, selectedLeadId, selectedLead, selectedLeadTimeline, loadLeadIntoWorkflow,
+    repliedLeads, allLeads, selectedLeadId, selectedLead, selectedLeadTimeline, loadLeadIntoWorkflow, handleDeleteLead,
     automationForm, activeReplyRule, handleApplyRule, replyAction, handleTemplateDraftChange,
     handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, previewHtml, setPreviewHtml,
     simulateIncomingReply, liveSteps, workflowSteps,
@@ -36,7 +50,7 @@ export function LeadsTab({ mailing }) {
               <p className="text-[15px] font-semibold text-[#102246]">Add leads</p>
             </div>
             <p className="mt-0.5 pl-8 text-[13px] text-[#8593ac]">
-              Enrolls into {selectedCampaign?.name ?? "the selected campaign"}'s no-reply cadence via the backend.
+              Adds them to {selectedCampaign?.name ?? "the selected campaign"} and starts the automatic follow-up emails.
             </p>
           </div>
           <div className="flex shrink-0 gap-1 rounded-[10px] bg-[#f0f3f9] p-1">
@@ -118,16 +132,64 @@ export function LeadsTab({ mailing }) {
       </div>
 
       <div className="rounded-[22px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <UsersIcon className="size-5 text-[#4766cc]" />
+            <p className="text-[15px] font-semibold text-[#102246]">All leads in {selectedCampaign?.name ?? "this campaign"}</p>
+          </div>
+          <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">{allLeads.length} total</span>
+        </div>
+        <p className="mt-1 text-[13px] text-[#8593ac]">
+          Every lead enrolled here, whether they've replied yet or not — this is what confirms "Add lead" actually saved something.
+        </p>
+
+        {allLeads.length > 0 ? (
+          <div className="mt-4 space-y-2">
+            {allLeads.map((lead) => (
+              <div key={lead.id} className="group flex items-center justify-between gap-3 rounded-[12px] border border-[#e7edf5] px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-[14px] font-medium text-[#102246]">{lead.name}</p>
+                    <span className="shrink-0 text-[13px] text-[#6a7790]">— {lead.company}</span>
+                  </div>
+                  <p className="truncate text-[12px] text-[#8593ac]">{lead.email}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${leadStatusToneClass[lead.replyType] ?? "bg-[#edf2f7] text-[#748096]"}`}>
+                  {leadStatusLabel[lead.replyType] ?? lead.replyType}
+                </span>
+                <span className="hidden shrink-0 text-[12px] text-[#8593ac] sm:inline">{new Date(lead.createdAt).toLocaleDateString()}</span>
+                <button
+                  type="button"
+                  title="Delete lead"
+                  aria-label="Delete lead"
+                  onClick={() => {
+                    if (window.confirm(`Delete ${lead.name} (${lead.company})? This also removes their reply/activity history.`)) {
+                      handleDeleteLead(lead);
+                    }
+                  }}
+                  className="shrink-0 grid size-7 place-items-center rounded-[8px] text-[#c7cedb] opacity-0 transition group-hover:opacity-100 hover:bg-[#fdecf1] hover:text-[#a13a56]"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-[13px] text-[#9aa6ba]">No leads in this campaign yet — add one above.</p>
+        )}
+      </div>
+
+      <div className="rounded-[22px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-[15px] font-semibold text-[#102246]">Bulk to workflow handoff</p>
+            <p className="text-[15px] font-semibold text-[#102246]">Replies ready for follow-up</p>
             <p className="mt-1 text-[14px] text-[#5f6f89]">
-              {repliedLeads.length} companies replied after the bulk campaign and are now eligible for automation.
+              {repliedLeads.length} companies replied and are ready for a personalized follow-up.
             </p>
           </div>
           <div className="flex items-center gap-3">
             <span className="rounded-full bg-[#dff5e7] px-3 py-1 text-[12px] font-semibold text-[#2b9b60]">
-              {repliedLeads.filter((lead) => lead.movedToWorkflow).length} in workflow
+              {repliedLeads.filter((lead) => lead.movedToWorkflow).length} in follow-up
             </span>
             <ActionButton label="Simulate reply" icon={UsersIcon} onClick={simulateIncomingReply} />
           </div>
@@ -150,14 +212,13 @@ export function LeadsTab({ mailing }) {
 
           <div>
             {repliedLeads.map((lead) => (
-              <button
+              <div
                 key={lead.id}
-                type="button"
-                onClick={() => loadLeadIntoWorkflow(lead)}
-                className={`flex w-full items-start gap-3 border-b border-[#e7edf5] px-5 py-4 text-left transition hover:bg-[#f8faff] ${
+                className={`group flex w-full items-start gap-3 border-b border-[#e7edf5] px-5 py-4 transition hover:bg-[#f8faff] ${
                   selectedLeadId === lead.id ? "bg-[#f5f8fd]" : ""
                 }`}
               >
+                <button type="button" onClick={() => loadLeadIntoWorkflow(lead)} className="flex flex-1 items-start gap-3 text-left">
                 <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#eef1ff] text-[13px] font-semibold text-[#4766cc]">
                   {lead.name
                     .split(" ")
@@ -203,7 +264,22 @@ export function LeadsTab({ mailing }) {
                     ) : null}
                   </div>
                 </div>
-              </button>
+                </button>
+                <button
+                  type="button"
+                  title="Delete lead"
+                  aria-label="Delete lead"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (window.confirm(`Delete ${lead.name} (${lead.company})? This also removes their reply/activity history.`)) {
+                      handleDeleteLead(lead);
+                    }
+                  }}
+                  className="mt-1 shrink-0 grid size-7 place-items-center rounded-[8px] text-[#c7cedb] opacity-0 transition group-hover:opacity-100 hover:bg-[#fdecf1] hover:text-[#a13a56]"
+                >
+                  ×
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -230,9 +306,9 @@ export function LeadsTab({ mailing }) {
               <p className="mt-3 text-[15px] font-medium text-[#102246]">{selectedLead?.replyPreview}</p>
               <div className="mt-4 space-y-2 text-[14px] text-[#435471]">
                 <p>Campaign: <span className="font-medium text-[#102246]">{selectedLead?.campaign}</span></p>
-                <p>Reply class: <span className="font-medium text-[#102246]">{automationForm.replyType}</span></p>
-                <p>Flow path: <span className="font-medium text-[#102246]">{automationForm.preferredPath}</span></p>
-                <p>CRM stage: <span className="font-medium text-[#102246]">{selectedLead?.stage}</span></p>
+                <p>Reply type: <span className="font-medium text-[#102246]">{automationForm.replyType}</span></p>
+                <p>Next step: <span className="font-medium text-[#102246]">{automationForm.preferredPath}</span></p>
+                <p>Stage: <span className="font-medium text-[#102246]">{selectedLead?.stage}</span></p>
               </div>
 
               <p className="mt-4 text-[12px] text-[#6a7790]">
@@ -319,12 +395,12 @@ export function LeadsTab({ mailing }) {
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <SendIcon className="size-5 text-[#21439b]" />
-              <h2 className="text-[16px] font-semibold text-[#102246]">Planned sequence</h2>
+              <h2 className="text-[16px] font-semibold text-[#102246]">Upcoming follow-up emails</h2>
             </div>
-            <span className="text-[14px] text-[#5f6f89]">{liveSteps.length} touches</span>
+            <span className="text-[14px] text-[#5f6f89]">{liveSteps.length} emails</span>
           </div>
           <p className="mt-2 text-[13px] text-[#8593ac]">
-            Preview of the cadence steps "Save automation" will schedule, based on the delay/follow-up settings above.
+            Preview of the follow-up emails "Save automation" will schedule, based on the timing settings above.
           </p>
           <div className="mt-6 space-y-4">
             {liveSteps.map((step) => (
@@ -339,15 +415,15 @@ export function LeadsTab({ mailing }) {
         <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
           <div className="flex items-center gap-3">
             <ChartBarIcon className="size-5 text-[#5769d4]" />
-            <h2 className="text-[16px] font-semibold text-[#102246]">Sequence summary</h2>
+            <h2 className="text-[16px] font-semibold text-[#102246]">Follow-up settings</h2>
           </div>
           <div className="mt-5 space-y-3 text-[14px] text-[#435471]">
             <p>Audience: <span className="font-medium text-[#102246]">{automationForm.audience}</span></p>
             <p>Template: <span className="font-medium text-[#102246]">{automationForm.template}</span></p>
-            <p>Cadence gap: <span className="font-medium text-[#102246]">{automationForm.delayDays} days</span></p>
-            <p>Daily cap: <span className="font-medium text-[#102246]">{automationForm.dailyLimit}/day</span></p>
+            <p>Days between emails: <span className="font-medium text-[#102246]">{automationForm.delayDays}</span></p>
+            <p>Emails per day: <span className="font-medium text-[#102246]">{automationForm.dailyLimit}</span></p>
             <p>A/B test: <span className="font-medium text-[#102246]">{automationForm.abTest ? "Enabled" : "Disabled"}</span></p>
-            <p>Reply branch: <span className="font-medium text-[#102246]">{automationForm.replyType}</span></p>
+            <p>Reply type: <span className="font-medium text-[#102246]">{automationForm.replyType}</span></p>
           </div>
         </div>
       </div>
@@ -360,7 +436,7 @@ export function LeadsTab({ mailing }) {
               <h2 className="text-[16px] font-semibold text-[#102246]">Lead activity timeline</h2>
             </div>
             <p className="mt-1 pl-8 text-[14px] text-[#5f6f89]">
-              Bulk campaign touchpoints and follow-up automation for {selectedLead?.name}
+              Email history and follow-ups for {selectedLead?.name}
             </p>
           </div>
           <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">
@@ -391,10 +467,10 @@ export function LeadsTab({ mailing }) {
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <WorkflowIcon className="size-5 text-[#5769d4]" />
-            <h2 className="text-[16px] font-semibold text-[#102246]">Reply-triggered workflow</h2>
+            <h2 className="text-[16px] font-semibold text-[#102246]">What happens after they reply</h2>
           </div>
           <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">
-            {automationForm.replyType === "no-reply" ? "Reminder path" : "Conditional path"}
+            {automationForm.replyType === "no-reply" ? "No-reply path" : "Reply-based path"}
           </span>
         </div>
 

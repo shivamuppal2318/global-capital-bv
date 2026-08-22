@@ -1,9 +1,50 @@
 import { Router } from "express";
 import { z } from "zod";
+import nodemailer from "nodemailer";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
+import { isQueueEnabled } from "../queue/cadenceQueue.js";
 
 export const emailCampaignsRouter = Router();
+
+// Lets the frontend show an honest "nothing is actually being sent yet"
+// banner instead of a lead just silently sitting at "No reply yet"
+// forever with no explanation — REDIS_URL not being set means the queue
+// never runs, so intro/follow-up emails never fire even though the lead
+// was saved successfully. Host/from-address are safe to expose (no
+// secrets) and let the UI show *what's* configured, not just a yes/no.
+emailCampaignsRouter.get("/system-status", asyncHandler(async (_req, res) => {
+  const emailProvider = process.env.EMAIL_PROVIDER ?? "dev";
+  res.json({
+    queueEnabled: isQueueEnabled(),
+    emailProvider,
+    smtpHost: emailProvider === "smtp" ? (process.env.SMTP_HOST ?? null) : null,
+    smtpFromAddress: emailProvider === "smtp" ? (process.env.SMTP_FROM_ADDRESS ?? null) : null
+  });
+}));
+
+// Round-trip SMTP check via nodemailer's transporter.verify() — connects
+// and authenticates but sends nothing, same pattern as
+// emailAccounts.js's per-mailbox /:id/test. This is the single
+// env-configured provider (SMTP_HOST/SMTP_USER/...), not a per-account one.
+emailCampaignsRouter.post("/test-connection", asyncHandler(async (_req, res) => {
+  if ((process.env.EMAIL_PROVIDER ?? "dev") !== "smtp") {
+    return res.json({ success: false, message: `EMAIL_PROVIDER is "${process.env.EMAIL_PROVIDER ?? "dev"}", not "smtp" — nothing to test.` });
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT),
+      secure: process.env.SMTP_SECURE === "true",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+    });
+    await transporter.verify();
+    res.json({ success: true, message: `Connected to ${process.env.SMTP_HOST} — SMTP credentials are valid.` });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+}));
 
 const createCampaignSchema = z.object({
   name: z.string().min(1),

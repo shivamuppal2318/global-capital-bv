@@ -203,6 +203,23 @@ emailLeadsRouter.get("/:id/activity", asyncHandler(async (req, res) => {
   res.json(activity);
 }));
 
+// Removes a lead added by mistake (a test entry, a wrong email, a
+// duplicate that slipped in before the campaign-scoped check existed) —
+// child rows first since neither EmailActivityLog nor ReplyEvent cascade
+// on delete.
+emailLeadsRouter.delete("/:id", asyncHandler(async (req, res) => {
+  const lead = await prisma.emailLead.findUnique({ where: { id: req.params.id } });
+  if (!lead) {
+    return res.status(404).json({ error: "Lead not found" });
+  }
+
+  await prisma.emailActivityLog.deleteMany({ where: { leadId: lead.id } });
+  await prisma.replyEvent.deleteMany({ where: { leadId: lead.id } });
+  await prisma.emailLead.delete({ where: { id: lead.id } });
+
+  res.status(204).end();
+}));
+
 function sendErrorResponse(res, err) {
   res.status(err.status ?? 500).json({ error: err.message });
 }
