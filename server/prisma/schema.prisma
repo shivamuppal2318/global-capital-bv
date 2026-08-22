@@ -162,6 +162,18 @@ model AiSettings {
   model           String   @default("claude-sonnet-5")
   lastTestedAt    DateTime?
   updatedAt       DateTime @updatedAt
+
+  // Which parts of the database the assistant may read (ids from
+  // src/lib/aiDataSources.js). Empty means "everything" only on a fresh
+  // install — the API writes the full default list on first save so an
+  // admin unticking every box genuinely means none.
+  dataSources String[] @default([])
+
+  // Free-text company background pasted in by an admin. Always sent with
+  // every question, unlike Data Room documents which are retrieved per
+  // question — this is for the standing facts the assistant should never
+  // have to look up.
+  companyProfile String?
 }
 
 // Company documents in the Data Room. The file itself lives on disk (a
@@ -186,6 +198,11 @@ model Document {
   // Set when extraction was attempted but produced nothing usable, so the
   // UI can say why rather than silently showing an unsearchable file.
   extractionNote String?
+
+  // Pinned documents are sent with every question rather than only when
+  // keywords match — for the handful of files the assistant should always
+  // know (company profile, product sheet, standard terms).
+  pinnedToAi Boolean @default(false)
 
   uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   uploadedById String?

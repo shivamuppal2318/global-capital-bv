@@ -65,6 +65,7 @@ export async function retrieveRelevantDocuments(question) {
       description: true,
       extractedText: true,
       extractionNote: true,
+      pinnedToAi: true,
       sizeBytes: true,
       createdAt: true
     }
@@ -75,6 +76,7 @@ export async function retrieveRelevantDocuments(question) {
     category: d.category,
     description: d.description ?? null,
     readable: Boolean(d.extractedText),
+    pinned: d.pinnedToAi,
     note: d.extractionNote ?? null,
     uploaded: d.createdAt.toISOString().slice(0, 10)
   }));
@@ -82,7 +84,14 @@ export async function retrieveRelevantDocuments(question) {
   const terms = [...new Set(tokenize(question))];
   const readable = all.filter((d) => d.extractedText);
 
+  // Pinned documents are the standing knowledge base — included whatever
+  // the question is, and first in line for the character budget so a run
+  // of keyword matches can't push them out.
+  const pinned = readable.filter((d) => d.pinnedToAi);
+  const pinnedIds = new Set(pinned.map((d) => d.id));
+
   const ranked = readable
+    .filter((d) => !pinnedIds.has(d.id))
     .map((doc) => ({ doc, score: scoreDocument(doc, terms) }))
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score);
@@ -90,11 +99,11 @@ export async function retrieveRelevantDocuments(question) {
   // Nothing matched but documents exist: fall back to the most recent few
   // rather than sending none, so a vague question ("what do we have on
   // file?") still gets something concrete.
-  const chosen = (ranked.length > 0 ? ranked.map((r) => r.doc) : readable).slice(0, MAX_DOCS);
+  const matched = (ranked.length > 0 ? ranked.map((r) => r.doc) : readable.filter((d) => !pinnedIds.has(d.id))).slice(0, MAX_DOCS);
 
   const documents = [];
   let budget = MAX_TOTAL_CHARS;
-  for (const doc of chosen) {
+  for (const doc of [...pinned, ...matched]) {
     if (budget <= 0) break;
     const excerpt = doc.extractedText.slice(0, Math.min(MAX_CHARS_PER_DOC, budget));
     budget -= excerpt.length;
@@ -102,10 +111,11 @@ export async function retrieveRelevantDocuments(question) {
       name: doc.originalName,
       category: doc.category,
       description: doc.description ?? null,
+      pinned: doc.pinnedToAi,
       truncated: excerpt.length < doc.extractedText.length,
       excerpt
     });
   }
 
-  return { documents, inventory };
+  return { documents, inventory, pinnedCount: pinned.length };
 }

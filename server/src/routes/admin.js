@@ -9,6 +9,7 @@ import { MODULES, MODULE_IDS, DEFAULT_EMPLOYEE_MODULES, liveModules } from "../l
 import { encryptSecret } from "../lib/credentialCrypto.js";
 import { getSystemEmailSettings, verifySystemEmail, sendSystemEmail, welcomeEmail } from "../lib/systemMailer.js";
 import { getAiConfig, getAiSettingsRow, saveAiSettings, clearAiSettings, testAiConnection, DEFAULT_MODEL } from "../lib/aiSettings.js";
+import { AI_DATA_SOURCES, AI_DATA_SOURCE_IDS } from "../lib/aiDataSources.js";
 import { appBaseUrl } from "../lib/appUrl.js";
 
 const router = Router();
@@ -213,7 +214,11 @@ router.post("/system-email/test", asyncHandler(async (req, res) => {
 // --- Claude API key (AI Assistant + Market Intelligence) ----------------
 
 router.get("/ai-settings", asyncHandler(async (_req, res) => {
-  const [row, config] = await Promise.all([getAiSettingsRow(), getAiConfig()]);
+  const [row, config, pinnedCount] = await Promise.all([
+    getAiSettingsRow(),
+    getAiConfig(),
+    prisma.document.count({ where: { pinnedToAi: true } })
+  ]);
   res.json({
     model: row?.model ?? config.model ?? DEFAULT_MODEL,
     // The key itself is never sent back — only enough to show it's set and
@@ -221,6 +226,11 @@ router.get("/ai-settings", asyncHandler(async (_req, res) => {
     hasKey: Boolean(config.apiKey),
     keyPreview: config.apiKey ? `sk-…${config.apiKey.slice(-4)}` : null,
     source: config.source,
+    // null means never configured, which the assistant treats as "all on".
+    dataSources: row ? row.dataSources : null,
+    availableDataSources: AI_DATA_SOURCES,
+    companyProfile: row?.companyProfile ?? "",
+    pinnedDocumentCount: pinnedCount,
     updatedAt: row?.updatedAt ?? null
   });
 }));
@@ -228,7 +238,9 @@ router.get("/ai-settings", asyncHandler(async (_req, res) => {
 const aiSettingsSchema = z.object({
   // Optional on update so the model can be changed without re-pasting the key.
   apiKey: z.string().min(1).optional(),
-  model: z.string().min(1).default(DEFAULT_MODEL)
+  model: z.string().min(1).default(DEFAULT_MODEL),
+  dataSources: z.array(z.enum(AI_DATA_SOURCE_IDS)).optional(),
+  companyProfile: z.string().max(20000).optional()
 });
 
 router.put("/ai-settings", asyncHandler(async (req, res) => {
@@ -242,14 +254,65 @@ router.put("/ai-settings", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "An API key is required the first time you set this up." });
   }
 
-  await saveAiSettings(parsed.data);
+  const saved = await saveAiSettings(parsed.data);
   const config = await getAiConfig();
   res.json({
     model: config.model,
     hasKey: Boolean(config.apiKey),
     keyPreview: config.apiKey ? `sk-…${config.apiKey.slice(-4)}` : null,
-    source: config.source
+    source: config.source,
+    dataSources: saved.dataSources,
+    availableDataSources: AI_DATA_SOURCES,
+    companyProfile: saved.companyProfile ?? ""
   });
+}));
+
+// --- AI knowledge base (documents pinned into every answer) -------------
+
+// Reuses the Data Room's Document table rather than a parallel store: same
+// upload, same text extraction, same file on disk. "Knowledge base" is
+// simply the pinned subset, so a document already in the Data Room can be
+// promoted without re-uploading it.
+router.get("/ai-knowledge", asyncHandler(async (_req, res) => {
+  const docs = await prisma.document.findMany({
+    orderBy: [{ pinnedToAi: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      originalName: true,
+      category: true,
+      description: true,
+      sizeBytes: true,
+      mimeType: true,
+      pinnedToAi: true,
+      extractedText: true,
+      extractionNote: true,
+      createdAt: true
+    }
+  });
+  res.json(
+    docs.map(({ extractedText, ...d }) => ({
+      ...d,
+      searchable: Boolean(extractedText),
+      // Enough to confirm the right thing was read, without shipping the
+      // whole document back to the browser.
+      textPreview: extractedText ? extractedText.slice(0, 180) : null
+    }))
+  );
+}));
+
+router.post("/ai-knowledge/:id/pin", asyncHandler(async (req, res) => {
+  const pinned = req.body?.pinned !== false;
+  const doc = await prisma.document.findUnique({ where: { id: req.params.id } });
+  if (!doc) return res.status(404).json({ error: "Document not found" });
+
+  if (pinned && !doc.extractedText) {
+    return res.status(400).json({
+      error: "That file has no readable text, so pinning it would add nothing. Scanned PDFs and images can't be quoted from."
+    });
+  }
+
+  const updated = await prisma.document.update({ where: { id: doc.id }, data: { pinnedToAi: pinned } });
+  res.json({ id: updated.id, pinnedToAi: updated.pinnedToAi });
 }));
 
 router.post("/ai-settings/test", asyncHandler(async (_req, res) => {

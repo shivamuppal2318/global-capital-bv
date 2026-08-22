@@ -2,20 +2,27 @@ import { Router } from "express";
 import { getAnthropicClient, getAnthropicModel } from "../lib/anthropic.js";
 import { buildBusinessContext } from "../lib/businessContext.js";
 import { retrieveRelevantDocuments } from "../lib/documentSearch.js";
+import { getAiSettingsRow } from "../lib/aiSettings.js";
+import { isSourceEnabled } from "../lib/aiDataSources.js";
 
 const router = Router();
 
 const MAX_HISTORY_TURNS = 12;
 
-function buildSystemPrompt(context, dataRoom) {
+function buildSystemPrompt(context, dataRoom, companyProfile) {
   const lines = [
     "You are the AI assistant embedded in Global Capital BV's CRM, with read access to the business database and Data Room documents below.",
     "Answer questions using ONLY the data provided here — leads (with stage, qualification, capital ask, owner, contact details), WhatsApp conversations, templates, campaigns, drip sequences, automation rules, bot flows, CRM triggers, team performance, and the Data Room documents.",
     "Be concise and specific: cite real names, numbers, and stages from the data rather than generic statements.",
     "When you use a Data Room document, name the file you took it from so the reader can check it.",
     "If asked something the data doesn't cover, say so plainly instead of guessing.",
+    "Some database sections may be switched off by an admin. If a question needs one that isn't present, say it isn't enabled rather than implying the data doesn't exist.",
     ""
   ];
+
+  if (companyProfile?.trim()) {
+    lines.push("Company background (written by an admin — treat as authoritative):", companyProfile.trim(), "");
+  }
 
   if (dataRoom.inventory.length > 0) {
     lines.push(
@@ -29,7 +36,10 @@ function buildSystemPrompt(context, dataRoom) {
 
     if (dataRoom.documents.length > 0) {
       lines.push(
-        "Contents of the documents most relevant to this question (selected by keyword match, so a relevant document may be missing — if the answer isn't here but the inventory suggests it exists, say which file to check):",
+        // Pinned documents are always here; the rest are keyword matches,
+        // and the model is told the difference so it doesn't assume an
+        // absent document means a non-existent one.
+        `Document contents below. Any marked "pinned": true are standing company knowledge included with every question; the rest were selected by keyword match for this question, so a relevant document may be missing — if the answer isn't here but the inventory suggests it exists, say which file to check:`,
         JSON.stringify(dataRoom.documents, null, 2),
         ""
       );
@@ -59,15 +69,24 @@ router.post("/chat", async (req, res, next) => {
       return res.status(400).json({ error: "message is required" });
     }
 
+    // Which sections an admin has enabled, and the company background they
+    // wrote. Read first because it decides what's fetched below.
+    const settings = await getAiSettingsRow();
+    const enabledSources = settings ? settings.dataSources : null;
+    const documentsEnabled = isSourceEnabled(enabledSources, "documents");
+
     // Retrieval is driven by the current question, so this runs per
     // message rather than being cached with the business snapshot.
-    const [context, dataRoom] = await Promise.all([buildBusinessContext(), retrieveRelevantDocuments(message)]);
+    const [context, dataRoom] = await Promise.all([
+      buildBusinessContext(enabledSources),
+      documentsEnabled ? retrieveRelevantDocuments(message) : Promise.resolve({ documents: [], inventory: [], pinnedCount: 0 })
+    ]);
     const trimmedHistory = Array.isArray(history) ? history.slice(-MAX_HISTORY_TURNS) : [];
 
     const response = await anthropic.messages.create({
       model: await getAnthropicModel(),
       max_tokens: 1024,
-      system: buildSystemPrompt(context, dataRoom),
+      system: buildSystemPrompt(context, dataRoom, settings?.companyProfile),
       messages: [...trimmedHistory, { role: "user", content: message }]
     });
 

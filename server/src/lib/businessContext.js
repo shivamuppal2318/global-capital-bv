@@ -1,4 +1,5 @@
 import { prisma } from "../db.js";
+import { isSourceEnabled } from "./aiDataSources.js";
 
 const LEAD_STATUS_LABEL = {
   NEW: "New",
@@ -9,41 +10,90 @@ const LEAD_STATUS_LABEL = {
   LOST: "Lost"
 };
 
-// Pulls a full snapshot of the business from Postgres for the AI assistant to
-// reason over. Kept as plain JSON (not a vector index / RAG pipeline) since
-// the dataset is small enough to fit entirely in a single prompt.
-export async function buildBusinessContext() {
-  const [leads, contacts, conversations, templates, campaigns, dripSequences, autoReplyRules, botFlows, crmTriggers, automationRules, agents, account] =
-    await Promise.all([
-      prisma.lead.findMany({ orderBy: { createdAt: "asc" } }),
-      prisma.contact.findMany(),
-      prisma.conversation.findMany({ include: { contact: true }, orderBy: { lastMessageAt: "desc" } }),
-      prisma.template.findMany(),
-      prisma.campaign.findMany({ include: { template: true } }),
-      prisma.dripSequence.findMany(),
-      prisma.autoReplyRule.findMany(),
-      prisma.botFlow.findMany(),
-      prisma.crmTrigger.findMany(),
-      prisma.automationRule.findMany(),
-      prisma.agent.findMany(),
-      prisma.businessSettings.findFirst()
-    ]);
+// Caps so one busy table can't crowd the prompt out. Newest-first, since a
+// question is far more often about recent activity than about the oldest
+// record in the system.
+const MAX_ROWS = 200;
 
-  const leadsByStatus = leads.reduce((acc, l) => {
-    const label = LEAD_STATUS_LABEL[l.status];
-    acc[label] = (acc[label] ?? 0) + 1;
-    return acc;
-  }, {});
+// Pulls a snapshot of the business from Postgres for the AI assistant to
+// reason over. Plain JSON rather than a vector index: the structured data
+// is small enough to fit in a prompt, and unlike free text it has no good
+// chunking boundary. Data Room documents are the exception and go through
+// retrieval instead (see documentSearch.js).
+//
+// `enabledSources` comes from Admin Panel → AI Assistant. A disabled
+// section is never queried at all, so it costs nothing and cannot leak.
+export async function buildBusinessContext(enabledSources = null) {
+  const on = (id) => isSourceEnabled(enabledSources, id);
 
-  return {
+  const [
+    leads,
+    contacts,
+    conversations,
+    templates,
+    campaigns,
+    dripSequences,
+    autoReplyRules,
+    botFlows,
+    crmTriggers,
+    automationRules,
+    agents,
+    account,
+    meetings,
+    emailLeads,
+    emailCampaigns,
+    users,
+    marketSignals
+  ] = await Promise.all([
+    on("leads") ? prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: MAX_ROWS }) : [],
+    on("whatsapp") ? prisma.contact.findMany({ take: MAX_ROWS }) : [],
+    on("whatsapp")
+      ? prisma.conversation.findMany({ include: { contact: true }, orderBy: { lastMessageAt: "desc" }, take: MAX_ROWS })
+      : [],
+    on("whatsapp") ? prisma.template.findMany() : [],
+    on("whatsapp") ? prisma.campaign.findMany({ include: { template: true } }) : [],
+    on("whatsapp") ? prisma.dripSequence.findMany() : [],
+    on("whatsapp") ? prisma.autoReplyRule.findMany() : [],
+    on("whatsapp") ? prisma.botFlow.findMany() : [],
+    on("whatsapp") ? prisma.crmTrigger.findMany() : [],
+    on("whatsapp") ? prisma.automationRule.findMany() : [],
+    on("team") ? prisma.agent.findMany() : [],
+    // Company identity is cheap and orients every answer, so it isn't
+    // behind a toggle.
+    prisma.businessSettings.findFirst(),
+    on("meetings")
+      ? prisma.meeting.findMany({ include: { lead: { select: { name: true, company: true } } }, orderBy: { startTime: "desc" }, take: MAX_ROWS })
+      : [],
+    on("follow-ups")
+      ? prisma.emailLead.findMany({ include: { campaign: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: MAX_ROWS })
+      : [],
+    on("email-campaigns")
+      ? prisma.emailCampaign.findMany({ include: { emailAccount: { select: { label: true } }, _count: { select: { leads: true } } } })
+      : [],
+    on("employees")
+      ? prisma.user.findMany({ select: { name: true, email: true, role: true, status: true, lastLoginAt: true, createdAt: true }, orderBy: { createdAt: "asc" } })
+      : [],
+    on("market-signals")
+      ? prisma.marketSignal.findMany({ orderBy: { createdAt: "desc" }, take: 100 })
+      : []
+  ]);
+
+  const context = {
     generatedAt: new Date().toISOString(),
     company: account
       ? { name: account.displayName, category: account.category, phone: account.phone, status: account.status }
-      : null,
-    leads: {
+      : null
+  };
+
+  if (on("leads")) {
+    context.leads = {
       total: leads.length,
       qualifiedCount: leads.filter((l) => l.qualified).length,
-      byStatus: leadsByStatus,
+      byStatus: leads.reduce((acc, l) => {
+        const label = LEAD_STATUS_LABEL[l.status];
+        acc[label] = (acc[label] ?? 0) + 1;
+        return acc;
+      }, {}),
       records: leads.map((l) => ({
         name: l.name,
         company: l.company,
@@ -60,8 +110,69 @@ export async function buildBusinessContext() {
         createdAt: l.createdAt,
         updatedAt: l.updatedAt
       }))
-    },
-    whatsapp: {
+    };
+  }
+
+  if (on("meetings")) {
+    const now = new Date();
+    context.meetings = {
+      total: meetings.length,
+      upcoming: meetings.filter((m) => m.startTime > now).length,
+      past: meetings.filter((m) => m.startTime <= now).length,
+      records: meetings.map((m) => ({
+        topic: m.topic,
+        startTime: m.startTime,
+        durationMinutes: m.durationMinutes,
+        status: m.status,
+        isZoom: Boolean(m.zoomMeetingId),
+        withLead: m.lead ? `${m.lead.name} (${m.lead.company})` : null
+      }))
+    };
+  }
+
+  if (on("follow-ups")) {
+    context.customerFollowUps = {
+      total: emailLeads.length,
+      replied: emailLeads.filter((l) => l.replyType !== "NO_REPLY").length,
+      callsBooked: emailLeads.filter((l) => l.callBookedAt).length,
+      callsCompleted: emailLeads.filter((l) => l.callCompletedAt).length,
+      ndasSigned: emailLeads.filter((l) => l.ndaSignedAt).length,
+      unsubscribed: emailLeads.filter((l) => l.unsubscribed).length,
+      bounced: emailLeads.filter((l) => l.bounced).length,
+      records: emailLeads.map((l) => ({
+        name: l.name,
+        company: l.company,
+        email: l.email,
+        owner: l.owner,
+        campaign: l.campaign?.name ?? null,
+        stage: l.stage,
+        replyType: l.replyType,
+        unsubscribed: l.unsubscribed,
+        bounced: l.bounced,
+        ndaSignedAt: l.ndaSignedAt,
+        callBookedAt: l.callBookedAt,
+        callScheduledFor: l.callScheduledFor,
+        callCompletedAt: l.callCompletedAt,
+        updatedAt: l.updatedAt
+      }))
+    };
+  }
+
+  if (on("email-campaigns")) {
+    context.emailCampaigns = emailCampaigns.map((c) => ({
+      name: c.name,
+      status: c.status,
+      audience: c.audience,
+      leadCount: c._count.leads,
+      followUpCount: c.followUpCount,
+      delayDays: c.delayDays,
+      dailyLimit: c.dailyLimit,
+      mailbox: c.emailAccount?.label ?? "Default (env-configured)"
+    }));
+  }
+
+  if (on("whatsapp")) {
+    context.whatsapp = {
       contactsTotal: contacts.length,
       conversations: conversations.map((c) => ({
         contact: c.contact.name,
@@ -100,8 +211,11 @@ export async function buildBusinessContext() {
       botFlows: botFlows.map((f) => ({ name: f.name, trigger: f.trigger, active: f.active, usersCount: f.usersCount, completionRate: f.completionRate })),
       crmTriggers: crmTriggers.map((t) => ({ event: t.event, action: t.action, status: t.status })),
       automationRules: automationRules.map((r) => ({ name: r.name, condition: r.condition, action: r.action, enabled: r.enabled, executions: r.executions }))
-    },
-    team: agents.map((a) => ({
+    };
+  }
+
+  if (on("team")) {
+    context.team = agents.map((a) => ({
       name: a.name,
       role: a.role,
       status: a.status,
@@ -109,6 +223,38 @@ export async function buildBusinessContext() {
       resolvedCount: a.resolvedCount,
       avgResponseMins: a.avgResponseMins,
       csat: a.csat
-    }))
-  };
+    }));
+  }
+
+  if (on("employees")) {
+    context.employees = {
+      total: users.length,
+      admins: users.filter((u) => u.role === "ADMIN").length,
+      active: users.filter((u) => u.status === "ACTIVE").length,
+      // Deliberately no password hashes or permission lists — neither helps
+      // answer a question, and both are worth keeping out of a prompt.
+      records: users.map((u) => ({
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        status: u.status,
+        lastLoginAt: u.lastLoginAt,
+        joinedAt: u.createdAt
+      }))
+    };
+  }
+
+  if (on("market-signals")) {
+    context.marketSignals = marketSignals.map((s) => ({
+      entity: s.entityName,
+      type: s.signalType,
+      relevance: s.relevanceScore,
+      summary: s.summary,
+      source: s.source,
+      status: s.status,
+      capturedAt: s.createdAt
+    }));
+  }
+
+  return context;
 }
