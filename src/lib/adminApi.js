@@ -32,5 +32,12 @@ export const adminApi = {
   // lists everything and pinning promotes an existing file rather than
   // needing a second upload.
   listAiKnowledge: () => request("/ai-knowledge"),
-  pinAiDocument: (id, pinned) => request(`/ai-knowledge/${id}/pin`, { method: "POST", body: { pinned } })
+  pinAiDocument: (id, pinned) => request(`/ai-knowledge/${id}/pin`, { method: "POST", body: { pinned } }),
+  // Market Intelligence's data-source keys (Exa, NewsAPI.ai, Firecrawl,
+  // Apollo) — same never-returned-key / hasKey+preview+source shape as AI
+  // settings above, one provider at a time.
+  getMarketIntelSettings: () => request("/market-intelligence-settings"),
+  saveMarketIntelProviderKey: (provider, apiKey) => request(`/market-intelligence-settings/${provider}`, { method: "PUT", body: { apiKey } }),
+  testMarketIntelProvider: (provider) => request(`/market-intelligence-settings/${provider}/test`, { method: "POST" }),
+  removeMarketIntelProviderKey: (provider) => request(`/market-intelligence-settings/${provider}`, { method: "DELETE" })
 };

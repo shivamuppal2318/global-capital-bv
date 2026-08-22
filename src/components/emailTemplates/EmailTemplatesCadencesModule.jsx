@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { ActionButton, Field } from "../ui.jsx";
-import { NoteIcon, PlusIcon, PencilIcon, SearchIcon, TagIcon } from "../Icons.jsx";
+import { NoteIcon, PlusIcon, PencilIcon, SearchIcon, TagIcon, SparklesIcon } from "../Icons.jsx";
 import { emailTemplatesApi } from "../../lib/emailTemplatesApi.js";
 import { RichTextEditor } from "./RichTextEditor.jsx";
+import { templatePresets } from "./templatePresets.js";
 
 // The auto-responder maps a classified reply straight to one of these 4
 // keys (see server/src/lib/autoRespond.js) — deleting one would silently
@@ -71,6 +72,15 @@ export function EmailTemplatesCadencesModule() {
 
   function handleFormChange(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  // Replaces the editor's current content outright — a preset is a starting
+  // point to then customize, not something merged with whatever's already
+  // there, so no confirmation beyond the fact that it's a New/blank template
+  // most of the time this gets used anyway.
+  function handleApplyPreset(preset) {
+    setForm((current) => ({ ...current, html: preset.build() }));
+    setNotice(`Applied the "${preset.label}" starting point — customize the copy, then save.`);
   }
 
   function handleNewTemplate() {
@@ -274,6 +284,25 @@ export function EmailTemplatesCadencesModule() {
                   className="w-full rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[15px] text-[#102246] outline-none focus:border-[#3046b2]"
                 />
               </Field>
+              <div>
+                <div className="mb-2 flex items-center gap-2">
+                  <SparklesIcon className="size-3.5 text-[#8853d0]" />
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">Quick start</p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {templatePresets.map((preset) => (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      onClick={() => handleApplyPreset(preset)}
+                      className="rounded-[12px] border border-[#d6deea] bg-white px-3 py-2.5 text-left transition hover:border-[#3046b2] hover:bg-[#f8faff]"
+                    >
+                      <p className="text-[13px] font-semibold text-[#102246]">{preset.label}</p>
+                      <p className="mt-0.5 text-[11px] leading-4 text-[#8593ac]">{preset.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <Field label="Body">
                 <RichTextEditor
                   value={form.html}

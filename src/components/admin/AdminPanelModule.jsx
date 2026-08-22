@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { LinkIcon, LockIcon, MailIcon, ShieldIcon, SparklesIcon, UsersIcon } from "../Icons";
+import { LinkIcon, LockIcon, MailIcon, RadarIcon, ShieldIcon, SparklesIcon, UsersIcon } from "../Icons";
 import { EmployeesPanel } from "./EmployeesPanel";
 import { WhatsappApiPanel } from "./WhatsappApiPanel";
 import { MailboxManager } from "./MailboxManager";
 import { MyAccountPanel } from "./MyAccountPanel";
 import { SystemEmailPanel } from "./SystemEmailPanel";
 import { AiSettingsPanel } from "./AiSettingsPanel";
+import { MarketIntelSettingsPanel } from "./MarketIntelSettingsPanel";
 
 const ADMIN_TABS = [
   { id: "employees", label: "Employees", icon: UsersIcon },
   { id: "ai-assistant", label: "AI Assistant", icon: SparklesIcon },
+  { id: "market-intelligence-api", label: "Market Intelligence", icon: RadarIcon },
   { id: "whatsapp-api", label: "WhatsApp API", icon: LinkIcon },
   { id: "system-email", label: "System Email", icon: MailIcon },
   { id: "email-accounts", label: "Email Accounts", icon: MailIcon }
@@ -65,6 +67,7 @@ export function AdminPanelModule() {
 
       {currentTab.id === "employees" ? <EmployeesPanel /> : null}
       {currentTab.id === "ai-assistant" ? <AiSettingsPanel /> : null}
+      {currentTab.id === "market-intelligence-api" ? <MarketIntelSettingsPanel /> : null}
       {currentTab.id === "whatsapp-api" ? <WhatsappApiPanel /> : null}
       {currentTab.id === "system-email" ? <SystemEmailPanel /> : null}
       {currentTab.id === "email-accounts" ? <MailboxManager scope="all" /> : null}

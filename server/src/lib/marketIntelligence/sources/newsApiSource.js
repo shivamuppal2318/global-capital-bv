@@ -3,10 +3,10 @@
 // their public docs and NOT verified against a live call. Before relying
 // on this, hit the real endpoint once with a valid key and adjust
 // normalizeNewsApiArticle() to match whatever actually comes back.
-const REQUIRED_ENV = "NEWSAPI_AI_KEY";
+import { getProviderKey, isProviderConfigured } from "../../marketIntelligenceSettings.js";
 
-export function isNewsApiConfigured() {
-  return Boolean(process.env[REQUIRED_ENV]);
+export async function isNewsApiConfigured() {
+  return isProviderConfigured("newsapi");
 }
 
 // Pure — testable without any network access or API key.
@@ -21,8 +21,9 @@ export function normalizeNewsApiArticle(article) {
 }
 
 export async function fetchNewsApiSignals({ query = "private equity funding" } = {}) {
-  if (!isNewsApiConfigured()) {
-    throw new Error(`NewsAPI.ai is not configured — set ${REQUIRED_ENV}.`);
+  const { apiKey } = await getProviderKey("newsapi");
+  if (!apiKey) {
+    throw new Error("NewsAPI.ai is not configured — add a key under Admin Panel → Market Intelligence.");
   }
 
   const response = await fetch("https://eventregistry.org/api/v1/article/getArticles", {
@@ -33,7 +34,7 @@ export async function fetchNewsApiSignals({ query = "private equity funding" } =
       keyword: query,
       articlesSortBy: "date",
       articlesCount: 25,
-      apiKey: process.env[REQUIRED_ENV]
+      apiKey
     })
   });
 

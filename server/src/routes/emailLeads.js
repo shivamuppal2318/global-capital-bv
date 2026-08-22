@@ -5,8 +5,40 @@ import { sendRawEmail, sendTemplateEmail } from "../lib/leadSender.js";
 import { enqueueCadenceStep, isQueueEnabled } from "../queue/cadenceQueue.js";
 import { recordReply } from "../lib/replyRecorder.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
+import { calculateLeadScore, deriveQualification } from "../lib/leadScoring.js";
+import { verifyEmailDeliverability, verifyEmailsDeliverability } from "../lib/emailValidation.js";
 
 export const emailLeadsRouter = Router();
+
+function deriveCallStatus(lead) {
+  if (lead.callCanceledAt) return "canceled";
+  if (lead.callCompletedAt) return "completed";
+  if (lead.callBookedAt) return "booked";
+  return null;
+}
+
+// Attaches leadScore/leadScoreBand/leadScoreReasons/qualification, computed
+// from this lead's own activityLog kinds (see EmailActivityKind) plus its
+// scalar fields — same signals a human would look at, just counted instead
+// of read one by one. activityLog itself is left off the response; only the
+// derived score/qualification are returned, so payload size doesn't grow
+// with a lead's history.
+function attachScore(lead) {
+  const openCount = lead.activityLog.filter((entry) => entry.kind === "EMAIL_OPENED").length;
+  const clickCount = lead.activityLog.filter((entry) => entry.kind === "LINK_CLICKED").length;
+  const { activityLog, ...rest } = lead;
+  const { score, band, reasons } = calculateLeadScore({
+    replyType: lead.replyType,
+    bounced: lead.bounced,
+    bounceKind: lead.bounceKind,
+    unsubscribed: lead.unsubscribed,
+    ndaSignedAt: lead.ndaSignedAt,
+    callStatus: deriveCallStatus(lead),
+    openCount,
+    clickCount
+  });
+  return { ...rest, leadScore: score, leadScoreBand: band, leadScoreReasons: reasons, qualification: deriveQualification(band) };
+}
 
 // List endpoint the frontend needs before it can stop hardcoding
 // repliedLeads/crmWorkspaceData.enquiries as mock arrays. Optional
@@ -17,9 +49,29 @@ emailLeadsRouter.get("/", asyncHandler(async (req, res) => {
   const leads = await prisma.emailLead.findMany({
     where,
     orderBy: { updatedAt: "desc" },
-    include: { campaign: { select: { name: true } } }
+    include: {
+      campaign: { select: { name: true } },
+      activityLog: { select: { kind: true } }
+    }
   });
-  res.json(leads);
+  res.json(leads.map(attachScore));
+}));
+
+const validateEmailsSchema = z.object({ emails: z.array(z.string()).min(1).max(1000) });
+
+// Lets the CSV-preview step (see handlePreviewCsv in
+// useEmailOutreachState.js) show real deliverability status BEFORE
+// anything is imported — the frontend can't do DNS lookups itself, so it
+// parses/dedupes the CSV locally and calls this once for the deliverability
+// column. POST /bulk re-validates independently at import time regardless
+// (this endpoint is a preview convenience, not the enforcement point).
+emailLeadsRouter.post("/validate-emails", asyncHandler(async (req, res) => {
+  const parsed = validateEmailsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const results = await verifyEmailsDeliverability(parsed.data.emails);
+  res.json({ results });
 }));
 
 // Shared by POST /leads (new lead) and POST /:id/schedule-cadence
@@ -63,6 +115,11 @@ emailLeadsRouter.post("/", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
+  const deliverability = await verifyEmailDeliverability(parsed.data.email);
+  if (!deliverability.valid) {
+    return res.status(422).json({ error: `${parsed.data.email} looks undeliverable: ${deliverability.reason}` });
+  }
+
   const campaign = await prisma.emailCampaign.findUnique({
     where: { id: parsed.data.campaignId },
     include: { cadenceSteps: { orderBy: { stepIndex: "asc" } } }
@@ -93,6 +150,92 @@ emailLeadsRouter.post("/", asyncHandler(async (req, res) => {
       detail: scheduledCount > 0
         ? `Enrolled in "${campaign.name}" — ${scheduledCount} cadence step(s) scheduled, each skipped automatically if a reply arrives first.`
         : `Enrolled in "${campaign.name}" — no cadence steps scheduled (queue disabled or campaign has none configured).`
+    }
+  });
+
+  res.status(201).json({ lead, cadenceScheduled: scheduledCount });
+}));
+
+// --- Inbound webhook / API for external platforms ---------------------------
+//
+// Same idea as POST /api/leads/inbound (the CRM Workspace lead-ingestion
+// webhook) but for the email cold-outreach domain: a website form, ad
+// platform, Zapier, or custom script can drop a lead straight into a named
+// campaign's cadence. Auth reuses the same BusinessSettings.leadWebhookApiKey
+// as that webhook — one API key to manage, not a second one — and this
+// route is excluded from both the global requireAuth gate and this router's
+// requireModule gate in app.js the same way /api/leads/inbound is (an
+// external caller has no req.user for either check to run against).
+const EMAIL_INBOUND_FIELD_ALIASES = {
+  name: ["name", "full_name", "fullname", "lead_name", "leadname", "contact_name", "contactname"],
+  company: ["company", "company_name", "companyname", "organization", "org", "business_name"],
+  email: ["email", "email_address", "emailaddress", "contact_email"],
+  owner: ["owner", "assigned_to", "assignedto", "rep"],
+  campaignId: ["campaign_id", "campaignid"],
+  campaignName: ["campaign", "campaign_name", "campaignname"]
+};
+
+function pickInboundField(flatBody, aliases) {
+  for (const alias of aliases) {
+    if (flatBody[alias] !== undefined && flatBody[alias] !== null && flatBody[alias] !== "") {
+      return String(flatBody[alias]).trim();
+    }
+  }
+  return null;
+}
+
+emailLeadsRouter.post("/inbound", asyncHandler(async (req, res) => {
+  const providedKey = req.get("x-api-key") ?? req.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const account = await prisma.businessSettings.findFirst();
+  if (!account?.leadWebhookApiKey || providedKey !== account.leadWebhookApiKey) {
+    return res.status(401).json({ error: "Missing or invalid API key. Send it as x-api-key or an Authorization: Bearer header." });
+  }
+
+  const flatBody = Object.fromEntries(Object.entries(req.body ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+  const name = pickInboundField(flatBody, EMAIL_INBOUND_FIELD_ALIASES.name);
+  const email = pickInboundField(flatBody, EMAIL_INBOUND_FIELD_ALIASES.email);
+  const company = pickInboundField(flatBody, EMAIL_INBOUND_FIELD_ALIASES.company);
+  const owner = pickInboundField(flatBody, EMAIL_INBOUND_FIELD_ALIASES.owner) ?? "Unassigned";
+  const campaignId = pickInboundField(flatBody, EMAIL_INBOUND_FIELD_ALIASES.campaignId);
+  const campaignName = pickInboundField(flatBody, EMAIL_INBOUND_FIELD_ALIASES.campaignName);
+
+  if (!name) return res.status(400).json({ error: "A name field is required (name, full_name, lead_name, ...)." });
+  if (!email) return res.status(400).json({ error: "An email field is required (email, email_address, ...)." });
+  if (!campaignId && !campaignName) {
+    return res.status(400).json({ error: "A campaign_id or campaign (name) field is required so the lead lands in the right campaign." });
+  }
+
+  const deliverability = await verifyEmailDeliverability(email);
+  if (!deliverability.valid) {
+    return res.status(422).json({ error: `${email} looks undeliverable: ${deliverability.reason}` });
+  }
+
+  const campaign = await prisma.emailCampaign.findFirst({
+    where: campaignId ? { id: campaignId } : { name: { equals: campaignName, mode: "insensitive" } },
+    include: { cadenceSteps: { orderBy: { stepIndex: "asc" } } }
+  });
+  if (!campaign) {
+    return res.status(404).json({ error: `No campaign found for ${campaignId ? `campaign_id "${campaignId}"` : `campaign "${campaignName}"`}.` });
+  }
+
+  const existing = await prisma.emailLead.findFirst({ where: { campaignId: campaign.id, email } });
+  if (existing) {
+    return res.status(409).json({ error: `${email} is already in "${campaign.name}".`, leadId: existing.id });
+  }
+
+  const lead = await prisma.emailLead.create({
+    data: { name, company: company ?? "—", email, owner, campaignId: campaign.id }
+  });
+  const scheduledCount = await scheduleCadenceSteps(lead, campaign.cadenceSteps);
+
+  await prisma.emailActivityLog.create({
+    data: {
+      leadId: lead.id,
+      kind: "BULK_INTRO_SENT",
+      title: "Added to campaign (external API)",
+      detail: scheduledCount > 0
+        ? `Enrolled in "${campaign.name}" via the lead-ingestion API — ${scheduledCount} cadence step(s) scheduled.`
+        : `Enrolled in "${campaign.name}" via the lead-ingestion API — no cadence steps scheduled.`
     }
   });
 
@@ -140,14 +283,24 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
   const created = [];
   const failed = [];
   const duplicates = [];
+  const invalid = [];
   // Rows within the same CSV paste count against each other too (a pasted
   // list with the same email twice), not just against what's already in
   // the DB — checked in-memory so a duplicate earlier in this same batch
   // is caught without a redundant query.
   const seenInBatch = new Set();
 
+  // Validated up front, once per unique domain, rather than inline in the
+  // loop below — same reasoning as the /inbound and single-create routes:
+  // only real, deliverable-looking addresses should reach the campaign.
+  const deliverabilityResults = await verifyEmailsDeliverability(parsed.data.leads.map((lead) => lead.email));
+
   for (const [index, leadInput] of parsed.data.leads.entries()) {
     const rowNumber = index + 1;
+    if (!deliverabilityResults[index].valid) {
+      invalid.push({ row: rowNumber, email: leadInput.email, reason: deliverabilityResults[index].reason });
+      continue;
+    }
     if (seenInBatch.has(leadInput.email)) {
       duplicates.push({ row: rowNumber, email: leadInput.email, reason: "Duplicate email earlier in this same import." });
       continue;
@@ -189,9 +342,11 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
     createdCount: created.length,
     failedCount: failed.length,
     duplicateCount: duplicates.length,
+    invalidCount: invalid.length,
     created,
     failed,
-    duplicates
+    duplicates,
+    invalid
   });
 }));
 

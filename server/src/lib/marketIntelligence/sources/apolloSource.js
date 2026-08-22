@@ -2,10 +2,10 @@
 // response shape below are written from their public docs and NOT
 // verified against a live call. Adjust normalizeApolloOrganization()
 // against a real response before relying on this.
-const REQUIRED_ENV = "APOLLO_API_KEY";
+import { getProviderKey, isProviderConfigured } from "../../marketIntelligenceSettings.js";
 
-export function isApolloConfigured() {
-  return Boolean(process.env[REQUIRED_ENV]);
+export async function isApolloConfigured() {
+  return isProviderConfigured("apollo");
 }
 
 // Pure — testable without any network access or API key. Captures the
@@ -58,13 +58,14 @@ export function summarizeApolloEnrichment(enrichment) {
 // the caller pick a contact; kept as one call here to match the
 // flowchart's single "Apollo lookup" step.
 export async function apolloLookupCompany(companyName) {
-  if (!isApolloConfigured()) {
-    throw new Error(`Apollo is not configured — set ${REQUIRED_ENV}.`);
+  const { apiKey } = await getProviderKey("apollo");
+  if (!apiKey) {
+    throw new Error("Apollo is not configured — add a key under Admin Panel → Market Intelligence.");
   }
 
   const orgResponse = await fetch("https://api.apollo.io/v1/organizations/search", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Api-Key": process.env[REQUIRED_ENV] },
+    headers: { "Content-Type": "application/json", "X-Api-Key": apiKey },
     body: JSON.stringify({ q_organization_name: companyName, page: 1, per_page: 1 })
   });
   if (!orgResponse.ok) {
@@ -78,7 +79,7 @@ export async function apolloLookupCompany(companyName) {
 
   const peopleResponse = await fetch("https://api.apollo.io/v1/people/search", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Api-Key": process.env[REQUIRED_ENV] },
+    headers: { "Content-Type": "application/json", "X-Api-Key": apiKey },
     body: JSON.stringify({ organization_ids: [org.id], page: 1, per_page: 1 })
   });
   const peopleData = peopleResponse.ok ? await peopleResponse.json() : null;

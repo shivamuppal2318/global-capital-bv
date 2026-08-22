@@ -18,16 +18,17 @@ export const marketIntelligenceRouter = Router();
 // trigger. Point an actual cron job (or CronCreate-style scheduler) at this
 // once it's worth running unattended.
 marketIntelligenceRouter.get("/status", asyncHandler(async (_req, res) => {
-  res.json({
-    newsApi: isNewsApiConfigured(),
-    exa: isExaConfigured(),
-    firecrawl: isFirecrawlConfigured(),
-    googleNews: isGoogleNewsConfigured(),
-    apollo: isApolloConfigured(),
-    // Async now that the Claude key can come from the database rather than
-    // only the environment (see lib/aiSettings.js).
-    aiProcessor: await isAiProcessorConfigured()
-  });
+  // All the *Configured() checks below are async now that a data-source key
+  // can come from the database rather than only the environment (see
+  // lib/marketIntelligenceSettings.js / lib/aiSettings.js).
+  const [newsApi, exa, firecrawl, apollo, aiProcessor] = await Promise.all([
+    isNewsApiConfigured(),
+    isExaConfigured(),
+    isFirecrawlConfigured(),
+    isApolloConfigured(),
+    isAiProcessorConfigured()
+  ]);
+  res.json({ newsApi, exa, firecrawl, googleNews: isGoogleNewsConfigured(), apollo, aiProcessor });
 }));
 
 const runSchema = z.object({
