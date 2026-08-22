@@ -19,6 +19,7 @@ import leadsRouter from "./routes/leads.js";
 import aiChatRouter from "./routes/aiChat.js";
 import zoomRouter from "./routes/zoom.js";
 import meetingsRouter from "./routes/meetings.js";
+import { documentsRouter } from "./routes/documents.js";
 // Email cold-outreach domain (merged from the `crm` branch) — kept as
 // separate routers/mount paths from the WhatsApp domain above, matching the
 // separate Email*-prefixed Prisma models (see schema.prisma).
@@ -97,6 +98,7 @@ app.use(
   },
   leadsRouter
 );
+app.use("/api/documents", requireModule("data-room"), documentsRouter);
 app.use("/api/ai", aiChatRouter);
 app.use("/api/zoom", requireModule("meetings"), zoomRouter);
 app.use("/api/meetings", requireModule("meetings"), meetingsRouter);

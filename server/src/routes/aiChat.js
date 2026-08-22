@@ -1,21 +1,47 @@
 import { Router } from "express";
 import { getAnthropicClient, getAnthropicModel } from "../lib/anthropic.js";
 import { buildBusinessContext } from "../lib/businessContext.js";
+import { retrieveRelevantDocuments } from "../lib/documentSearch.js";
 
 const router = Router();
 
 const MAX_HISTORY_TURNS = 12;
 
-function buildSystemPrompt(context) {
-  return [
-    "You are the AI assistant embedded in Global Capital BV's CRM, with read access to the full business database below.",
-    "Answer questions using ONLY the data in this snapshot — leads (with stage, qualification, capital ask, owner, contact details), WhatsApp conversations, templates, campaigns, drip sequences, automation rules, bot flows, CRM triggers, and team performance.",
+function buildSystemPrompt(context, dataRoom) {
+  const lines = [
+    "You are the AI assistant embedded in Global Capital BV's CRM, with read access to the business database and Data Room documents below.",
+    "Answer questions using ONLY the data provided here — leads (with stage, qualification, capital ask, owner, contact details), WhatsApp conversations, templates, campaigns, drip sequences, automation rules, bot flows, CRM triggers, team performance, and the Data Room documents.",
     "Be concise and specific: cite real names, numbers, and stages from the data rather than generic statements.",
-    "If asked something the snapshot doesn't cover, say so plainly instead of guessing.",
-    "",
-    `Business data snapshot (generated ${context.generatedAt}):`,
-    JSON.stringify(context, null, 2)
-  ].join("\n");
+    "When you use a Data Room document, name the file you took it from so the reader can check it.",
+    "If asked something the data doesn't cover, say so plainly instead of guessing.",
+    ""
+  ];
+
+  if (dataRoom.inventory.length > 0) {
+    lines.push(
+      // The full list goes in even when only a few documents were pulled,
+      // so the assistant can distinguish "no such document" from "that
+      // document exists but wasn't retrieved for this question".
+      `Data Room contains ${dataRoom.inventory.length} document(s). Full inventory:`,
+      JSON.stringify(dataRoom.inventory, null, 2),
+      ""
+    );
+
+    if (dataRoom.documents.length > 0) {
+      lines.push(
+        "Contents of the documents most relevant to this question (selected by keyword match, so a relevant document may be missing — if the answer isn't here but the inventory suggests it exists, say which file to check):",
+        JSON.stringify(dataRoom.documents, null, 2),
+        ""
+      );
+    } else {
+      lines.push("None of the Data Room documents have readable text (they may be images or scanned PDFs).", "");
+    }
+  } else {
+    lines.push("The Data Room is empty — no company documents have been uploaded yet.", "");
+  }
+
+  lines.push(`Business data snapshot (generated ${context.generatedAt}):`, JSON.stringify(context, null, 2));
+  return lines.join("\n");
 }
 
 router.post("/chat", async (req, res, next) => {
@@ -33,13 +59,15 @@ router.post("/chat", async (req, res, next) => {
       return res.status(400).json({ error: "message is required" });
     }
 
-    const context = await buildBusinessContext();
+    // Retrieval is driven by the current question, so this runs per
+    // message rather than being cached with the business snapshot.
+    const [context, dataRoom] = await Promise.all([buildBusinessContext(), retrieveRelevantDocuments(message)]);
     const trimmedHistory = Array.isArray(history) ? history.slice(-MAX_HISTORY_TURNS) : [];
 
     const response = await anthropic.messages.create({
       model: await getAnthropicModel(),
       max_tokens: 1024,
-      system: buildSystemPrompt(context),
+      system: buildSystemPrompt(context, dataRoom),
       messages: [...trimmedHistory, { role: "user", content: message }]
     });
 

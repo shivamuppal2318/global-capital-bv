@@ -1,0 +1,159 @@
+import { Router } from "express";
+import multer from "multer";
+import path from "node:path";
+import fs from "node:fs/promises";
+import crypto from "node:crypto";
+import { prisma } from "../db.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
+import { extractText } from "../lib/documentText.js";
+
+export const documentsRouter = Router();
+
+// Files live on a Docker volume, not in the image — a redeploy replaces
+// the container, so anything written to the image filesystem would be
+// silently lost. See docker-compose.coolify.yml.
+const UPLOAD_DIR = process.env.UPLOAD_DIR || "/app/uploads";
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
+await fs.mkdir(UPLOAD_DIR, { recursive: true }).catch(() => {});
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename: (_req, file, cb) => {
+    // Never reuse the uploaded name on disk: "../../etc/passwd" or a
+    // collision with an existing file would both be problems. The real
+    // name is kept in the database for display and download.
+    const ext = path.extname(file.originalname).slice(0, 12);
+    cb(null, `${crypto.randomBytes(16).toString("hex")}${ext}`);
+  }
+});
+
+const upload = multer({ storage, limits: { fileSize: MAX_FILE_BYTES } });
+
+function publicDocument(doc) {
+  return {
+    id: doc.id,
+    originalName: doc.originalName,
+    mimeType: doc.mimeType,
+    sizeBytes: doc.sizeBytes,
+    category: doc.category,
+    description: doc.description,
+    searchable: Boolean(doc.extractedText),
+    extractionNote: doc.extractionNote,
+    uploadedBy: doc.uploadedBy ? { id: doc.uploadedBy.id, name: doc.uploadedBy.name } : null,
+    createdAt: doc.createdAt
+  };
+}
+
+documentsRouter.get("/", asyncHandler(async (req, res) => {
+  const { category, q } = req.query;
+  const docs = await prisma.document.findMany({
+    where: {
+      ...(category && category !== "All" ? { category } : {}),
+      ...(q
+        ? {
+            OR: [
+              { originalName: { contains: String(q), mode: "insensitive" } },
+              { description: { contains: String(q), mode: "insensitive" } },
+              { extractedText: { contains: String(q), mode: "insensitive" } }
+            ]
+          }
+        : {})
+    },
+    include: { uploadedBy: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "desc" }
+  });
+  res.json(docs.map(publicDocument));
+}));
+
+documentsRouter.get("/categories", asyncHandler(async (_req, res) => {
+  const grouped = await prisma.document.groupBy({ by: ["category"], _count: { category: true } });
+  res.json(grouped.map((g) => ({ category: g.category, count: g._count.category })).sort((a, b) => a.category.localeCompare(b.category)));
+}));
+
+documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file was uploaded." });
+  }
+
+  const filePath = path.join(UPLOAD_DIR, req.file.filename);
+  // Extraction failures are captured as a note rather than thrown — a
+  // scanned PDF or an image should still upload successfully.
+  const { text, note } = await extractText(filePath, req.file.mimetype, req.file.originalname);
+
+  const doc = await prisma.document.create({
+    data: {
+      originalName: req.file.originalname,
+      storedName: req.file.filename,
+      mimeType: req.file.mimetype || "application/octet-stream",
+      sizeBytes: req.file.size,
+      category: (req.body?.category || "General").trim() || "General",
+      description: req.body?.description?.trim() || null,
+      extractedText: text,
+      extractionNote: note,
+      uploadedById: req.user?.id ?? null
+    },
+    include: { uploadedBy: { select: { id: true, name: true } } }
+  });
+
+  res.status(201).json(publicDocument(doc));
+}));
+
+documentsRouter.get("/:id/download", asyncHandler(async (req, res) => {
+  const doc = await prisma.document.findUnique({ where: { id: req.params.id } });
+  if (!doc) return res.status(404).json({ error: "Document not found" });
+
+  const filePath = path.join(UPLOAD_DIR, doc.storedName);
+  if (!(await fs.stat(filePath).catch(() => null))) {
+    return res.status(410).json({ error: "The stored file is missing on disk. It may have been removed outside the app." });
+  }
+
+  res.setHeader("Content-Type", doc.mimeType);
+  // `inline` lets PDFs and images preview in a browser tab; the frontend
+  // passes ?download=1 when it wants a save prompt instead.
+  const disposition = req.query.download ? "attachment" : "inline";
+  res.setHeader("Content-Disposition", `${disposition}; filename="${encodeURIComponent(doc.originalName)}"`);
+  res.sendFile(filePath);
+}));
+
+documentsRouter.patch("/:id", asyncHandler(async (req, res) => {
+  const { category, description } = req.body ?? {};
+  const doc = await prisma.document
+    .update({
+      where: { id: req.params.id },
+      data: {
+        ...(category !== undefined ? { category: String(category).trim() || "General" } : {}),
+        ...(description !== undefined ? { description: String(description).trim() || null } : {})
+      },
+      include: { uploadedBy: { select: { id: true, name: true } } }
+    })
+    .catch(() => null);
+  if (!doc) return res.status(404).json({ error: "Document not found" });
+  res.json(publicDocument(doc));
+}));
+
+documentsRouter.delete("/:id", asyncHandler(async (req, res) => {
+  const doc = await prisma.document.findUnique({ where: { id: req.params.id } });
+  if (!doc) return res.status(404).json({ error: "Document not found" });
+
+  await prisma.document.delete({ where: { id: doc.id } });
+  // Removing the row is what makes the document gone from the app's point
+  // of view; a leftover file on disk is untidy but harmless, so a failure
+  // here shouldn't turn a successful delete into an error.
+  await fs.unlink(path.join(UPLOAD_DIR, doc.storedName)).catch(() => {});
+
+  res.status(204).end();
+}));
+
+// multer rejects oversized files with its own error class — translated
+// here so the UI shows a size limit rather than a generic 500.
+documentsRouter.use((err, _req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    const message =
+      err.code === "LIMIT_FILE_SIZE"
+        ? `That file is too large. The limit is ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`
+        : err.message;
+    return res.status(400).json({ error: message });
+  }
+  next(err);
+});

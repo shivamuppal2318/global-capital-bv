@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CalendarIcon,
   ChatBubbleIcon,
+  FolderIcon,
   FunnelIcon,
   GridIcon,
   LogOutIcon,
@@ -28,6 +29,7 @@ import { EmailOutreachModule } from "./components/emailOutreach/EmailOutreachMod
 import { EmailTemplatesCadencesModule } from "./components/emailTemplates/EmailTemplatesCadencesModule";
 import { MarketIntelligenceModule } from "./components/marketIntelligence/MarketIntelligenceModule";
 import { AdminPanelModule } from "./components/admin/AdminPanelModule";
+import { DataRoomModule } from "./components/dataRoom/DataRoomModule";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./components/auth/LoginPage";
 import {
@@ -54,7 +56,8 @@ const iconMap = {
   calendar: CalendarIcon,
   pipeline: SendIcon,
   briefcase: GridIcon,
-  shield: ShieldIcon
+  shield: ShieldIcon,
+  folder: FolderIcon
 };
 
 const barToneClass = {
@@ -176,6 +179,8 @@ function AppShell() {
               <EmailTemplatesCadencesModule />
             ) : activePage === "market-intelligence" ? (
               <MarketIntelligenceModule />
+            ) : activePage === "data-room" ? (
+              <DataRoomModule />
             ) : activePage === "admin-panel" ? (
               <AdminPanelModule />
             ) : (
