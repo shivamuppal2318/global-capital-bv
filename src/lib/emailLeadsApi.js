@@ -14,7 +14,12 @@ export const emailLeadsApi = {
   // them as JSON rather than raw CSV text, so validation/preview happens
   // client-side before anything reaches the database.
   bulkCreate: (campaignId, leads) => request("/bulk", { method: "POST", body: { campaignId, leads } }),
+  // Real DNS-based deliverability check (MX/A/AAAA records) — the frontend
+  // can't do DNS lookups itself, so CSV preview calls this once for the
+  // whole batch rather than trusting format-only validation.
+  validateEmails: (emails) => request("/validate-emails", { method: "POST", body: { emails } }),
   activity: (id) => request(`/${id}/activity`),
+  remove: (id) => request(`/${id}`, { method: "DELETE" }),
   // Sends by resolving a saved Template server-side (merge fields, branded
   // HTML, unsubscribe link all applied automatically).
   sendTemplate: (id, templateKey) => request(`/${id}/send-template`, { method: "POST", body: { templateKey } }),

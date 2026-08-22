@@ -19,6 +19,31 @@ const signalSourceLabel = {
   FIRECRAWL: "Firecrawl"
 };
 
+const signalTypeConfig = {
+  FUNDING: { label: "Funding", tone: "bg-[#dff5e7] text-[#2b9b60]" },
+  ACQUISITION: { label: "Acquisition", tone: "bg-[#e6ebff] text-[#5769d4]" },
+  EXPANSION: { label: "Expansion", tone: "bg-[#dff2ff] text-[#2995db]" },
+  LEADERSHIP_CHANGE: { label: "Leadership change", tone: "bg-[#ffe9d0] text-[#f29c38]" },
+  DISTRESS: { label: "Distress", tone: "bg-[#ffe3e3] text-[#e0483f]" },
+  OTHER: { label: "Other", tone: "bg-[#edf2f7] text-[#748096]" }
+};
+
+function relevanceBarTone(score) {
+  if (score >= 70) return "bg-[#2b9b60]";
+  if (score >= 40) return "bg-[#f29b3a]";
+  return "bg-[#9aa6ba]";
+}
+
+function initialsFor(name) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 // No AI provider configured — this is a plain keyword search over the real
 // captured signals, not a language model. Still genuinely useful (real
 // data, real matches), just not "understanding" the question the way the
@@ -174,39 +199,6 @@ export function MarketIntelligenceModule() {
         </div>
       </section>
 
-      <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <RadarIcon className="size-5 text-[#8853d0]" />
-            <h2 className="text-[16px] font-semibold text-[#102246]">Source connections</h2>
-          </div>
-          <ActionButton label={running ? "Running…" : "Run pipeline now"} icon={SendIcon} primary onClick={handleRunPipeline} />
-        </div>
-
-        {status ? (
-          <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
-            {services.map((service) => (
-              <div key={service.key} className="rounded-[14px] border border-[#e7edf5] px-3 py-3">
-                <p className="text-[13px] font-medium text-[#102246]">{service.label}</p>
-                <span
-                  className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                    status[service.key] ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#748096]"
-                  }`}
-                >
-                  {status[service.key] ? "Connected" : "Not configured"}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-4 text-[14px] text-[#9aa6ba]">No status available — backend unreachable.</p>
-        )}
-
-        <div className="mt-5 rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3">
-          <p className="text-[13px] text-[#5f6f89]">{notice}</p>
-        </div>
-      </div>
-
       {signals.length > 0 ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {[
@@ -252,7 +244,7 @@ export function MarketIntelligenceModule() {
             <ChatBubble role="assistant">
               {chatEnabled
                 ? `Hi! Ask me anything about the ${signals.length} captured signal${signals.length === 1 ? "" : "s"} — e.g. "any renewable energy funding signals?" or "summarize the most relevant one."`
-                : `No AI provider connected yet, so I can't truly understand questions — but ask me anything and I'll keyword-search the ${signals.length} captured signal${signals.length === 1 ? "" : "s"} for you. Connect ANTHROPIC_API_KEY (see "AI processing" above) for real AI answers.`}
+                : `No AI provider connected yet, so I can't truly understand questions — but ask me anything and I'll keyword-search the ${signals.length} captured signal${signals.length === 1 ? "" : "s"} for you. Connect ANTHROPIC_API_KEY (see "Data sources" below) for real AI answers.`}
             </ChatBubble>
           ) : null}
 
@@ -300,51 +292,109 @@ export function MarketIntelligenceModule() {
         </div>
 
         {filteredSignals.length > 0 ? (
-          <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[780px] text-left">
-              <thead>
-                <tr className="text-[12px] uppercase tracking-[0.12em] text-[#60708b]">
-                  <th className="pb-3 font-medium">Headline</th>
-                  <th className="pb-3 font-medium">Published</th>
-                  <th className="pb-3 font-medium">Signal type</th>
-                  <th className="pb-3 font-medium">Source</th>
-                  <th className="pb-3 text-right font-medium">Relevance</th>
-                  <th className="pb-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSignals.map((signal) => (
-                  <tr key={signal.id} className="border-t border-[#e7edf5]">
-                    <td className="max-w-[320px] py-4 text-[15px] font-medium text-[#102246]">
-                      {signal.sourceUrl ? (
-                        <a href={signal.sourceUrl} target="_blank" rel="noreferrer" className="line-clamp-2 hover:text-[#3046b2] hover:underline">
-                          {signal.entityName ?? signal.rawTitle}
-                        </a>
-                      ) : (
-                        <span className="line-clamp-2">{signal.entityName ?? signal.rawTitle}</span>
-                      )}
-                    </td>
-                    <td className="py-4 text-[13px] whitespace-nowrap text-[#8593ac]">
-                      {signal.rawPublishedAt ? new Date(signal.rawPublishedAt).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="py-4 text-[14px] text-[#435471]">{signal.signalType ?? "—"}</td>
-                    <td className="py-4 text-[14px] text-[#435471]">{signalSourceLabel[signal.source] ?? signal.source}</td>
-                    <td className="py-4 text-right text-[14px] text-[#102246]">{signal.relevanceScore ?? "—"}</td>
-                    <td className="py-4">
-                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${signalStatusToneClass[signal.status]}`}>{signal.status}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-5 space-y-3">
+            {filteredSignals.map((signal) => {
+              const hasAiData = Boolean(signal.entityName);
+              const typeConfig = signalTypeConfig[signal.signalType] ?? null;
+              return (
+                <div key={signal.id} className="rounded-[16px] border border-[#e7edf5] px-4 py-4 transition hover:border-[#c6d2e6]">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="grid size-10 shrink-0 place-items-center rounded-full bg-[#eef1ff] text-[13px] font-semibold text-[#4766cc]">
+                        {initialsFor(signal.entityName ?? signal.rawTitle)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-[15px] font-semibold text-[#102246]">{signal.entityName ?? "Not yet identified"}</p>
+                          {typeConfig ? (
+                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${typeConfig.tone}`}>{typeConfig.label}</span>
+                          ) : null}
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${signalStatusToneClass[signal.status]}`}>
+                            {signal.status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[13px] text-[#8593ac]">
+                          {signal.sourceUrl ? (
+                            <a href={signal.sourceUrl} target="_blank" rel="noreferrer" className="hover:text-[#3046b2] hover:underline">
+                              {signal.rawTitle}
+                            </a>
+                          ) : (
+                            signal.rawTitle
+                          )}
+                        </p>
+                        {hasAiData && signal.aiSummary ? (
+                          <p className="mt-2.5 text-[14px] leading-6 text-[#435471]">{signal.aiSummary}</p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {signal.relevanceScore != null ? (
+                      <div className="w-[110px] shrink-0 text-right">
+                        <p className="text-[18px] font-semibold leading-none text-[#102246]">{signal.relevanceScore}</p>
+                        <div className="mt-2 h-1.5 rounded-full bg-[#edf2f7]">
+                          <div
+                            className={`h-1.5 rounded-full ${relevanceBarTone(signal.relevanceScore)}`}
+                            style={{ width: `${signal.relevanceScore}%` }}
+                          />
+                        </div>
+                        <p className="mt-1 text-[11px] uppercase tracking-[0.08em] text-[#9aa6ba]">Relevance</p>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[#f0f3f9] pt-3 text-[12px] text-[#8593ac]">
+                    <span>{signalSourceLabel[signal.source] ?? signal.source}</span>
+                    <span>{signal.rawPublishedAt ? new Date(signal.rawPublishedAt).toLocaleDateString() : "No date"}</span>
+                    {signal.matchedLeadId ? <span className="font-medium text-[#2b9b60]">Matched to an existing lead</span> : null}
+                    {signal.createdLeadId ? <span className="font-medium text-[#2b9b60]">New lead created</span> : null}
+                    {signal.sourceUrl ? (
+                      <a href={signal.sourceUrl} target="_blank" rel="noreferrer" className="font-medium text-[#3046b2] hover:underline">
+                        View article ↗
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="mt-4 text-[14px] text-[#9aa6ba]">
             {signals.length > 0
               ? `No captured headlines match "${searchText}".`
-              : "No signals captured yet — either the backend's unreachable, or every source is unconfigured (see above)."}
+              : "No signals captured yet — either the backend's unreachable, or a data source needs configuring below."}
           </p>
         )}
+      </div>
+
+      <div className="rounded-[18px] border border-[#e7edf5] bg-[#f8faff] px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <RadarIcon className="size-4 text-[#8853d0]" />
+            <h2 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-[#5f6f89]">Data sources (technical)</h2>
+          </div>
+          <ActionButton label={running ? "Running…" : "Run pipeline now"} icon={SendIcon} onClick={handleRunPipeline} />
+        </div>
+
+        {status ? (
+          <div className="mt-4 grid gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+            {services.map((service) => (
+              <div key={service.key} className="rounded-[12px] border border-[#e7edf5] bg-white px-3 py-2.5">
+                <p className="text-[12px] font-medium text-[#334463]">{service.label}</p>
+                <span
+                  className={`mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    status[service.key] ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#94a0b3]"
+                  }`}
+                >
+                  {status[service.key] ? "Connected" : "Not configured"}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-[13px] text-[#9aa6ba]">No status available — backend unreachable.</p>
+        )}
+
+        <p className="mt-3 text-[12px] text-[#8593ac]">{notice}</p>
       </div>
     </div>
   );

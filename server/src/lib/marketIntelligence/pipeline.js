@@ -40,7 +40,7 @@ export async function runIntelligencePipeline({ query, firecrawlUrls = [], defau
   };
 
   for (const source of SOURCES) {
-    if (!source.isConfigured()) {
+    if (!(await source.isConfigured())) {
       summary.skippedSources.push(source.name);
       continue;
     }
@@ -84,8 +84,8 @@ async function processOneSignal(raw, defaultCampaignId, summary) {
   });
 
   try {
-    if (!isAiProcessorConfigured()) {
-      throw new Error("AI processor not configured — see aiProcessor.js");
+    if (!(await isAiProcessorConfigured())) {
+      throw new Error("AI processor not configured — add a Claude API key under Admin Panel → AI Assistant");
     }
     const processed = await processSignalWithAi(raw);
     const matchedLead = await findExistingLeadByCompany(processed.entityName);
@@ -138,8 +138,8 @@ async function processOneSignal(raw, defaultCampaignId, summary) {
 
 async function createLeadFromSignal(signal, processed, defaultCampaignId, summary) {
   try {
-    if (!isApolloConfigured()) {
-      throw new Error("Apollo not configured — see sources/apolloSource.js");
+    if (!(await isApolloConfigured())) {
+      throw new Error("Apollo not configured — add a key under Admin Panel → Market Intelligence.");
     }
     // Feeds the AI-extracted entity name into Apollo to enrich it with a
     // real company profile (industry/size/revenue/location) and a contact

@@ -121,8 +121,127 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  // Module ids (see src/lib/permissions.js) this employee may open. Only
+  // consulted for EMPLOYEE — an ADMIN always has every module, so revoking
+  // an admin's access means demoting them first.
+  permissions String[] @default([])
+
   // Personal SMTP mailboxes this employee owns (see EmailAccount.ownerId).
   emailAccounts EmailAccount[]
+  passwordResets PasswordResetToken[]
+  documents      Document[]
+}
+
+// Single row holding the company-wide "system" mailbox used for
+// transactional mail the app sends about itself — password resets and new
+// account handoffs. Deliberately separate from EmailAccount, which is for
+// outbound sales campaigns: those are per-user and get rotated/paused, and
+// password reset delivery must not depend on a salesperson's mailbox.
+model SystemEmailSettings {
+  id                String   @id @default(cuid())
+  smtpHost          String
+  smtpPort          Int      @default(587)
+  smtpSecure        Boolean  @default(false)
+  smtpUser          String
+  // AES-256-GCM ciphertext, same scheme as EmailAccount (lib/credentialCrypto.js).
+  smtpPassEncrypted String
+  fromAddress       String
+  fromName          String   @default("Global Capital BV")
+  lastTestedAt      DateTime?
+  updatedAt         DateTime @updatedAt
+}
+
+// Claude credentials for the AI Assistant and Market Intelligence, set
+// from Admin Panel → AI Assistant. Stored here rather than relying on
+// ANTHROPIC_API_KEY because env vars set in Coolify's UI don't reliably
+// reach the container — see src/lib/aiSettings.js for the lookup order.
+model AiSettings {
+  id String @id @default(cuid())
+  // AES-256-GCM ciphertext, same scheme as EmailAccount (lib/credentialCrypto.js).
+  apiKeyEncrypted String
+  model           String   @default("claude-sonnet-5")
+  lastTestedAt    DateTime?
+  updatedAt       DateTime @updatedAt
+
+  // Which parts of the database the assistant may read (ids from
+  // src/lib/aiDataSources.js). Empty means "everything" only on a fresh
+  // install — the API writes the full default list on first save so an
+  // admin unticking every box genuinely means none.
+  dataSources String[] @default([])
+
+  // Free-text company background pasted in by an admin. Always sent with
+  // every question, unlike Data Room documents which are retrieved per
+  // question — this is for the standing facts the assistant should never
+  // have to look up.
+  companyProfile String?
+}
+
+// Market Intelligence's data-source API keys (Exa, NewsAPI.ai, Firecrawl,
+// Apollo), set from Admin Panel → Market Intelligence — same reasoning as
+// AiSettings above: Coolify env vars don't reliably reach the container, so
+// the DB is the path that actually works in production. Each key is
+// optional (a source simply stays unconfigured/skipped until its key is
+// set) and env vars remain a fallback for local dev — see
+// src/lib/marketIntelligenceSettings.js for the lookup order.
+model MarketIntelSettings {
+  id                     String    @id @default(cuid())
+  exaApiKeyEncrypted     String?
+  newsApiKeyEncrypted    String?
+  firecrawlApiKeyEncrypted String?
+  apolloApiKeyEncrypted  String?
+  updatedAt              DateTime  @updatedAt
+}
+
+// Company documents in the Data Room. The file itself lives on disk (a
+// Docker volume — see docker-compose.coolify.yml), not in Postgres; only
+// metadata and extracted text are stored here so the table stays small
+// enough to query and to feed the AI assistant.
+model Document {
+  id           String   @id @default(cuid())
+  originalName String
+  // Random on-disk name. Never the uploaded filename — that would let a
+  // crafted name escape the uploads directory or collide with another file.
+  storedName String @unique
+  mimeType   String
+  sizeBytes  Int
+  category   String  @default("General")
+  description String?
+
+  // Plain text pulled out at upload time (PDF/DOCX/plaintext). Null for
+  // formats we can't read, e.g. images — those are still listed and
+  // downloadable, they just can't be answered from.
+  extractedText String?
+  // Set when extraction was attempted but produced nothing usable, so the
+  // UI can say why rather than silently showing an unsearchable file.
+  extractionNote String?
+
+  // Pinned documents are sent with every question rather than only when
+  // keywords match — for the handful of files the assistant should always
+  // know (company profile, product sheet, standard terms).
+  pinnedToAi Boolean @default(false)
+
+  uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([createdAt])
+}
+
+model PasswordResetToken {
+  id String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  // Only the SHA-256 of the emailed token is stored, so a database leak
+  // can't be replayed to take over accounts.
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Agent {

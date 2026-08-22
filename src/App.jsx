@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarIcon,
   ChatBubbleIcon,
+  FolderIcon,
   FunnelIcon,
   GridIcon,
   LogOutIcon,
@@ -28,6 +29,7 @@ import { EmailOutreachModule } from "./components/emailOutreach/EmailOutreachMod
 import { EmailTemplatesCadencesModule } from "./components/emailTemplates/EmailTemplatesCadencesModule";
 import { MarketIntelligenceModule } from "./components/marketIntelligence/MarketIntelligenceModule";
 import { AdminPanelModule } from "./components/admin/AdminPanelModule";
+import { DataRoomModule } from "./components/dataRoom/DataRoomModule";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./components/auth/LoginPage";
 import {
@@ -54,7 +56,8 @@ const iconMap = {
   calendar: CalendarIcon,
   pipeline: SendIcon,
   briefcase: GridIcon,
-  shield: ShieldIcon
+  shield: ShieldIcon,
+  folder: FolderIcon
 };
 
 const barToneClass = {
@@ -108,17 +111,49 @@ const pageMeta = {
 };
 
 function AppShell() {
-  const [activePage, setActivePage] = useState("crm-workspace");
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
+
+  // Admin Panel is always available (an employee still needs My Account to
+  // change their password); everything else is gated on the module list an
+  // admin granted them. The API enforces the same rules, so this is
+  // presentation — a hidden nav item isn't the security boundary.
+  const allowedSections = useMemo(() => {
+    const canOpen = (id) => id === "admin-panel" || isAdmin || (user?.permissions ?? []).includes(id);
+    return navSections
+      .map((section) => ({ ...section, items: section.items.filter((item) => canOpen(item.id)) }))
+      .filter((section) => section.items.length > 0);
+  }, [user, isAdmin]);
+
+  const allowedIds = useMemo(
+    () => new Set(allowedSections.flatMap((s) => s.items.map((i) => i.id))),
+    [allowedSections]
+  );
+
+  // Land on the first module they can actually open, so an employee
+  // without CRM Workspace doesn't start on a blank screen.
+  const [activePage, setActivePage] = useState(() =>
+    allowedIds.has("crm-workspace") ? "crm-workspace" : [...allowedIds][0] ?? "admin-panel"
+  );
+
+  // Losing access to the open module (an admin revoked it mid-session)
+  // shouldn't leave a dead view on screen.
+  useEffect(() => {
+    if (!allowedIds.has(activePage)) {
+      setActivePage([...allowedIds][0] ?? "admin-panel");
+    }
+  }, [allowedIds, activePage]);
+
   const currentPage = pageMeta[activePage] ?? commandCenterData;
   const actions = pageActions[activePage] ?? [];
 
   const navWithActive = useMemo(
     () =>
-      navSections.map((section) => ({
+      allowedSections.map((section) => ({
         ...section,
         items: section.items.map((item) => ({ ...item, active: item.id === activePage }))
       })),
-    [activePage]
+    [allowedSections, activePage]
   );
 
   return (
@@ -144,6 +179,8 @@ function AppShell() {
               <EmailTemplatesCadencesModule />
             ) : activePage === "market-intelligence" ? (
               <MarketIntelligenceModule />
+            ) : activePage === "data-room" ? (
+              <DataRoomModule />
             ) : activePage === "admin-panel" ? (
               <AdminPanelModule />
             ) : (

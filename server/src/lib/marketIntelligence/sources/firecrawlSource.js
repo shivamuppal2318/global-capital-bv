@@ -6,10 +6,10 @@
 // Unlike NewsAPI/Exa (which search/discover), Firecrawl here is used to
 // scrape a known list of press/news pages you already care about — so it
 // takes explicit URLs rather than a free-text query.
-const REQUIRED_ENV = "FIRECRAWL_API_KEY";
+import { getProviderKey, isProviderConfigured } from "../../marketIntelligenceSettings.js";
 
-export function isFirecrawlConfigured() {
-  return Boolean(process.env[REQUIRED_ENV]);
+export async function isFirecrawlConfigured() {
+  return isProviderConfigured("firecrawl");
 }
 
 // Pure — testable without any network access or API key.
@@ -24,8 +24,9 @@ export function normalizeFirecrawlPage(page, sourceUrl) {
 }
 
 export async function fetchFirecrawlSignals({ urls = [] } = {}) {
-  if (!isFirecrawlConfigured()) {
-    throw new Error(`Firecrawl is not configured — set ${REQUIRED_ENV}.`);
+  const { apiKey } = await getProviderKey("firecrawl");
+  if (!apiKey) {
+    throw new Error("Firecrawl is not configured — add a key under Admin Panel → Market Intelligence.");
   }
   if (urls.length === 0) {
     return [];
@@ -35,7 +36,7 @@ export async function fetchFirecrawlSignals({ urls = [] } = {}) {
   for (const url of urls) {
     const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env[REQUIRED_ENV]}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ url, formats: ["markdown"] })
     });
 

@@ -1,30 +1,87 @@
 import { useState } from "react";
 import { ActionButton, Field, noteToneClass } from "../ui.jsx";
-import { UsersIcon, SendIcon, MailIcon, TagIcon, SearchIcon, InboxIcon, ChartBarIcon, ClockIcon, WorkflowIcon, PlusIcon, UploadIcon } from "../Icons.jsx";
-import { replyRules } from "./useEmailOutreachState.js";
+import { UsersIcon, SearchIcon, PlusIcon, UploadIcon } from "../Icons.jsx";
+import { buildLeadsCsv } from "../../lib/csvLeads.js";
 
-const callStatusToneClass = {
-  booked: "bg-[#dff2ff] text-[#2995db]",
-  completed: "bg-[#dff5e7] text-[#2b9b60]",
-  canceled: "bg-[#ffe4ee] text-[#ef5b8f]"
+const csvTemplateExampleRow = { name: "Deepa Paul", company: "Nordwind Energy", email: "deepa@nordwind.de", owner: "Rahul R" };
+
+function downloadCsvFile(filename, csvText) {
+  const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+const leadStatusLabel = {
+  NO_REPLY: "No reply yet",
+  INTERESTED: "Interested",
+  ZOOM_REQUEST: "Wants Zoom",
+  INFO_REQUEST: "Asked for info"
 };
 
-// What happens once a lead actually replies: classify → draft the
-// reply-based email → send it → track the workflow it moves through.
-// Pairs with CampaignsTab.jsx, which sets up the campaign this reply came
-// from; both share state via useEmailOutreachState.
+const leadStatusToneClass = {
+  NO_REPLY: "bg-[#edf2f7] text-[#748096]",
+  INTERESTED: noteToneClass.green,
+  ZOOM_REQUEST: noteToneClass.indigo,
+  INFO_REQUEST: noteToneClass.amber
+};
+
+// leadScoreBand/qualification come from the backend (server/src/lib/leadScoring.js),
+// computed from this lead's real activity log (opens, clicks, NDA, calls, bounces)
+// — not recomputed here, so the badge always matches what the server qualified/rejected.
+const leadScoreBandToneClass = {
+  hot: noteToneClass.green,
+  warm: noteToneClass.amber,
+  cold: noteToneClass.slate,
+  risk: noteToneClass.red
+};
+
+// Lead intake and the full roster for the selected campaign — adding leads
+// (single or CSV) and seeing everyone enrolled. What happens once a lead
+// replies (detection, draft, timeline, workflow) lives in RepliesTab.jsx;
+// the follow-up cadence config lives in AutomationTab.jsx — kept separate so
+// this tab stays a quick, scannable "who's in this campaign" view instead of
+// stacking every reply-handling concern underneath it.
 export function LeadsTab({ mailing }) {
   const {
-    repliedLeads, selectedLeadId, selectedLead, selectedLeadTimeline, loadLeadIntoWorkflow,
-    automationForm, activeReplyRule, handleApplyRule, replyAction, handleTemplateDraftChange,
-    handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, previewHtml, setPreviewHtml,
-    simulateIncomingReply, liveSteps, workflowSteps,
-    selectedCampaign, newLeadForm, setNewLeadForm, handleAddLead, csvText, setCsvText, handleImportCsv, automationNotice
+    allLeads, handleDeleteLead,
+    selectedCampaign, newLeadForm, setNewLeadForm, handleAddLead, csvText, handleCsvTextChange, csvPreview, handlePreviewCsv,
+    handleImportCsv, csvImportBusy, csvPreviewBusy, automationNotice
   } = mailing;
+
+  async function handleCsvFileUpload(event) {
+    const file = event.target.files?.[0];
+    // Reset immediately (not after reading) so selecting the same file again
+    // later still fires onChange — browsers otherwise treat re-picking an
+    // identical path as a no-op change event.
+    event.target.value = "";
+    if (!file) return;
+    const text = await file.text();
+    handleCsvTextChange(text);
+  }
   // Purely a UI toggle (which entry method is showing) — doesn't need to
   // survive switching tabs, so it stays local instead of living in the
   // shared mailing state.
   const [leadEntryMode, setLeadEntryMode] = useState("single");
+  // "All leads" pagination is purely a display concern over data the hook
+  // already loaded in full (allLeads) — no reason to push page/pageSize into
+  // the shared hook or re-fetch per page.
+  const [leadsPage, setLeadsPage] = useState(1);
+  const [leadsPerPage, setLeadsPerPage] = useState(25);
+  const leadsTotalPages = Math.max(1, Math.ceil(allLeads.length / leadsPerPage));
+  const leadsPageSafe = Math.min(leadsPage, leadsTotalPages);
+  const pagedLeads = allLeads.slice((leadsPageSafe - 1) * leadsPerPage, leadsPageSafe * leadsPerPage);
+  const leadScoreCounts = {
+    hot: allLeads.filter((lead) => lead.leadScoreBand === "hot").length,
+    warm: allLeads.filter((lead) => lead.leadScoreBand === "warm").length,
+    cold: allLeads.filter((lead) => lead.leadScoreBand === "cold").length,
+    risk: allLeads.filter((lead) => lead.leadScoreBand === "risk").length
+  };
 
   return (
     <section className="space-y-6">
@@ -36,7 +93,7 @@ export function LeadsTab({ mailing }) {
               <p className="text-[15px] font-semibold text-[#102246]">Add leads</p>
             </div>
             <p className="mt-0.5 pl-8 text-[13px] text-[#8593ac]">
-              Enrolls into {selectedCampaign?.name ?? "the selected campaign"}'s no-reply cadence via the backend.
+              Adds them to {selectedCampaign?.name ?? "the selected campaign"} and starts the automatic follow-up emails.
             </p>
           </div>
           <div className="flex shrink-0 gap-1 rounded-[10px] bg-[#f0f3f9] p-1">
@@ -95,19 +152,107 @@ export function LeadsTab({ mailing }) {
           ) : (
             <>
               <p className="text-[13px] leading-5 text-[#6a7790]">
-                Paste rows with a header of <code className="rounded bg-[#f0f3f9] px-1.5 py-0.5 text-[12px]">name,company,email,owner</code> (owner is
-                optional). One bad row won't block the rest of the batch.
+                Upload a .csv file or paste rows with a header of{" "}
+                <code className="rounded bg-[#f0f3f9] px-1.5 py-0.5 text-[12px]">name,company,email,owner</code> (owner is
+                optional). One bad row won't block the rest of the batch.{" "}
+                <button
+                  type="button"
+                  onClick={() => downloadCsvFile("leads-template.csv", buildLeadsCsv([csvTemplateExampleRow]))}
+                  className="font-semibold text-[#3046b2] underline-offset-2 hover:underline"
+                >
+                  Download template
+                </button>
               </p>
+              <div className="mt-3">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] font-medium text-[#435471] hover:bg-[#f7f9fc]">
+                  <UploadIcon className="size-4" />
+                  Upload CSV file
+                  <input type="file" accept=".csv,text/csv" onChange={handleCsvFileUpload} className="hidden" />
+                </label>
+              </div>
               <textarea
                 rows={5}
                 placeholder={"name,company,email,owner\nDeepa Paul,Nordwind Energy,deepa@nordwind.de,Rahul R"}
                 value={csvText}
-                onChange={(event) => setCsvText(event.target.value)}
+                onChange={(event) => handleCsvTextChange(event.target.value)}
                 className="mt-3 w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2.5 text-[13px] font-mono text-[#102246] outline-none focus:border-[#3046b2]"
               />
-              <div className="mt-4">
-                <ActionButton label="Import CSV" icon={UploadIcon} primary onClick={handleImportCsv} />
+              <div className="mt-4 flex flex-wrap gap-3">
+                <ActionButton
+                  label={csvPreviewBusy ? "Checking emails…" : "Preview CSV"}
+                  icon={SearchIcon}
+                  onClick={handlePreviewCsv}
+                  disabled={!csvText.trim() || csvImportBusy || csvPreviewBusy}
+                />
+                <ActionButton
+                  label={csvImportBusy ? "Importing…" : csvPreview ? `Import ${csvPreview.readyCount} ready row(s)` : "Import CSV"}
+                  icon={UploadIcon}
+                  primary
+                  onClick={handleImportCsv}
+                  disabled={!csvText.trim() || csvImportBusy || csvPreviewBusy || (csvPreview ? csvPreview.readyCount === 0 : false)}
+                />
               </div>
+
+              {csvPreview ? (
+                <div className="mt-4 rounded-[14px] border border-[#e7edf5] bg-[#f8faff] p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${noteToneClass.green}`}>
+                        {csvPreview.readyCount} ready
+                      </span>
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${noteToneClass.amber}`}>
+                        {csvPreview.duplicateCount} duplicate
+                      </span>
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${noteToneClass.red}`}>
+                        {csvPreview.invalidCount} invalid
+                      </span>
+                    </div>
+                    {csvPreview.readyCount > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          downloadCsvFile("leads-ready.csv", buildLeadsCsv(csvPreview.rows.filter((row) => row.status === "ready")))
+                        }
+                        className="text-[12px] font-semibold text-[#3046b2] underline-offset-2 hover:underline"
+                      >
+                        Download ready rows
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 max-h-64 overflow-y-auto rounded-[10px] border border-[#e7edf5]">
+                    <table className="w-full text-left text-[13px]">
+                      <thead className="sticky top-0 bg-white text-[11px] uppercase tracking-wide text-[#8593ac]">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">Name</th>
+                          <th className="px-3 py-2 font-semibold">Company</th>
+                          <th className="px-3 py-2 font-semibold">Email</th>
+                          <th className="px-3 py-2 font-semibold">Status</th>
+                          <th className="px-3 py-2 font-semibold">Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvPreview.rows.map((row, index) => (
+                          <tr key={`${row.email || "row"}-${index}`} className="border-t border-[#e7edf5] bg-white">
+                            <td className="px-3 py-2 text-[#102246]">{row.name || "—"}</td>
+                            <td className="px-3 py-2 text-[#5f6f89]">{row.company || "—"}</td>
+                            <td className="px-3 py-2 text-[#5f6f89]">{row.email || "—"}</td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                  row.status === "ready" ? noteToneClass.green : row.status === "invalid" ? noteToneClass.red : noteToneClass.amber
+                                }`}
+                              >
+                                {row.status === "ready" ? "ready" : row.status === "invalid" ? "invalid" : "duplicate"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-[#8593ac]">{row.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
             </>
           )}
         </div>
@@ -118,316 +263,146 @@ export function LeadsTab({ mailing }) {
       </div>
 
       <div className="rounded-[22px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-[15px] font-semibold text-[#102246]">Bulk to workflow handoff</p>
-            <p className="mt-1 text-[14px] text-[#5f6f89]">
-              {repliedLeads.length} companies replied after the bulk campaign and are now eligible for automation.
-            </p>
-          </div>
+        <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <span className="rounded-full bg-[#dff5e7] px-3 py-1 text-[12px] font-semibold text-[#2b9b60]">
-              {repliedLeads.filter((lead) => lead.movedToWorkflow).length} in workflow
-            </span>
-            <ActionButton label="Simulate reply" icon={UsersIcon} onClick={simulateIncomingReply} />
+            <UsersIcon className="size-5 text-[#4766cc]" />
+            <p className="text-[15px] font-semibold text-[#102246]">All leads in {selectedCampaign?.name ?? "this campaign"}</p>
           </div>
+          <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">{allLeads.length} total</span>
         </div>
-      </div>
+        <p className="mt-1 text-[13px] text-[#8593ac]">
+          Every lead enrolled here, whether they've replied yet or not — this is what confirms "Add lead" actually saved something.
+        </p>
 
-      <div className="grid gap-4 xl:grid-cols-[0.78fr_1.22fr]">
-        <div className="rounded-[22px] border border-[#d6deea] bg-white shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-          <div className="border-b border-[#e7edf5] px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <InboxIcon className="size-5 text-[#4766cc]" />
-                <h2 className="text-[16px] font-semibold text-[#102246]">Replied leads</h2>
+        {allLeads.length > 0 ? (
+          <>
+            <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-4">
+              <div className="rounded-[12px] border border-[#cce7d6] bg-[#f1fbf5] px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#2b9b60]">Hot</p>
+                <p className="mt-1 text-[20px] font-bold text-[#102246]">{leadScoreCounts.hot}</p>
               </div>
-              <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">
-                From bulk campaigns
-              </span>
+              <div className="rounded-[12px] border border-[#ffe9d0] bg-[#fff8ee] px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#c07c1f]">Warm</p>
+                <p className="mt-1 text-[20px] font-bold text-[#102246]">{leadScoreCounts.warm}</p>
+              </div>
+              <div className="rounded-[12px] border border-[#e7edf5] bg-[#f8faff] px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#748096]">Cold</p>
+                <p className="mt-1 text-[20px] font-bold text-[#102246]">{leadScoreCounts.cold}</p>
+              </div>
+              <div className="rounded-[12px] border border-[#ffe3e3] bg-[#fff5f5] px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#e0483f]">Risk / rejected</p>
+                <p className="mt-1 text-[20px] font-bold text-[#102246]">{leadScoreCounts.risk}</p>
+              </div>
             </div>
-          </div>
 
-          <div>
-            {repliedLeads.map((lead) => (
-              <button
-                key={lead.id}
-                type="button"
-                onClick={() => loadLeadIntoWorkflow(lead)}
-                className={`flex w-full items-start gap-3 border-b border-[#e7edf5] px-5 py-4 text-left transition hover:bg-[#f8faff] ${
-                  selectedLeadId === lead.id ? "bg-[#f5f8fd]" : ""
-                }`}
-              >
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#eef1ff] text-[13px] font-semibold text-[#4766cc]">
-                  {lead.name
-                    .split(" ")
-                    .map((part) => part[0])
-                    .join("")
-                    .slice(0, 2)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="truncate text-[15px] font-semibold text-[#102246]">{lead.name}</p>
-                    <span className="text-[12px] text-[#6a7790]">{lead.lastReplyAt}</span>
-                  </div>
-                  <p className="mt-1 text-[14px] text-[#435471]">{lead.company}</p>
-                  <p className="mt-2 truncate text-[14px] text-[#5f6f89]">{lead.replyPreview}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${noteToneClass[lead.replyType === "interested" ? "green" : lead.replyType === "zoom-request" ? "indigo" : "amber"]}`}>
-                      {lead.replyType}
-                    </span>
-                    <span className="rounded-full bg-[#eef1ff] px-2.5 py-1 text-[11px] font-semibold text-[#4766cc]">
-                      {lead.stage}
-                    </span>
-                    <span className="rounded-full bg-[#edf2f7] px-2.5 py-1 text-[11px] font-semibold text-[#748096]">
-                      {lead.campaign}
-                    </span>
-                    {lead.bounced ? (
-                      <span className="rounded-full bg-[#ffe4ee] px-2.5 py-1 text-[11px] font-semibold text-[#ef5b8f]">
-                        Bounced
-                      </span>
-                    ) : null}
-                    {lead.unsubscribed ? (
-                      <span className="rounded-full bg-[#edf2f7] px-2.5 py-1 text-[11px] font-semibold text-[#748096]">
-                        Unsubscribed
-                      </span>
-                    ) : null}
-                    {lead.callStatus ? (
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                          callStatusToneClass[lead.callStatus]
-                        }`}
-                      >
-                        Call {lead.callStatus}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <MailIcon className="size-5 text-[#ef5b8f]" />
-                <h2 className="text-[16px] font-semibold text-[#102246]">Next automated email</h2>
-              </div>
-              <p className="mt-1 pl-8 text-[14px] text-[#5f6f89]">
-                Reply-based follow-up for {selectedLead?.name} at {selectedLead?.company}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[#e7edf5] bg-[#f8faff] px-3 py-2.5">
+              <p className="text-[13px] text-[#5f6f89]">
+                Showing {(leadsPageSafe - 1) * leadsPerPage + 1}-{Math.min(leadsPageSafe * leadsPerPage, allLeads.length)} of {allLeads.length} leads
               </p>
-            </div>
-            <span className="rounded-full bg-[#dff5e7] px-3 py-1 text-[12px] font-semibold text-[#2b9b60]">
-              Owner {selectedLead?.owner}
-            </span>
-          </div>
-
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <div className="rounded-[18px] border border-[#d6deea] bg-[#f8faff] px-4 py-4">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#5f6f89]">Detected reply</p>
-              <p className="mt-3 text-[15px] font-medium text-[#102246]">{selectedLead?.replyPreview}</p>
-              <div className="mt-4 space-y-2 text-[14px] text-[#435471]">
-                <p>Campaign: <span className="font-medium text-[#102246]">{selectedLead?.campaign}</span></p>
-                <p>Reply class: <span className="font-medium text-[#102246]">{automationForm.replyType}</span></p>
-                <p>Flow path: <span className="font-medium text-[#102246]">{automationForm.preferredPath}</span></p>
-                <p>CRM stage: <span className="font-medium text-[#102246]">{selectedLead?.stage}</span></p>
-              </div>
-
-              <p className="mt-4 text-[12px] text-[#6a7790]">
-                Auto-classified from reply text — click a rule to override manually.
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {replyRules.map((rule) => {
-                  const active = activeReplyRule?.id === rule.id;
-                  return (
-                    <button
-                      key={rule.id}
-                      type="button"
-                      onClick={() => handleApplyRule(rule)}
-                      className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
-                        active
-                          ? "bg-[#dff5e7] text-[#2b9b60] ring-1 ring-inset ring-[#2b9b60]"
-                          : "bg-[#edf2f7] text-[#5f6f89] hover:bg-[#e3e9f2]"
-                      }`}
-                    >
-                      {rule.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-[18px] border border-[#d6deea] bg-white px-4 py-4">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#5f6f89]">Email draft</p>
-              <div className="mt-3 space-y-3">
-                <div>
-                  <p className="text-[12px] uppercase tracking-[0.12em] text-[#6a7790]">Subject</p>
-                  <input
-                    value={replyAction.subject}
-                    onChange={(event) => handleTemplateDraftChange("subject", event.target.value)}
-                    className="mt-1 w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[15px] font-medium text-[#102246] outline-none"
-                  />
-                </div>
-                <div>
-                  <p className="text-[12px] uppercase tracking-[0.12em] text-[#6a7790]">Body</p>
-                  <textarea
-                    value={replyAction.body}
-                    onChange={(event) => handleTemplateDraftChange("body", event.target.value)}
-                    rows={6}
-                    className="mt-1 w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-3 text-[14px] leading-6 text-[#435471] outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            <ActionButton label={replyAction.cta} icon={MailIcon} primary onClick={handleSendNextEmail} />
-            <ActionButton label="Save template" icon={TagIcon} onClick={handleSaveTemplate} />
-            <ActionButton label="Preview" icon={SearchIcon} onClick={handlePreviewTemplate} />
-          </div>
-
-          {previewHtml ? (
-            <div className="mt-5 rounded-[18px] border border-[#d6deea] bg-white px-4 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#5f6f89]">
-                  Preview — rendered with sample data, exactly as a real send would look
-                </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[12px] text-[#8593ac]">Per page</span>
+                <select
+                  value={leadsPerPage}
+                  onChange={(event) => {
+                    setLeadsPerPage(Number(event.target.value));
+                    setLeadsPage(1);
+                  }}
+                  className="h-8 rounded-[8px] border border-[#d6deea] bg-white px-2 text-[12px] text-[#435471]"
+                >
+                  {[25, 50, 100].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
-                  onClick={() => setPreviewHtml(null)}
-                  className="text-[12px] font-semibold text-[#5f6f89] hover:text-[#102246]"
+                  disabled={leadsPageSafe <= 1}
+                  onClick={() => setLeadsPage((current) => Math.max(1, current - 1))}
+                  className="rounded-[8px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#435471] disabled:opacity-40"
                 >
-                  Close
+                  Prev
+                </button>
+                <span className="min-w-[5rem] text-center text-[12px] text-[#5f6f89]">Page {leadsPageSafe} / {leadsTotalPages}</span>
+                <button
+                  type="button"
+                  disabled={leadsPageSafe >= leadsTotalPages}
+                  onClick={() => setLeadsPage((current) => Math.min(leadsTotalPages, current + 1))}
+                  className="rounded-[8px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#435471] disabled:opacity-40"
+                >
+                  Next
                 </button>
               </div>
-              <iframe
-                title="Email preview"
-                srcDoc={previewHtml}
-                sandbox=""
-                className="mt-3 h-[420px] w-full rounded-[12px] border border-[#d6deea]"
-              />
             </div>
-          ) : null}
-        </div>
-      </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <SendIcon className="size-5 text-[#21439b]" />
-              <h2 className="text-[16px] font-semibold text-[#102246]">Planned sequence</h2>
+            <div className="mt-3 overflow-x-auto rounded-[16px] border border-[#e7edf5]">
+              <table className="w-full text-left text-[14px]">
+                <thead className="border-b border-[#e7edf5] bg-white text-[13px] font-medium text-[#8593ac]">
+                  <tr>
+                    <th className="px-5 py-3.5 font-medium">Name</th>
+                    <th className="px-5 py-3.5 font-medium">Company</th>
+                    <th className="px-5 py-3.5 font-medium">Email</th>
+                    <th className="px-5 py-3.5 font-medium">Owner</th>
+                    <th className="px-5 py-3.5 font-medium">Status</th>
+                    <th className="px-5 py-3.5 font-medium">Score</th>
+                    <th className="px-5 py-3.5 font-medium">Flags</th>
+                    <th className="px-5 py-3.5 font-medium">Added</th>
+                    <th className="px-5 py-3.5 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e7edf5]">
+                  {pagedLeads.map((lead) => (
+                    <tr key={lead.id} className="group bg-white transition hover:bg-[#f8faff]">
+                      <td className="px-5 py-5 align-top font-semibold text-[#102246]">{lead.name}</td>
+                      <td className="px-5 py-5 align-top text-[#435471]">{lead.company}</td>
+                      <td className="px-5 py-5 align-top text-[#435471]">{lead.email}</td>
+                      <td className="px-5 py-5 align-top text-[#435471]">{lead.owner}</td>
+                      <td className="px-5 py-5 align-top">
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${leadStatusToneClass[lead.replyType] ?? "bg-[#edf2f7] text-[#748096]"}`}>
+                          {leadStatusLabel[lead.replyType] ?? lead.replyType}
+                        </span>
+                      </td>
+                      <td className="px-5 py-5 align-top">
+                        <span
+                          title={lead.leadScoreReasons?.length ? lead.leadScoreReasons.join(", ") : "No engagement recorded yet"}
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${leadScoreBandToneClass[lead.leadScoreBand] ?? noteToneClass.slate}`}
+                        >
+                          {lead.leadScore}/100 {lead.leadScoreBand}
+                        </span>
+                      </td>
+                      <td className="px-5 py-5 align-top">
+                        <div className="flex flex-wrap gap-1.5">
+                          {lead.bounced ? <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${noteToneClass.red}`}>Bounced</span> : null}
+                          {lead.unsubscribed ? <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${noteToneClass.slate}`}>Unsubscribed</span> : null}
+                          {lead.ndaSignedAt ? <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${noteToneClass.green}`}>NDA signed</span> : null}
+                          {!lead.bounced && !lead.unsubscribed && !lead.ndaSignedAt ? <span className="text-[13px] text-[#c7cedb]">—</span> : null}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-5 align-top text-[#8593ac]">{new Date(lead.createdAt).toLocaleDateString()}</td>
+                      <td className="px-5 py-5 align-top text-right">
+                        <button
+                          type="button"
+                          title="Delete lead"
+                          aria-label="Delete lead"
+                          onClick={() => {
+                            if (window.confirm(`Delete ${lead.name} (${lead.company})? This also removes their reply/activity history.`)) {
+                              handleDeleteLead(lead);
+                            }
+                          }}
+                          className="grid size-7 place-items-center rounded-[8px] text-[#c7cedb] opacity-0 transition group-hover:opacity-100 hover:bg-[#fdecf1] hover:text-[#a13a56]"
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <span className="text-[14px] text-[#5f6f89]">{liveSteps.length} touches</span>
-          </div>
-          <p className="mt-2 text-[13px] text-[#8593ac]">
-            Preview of the cadence steps "Save automation" will schedule, based on the delay/follow-up settings above.
-          </p>
-          <div className="mt-6 space-y-4">
-            {liveSteps.map((step) => (
-              <div key={step.title}>
-                <p className="text-[15px] font-semibold text-[#102246]">{step.title}</p>
-                <p className="text-[14px] text-[#5f6f89]">{step.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-          <div className="flex items-center gap-3">
-            <ChartBarIcon className="size-5 text-[#5769d4]" />
-            <h2 className="text-[16px] font-semibold text-[#102246]">Sequence summary</h2>
-          </div>
-          <div className="mt-5 space-y-3 text-[14px] text-[#435471]">
-            <p>Audience: <span className="font-medium text-[#102246]">{automationForm.audience}</span></p>
-            <p>Template: <span className="font-medium text-[#102246]">{automationForm.template}</span></p>
-            <p>Cadence gap: <span className="font-medium text-[#102246]">{automationForm.delayDays} days</span></p>
-            <p>Daily cap: <span className="font-medium text-[#102246]">{automationForm.dailyLimit}/day</span></p>
-            <p>A/B test: <span className="font-medium text-[#102246]">{automationForm.abTest ? "Enabled" : "Disabled"}</span></p>
-            <p>Reply branch: <span className="font-medium text-[#102246]">{automationForm.replyType}</span></p>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <ClockIcon className="size-5 text-[#5f6f89]" />
-              <h2 className="text-[16px] font-semibold text-[#102246]">Lead activity timeline</h2>
-            </div>
-            <p className="mt-1 pl-8 text-[14px] text-[#5f6f89]">
-              Bulk campaign touchpoints and follow-up automation for {selectedLead?.name}
-            </p>
-          </div>
-          <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">
-            {selectedLeadTimeline.length} events
-          </span>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          {selectedLeadTimeline.map((event, index) => (
-            <div key={`${event.at}-${event.title}-${index}`} className="flex gap-4">
-              <div className="flex flex-col items-center">
-                <span className="mt-1 h-3 w-3 rounded-full bg-[#3046b2]" />
-                {index !== selectedLeadTimeline.length - 1 ? <span className="mt-2 h-full w-px bg-[#d9e2ef]" /> : null}
-              </div>
-              <div className="min-w-0 flex-1 rounded-[18px] border border-[#d6deea] bg-[#f8faff] px-4 py-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-[15px] font-semibold text-[#102246]">{event.title}</p>
-                  <span className="text-[12px] text-[#6a7790]">{event.at}</span>
-                </div>
-                <p className="mt-2 text-[14px] leading-6 text-[#435471]">{event.detail}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <WorkflowIcon className="size-5 text-[#5769d4]" />
-            <h2 className="text-[16px] font-semibold text-[#102246]">Reply-triggered workflow</h2>
-          </div>
-          <span className="rounded-full bg-[#edf2f7] px-3 py-1 text-[12px] font-semibold text-[#5f6f89]">
-            {automationForm.replyType === "no-reply" ? "Reminder path" : "Conditional path"}
-          </span>
-        </div>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {workflowSteps.map((step) => (
-            <div
-              key={step.key}
-              className={`rounded-[18px] border px-4 py-4 ${
-                step.state === "done"
-                  ? "border-[#cce7d6] bg-[#f1fbf5]"
-                  : step.state === "current"
-                    ? "border-[#bfd0ff] bg-[#f4f7ff]"
-                    : "border-[#d6deea] bg-white"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[15px] font-semibold text-[#102246]">{step.title}</p>
-                <span
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                    step.state === "done"
-                      ? "bg-[#dff5e7] text-[#2b9b60]"
-                      : step.state === "current"
-                        ? "bg-[#e6ebff] text-[#5769d4]"
-                        : "bg-[#edf2f7] text-[#748096]"
-                  }`}
-                >
-                  {step.state}
-                </span>
-              </div>
-              <p className="mt-3 text-[14px] leading-6 text-[#5f6f89]">{step.desc}</p>
-            </div>
-          ))}
-        </div>
+          </>
+        ) : (
+          <p className="mt-4 text-[13px] text-[#9aa6ba]">No leads in this campaign yet — add one above.</p>
+        )}
       </div>
     </section>
   );

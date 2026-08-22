@@ -4,11 +4,12 @@
 // as aiProcessor.js (and the same REQUIRED_ENV), so it's already wired for
 // whichever provider aiProcessor.js gets swapped to later — the prompt/
 // parsing here don't care which model produced the reply.
-const REQUIRED_ENV = "ANTHROPIC_API_KEY";
+import { getAiConfig, isAiConfigured } from "../aiSettings.js";
+
 const MAX_SIGNALS_IN_CONTEXT = 40;
 
 export function isChatAssistantConfigured() {
-  return Boolean(process.env[REQUIRED_ENV]);
+  return isAiConfigured();
 }
 
 // Pure — one compact line per signal, newest-relevant info only. Keeps the
@@ -48,20 +49,21 @@ export function parseChatResponse(data) {
   return text.trim();
 }
 
-export async function askChatAssistant(message, { signals = [], history = [] } = {}) {
-  if (!isChatAssistantConfigured()) {
-    throw new Error(`AI processor is not configured — set ${REQUIRED_ENV}.`);
+async function callAnthropic(message, { signals, history }) {
+  const { apiKey, model } = await getAiConfig();
+  if (!apiKey) {
+    throw new Error("AI processor is not configured — add a Claude API key under Admin Panel → AI Assistant.");
   }
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
-      "x-api-key": process.env[REQUIRED_ENV],
+      "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      model: "claude-sonnet-5",
+      model,
       max_tokens: 600,
       system: buildChatSystemPrompt(signals),
       messages: [...history, { role: "user", content: message }]
@@ -74,4 +76,20 @@ export async function askChatAssistant(message, { signals = [], history = [] } =
 
   const data = await response.json();
   return parseChatResponse(data);
+}
+
+// Anthropic occasionally returns a 200 with no text content for reasons
+// that aren't surfaced (observed intermittently, not tied to any
+// particular question) — a same-request retry has reliably succeeded when
+// tested, so it's worth one silent retry before actually failing the
+// user's question.
+export async function askChatAssistant(message, { signals = [], history = [] } = {}) {
+  try {
+    return await callAnthropic(message, { signals, history });
+  } catch (err) {
+    if (!err.message.includes("empty response")) {
+      throw err;
+    }
+    return await callAnthropic(message, { signals, history });
+  }
 }

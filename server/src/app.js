@@ -3,6 +3,7 @@ import cors from "cors";
 import authRouter from "./routes/auth.js";
 import adminRouter from "./routes/admin.js";
 import { requireAuth } from "./middleware/requireAuth.js";
+import { requireModule } from "./lib/permissions.js";
 import overviewRouter from "./routes/overview.js";
 import dashboardRouter from "./routes/dashboard.js";
 import chatRouter from "./routes/chat.js";
@@ -18,6 +19,7 @@ import leadsRouter from "./routes/leads.js";
 import aiChatRouter from "./routes/aiChat.js";
 import zoomRouter from "./routes/zoom.js";
 import meetingsRouter from "./routes/meetings.js";
+import { documentsRouter } from "./routes/documents.js";
 // Email cold-outreach domain (merged from the `crm` branch) — kept as
 // separate routers/mount paths from the WhatsApp domain above, matching the
 // separate Email*-prefixed Prisma models (see schema.prisma).
@@ -57,39 +59,77 @@ app.use("/api/auth", authRouter);
 // replaces — auth was deliberately deferred until it could be done as one
 // real pass instead of piecemeal.
 const PUBLIC_PREFIXES = ["/api/webhooks", "/api/unsubscribe", "/api/nda", "/api/track"];
+const INBOUND_WEBHOOK_PATHS = ["/api/leads/inbound", "/api/email/leads/inbound"];
 app.use((req, res, next) => {
-  if (req.method === "POST" && req.path === "/api/leads/inbound") return next();
+  if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
   if (PUBLIC_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
   return requireAuth(req, res, next);
 });
 
+// Per-module access control. Hiding a nav item in the browser is a
+// convenience, not a control — an employee without a module must be
+// refused at the API too, which is what requireModule does here. Admins
+// pass everything (see lib/permissions.js).
+const wa = requireModule("whatsapp-business");
+
 app.use("/api/admin", adminRouter);
-app.use("/api/whatsapp/overview", overviewRouter);
-app.use("/api/whatsapp/dashboard", dashboardRouter);
-app.use("/api/whatsapp/chat", chatRouter);
-app.use("/api/whatsapp/templates", templatesRouter);
-app.use("/api/whatsapp/campaigns", campaignsRouter);
-app.use("/api/whatsapp/drip-campaigns", dripCampaignsRouter);
-app.use("/api/whatsapp/auto-replies", autoRepliesRouter);
-app.use("/api/whatsapp/bot-flows", botFlowsRouter);
-app.use("/api/whatsapp/crm-triggers", crmTriggersRouter);
-app.use("/api/whatsapp/automation", automationRouter);
+app.use("/api/whatsapp/overview", wa, overviewRouter);
+app.use("/api/whatsapp/dashboard", wa, dashboardRouter);
+app.use("/api/whatsapp/chat", wa, chatRouter);
+app.use("/api/whatsapp/templates", wa, templatesRouter);
+app.use("/api/whatsapp/campaigns", wa, campaignsRouter);
+app.use("/api/whatsapp/drip-campaigns", wa, dripCampaignsRouter);
+app.use("/api/whatsapp/auto-replies", wa, autoRepliesRouter);
+app.use("/api/whatsapp/bot-flows", wa, botFlowsRouter);
+app.use("/api/whatsapp/crm-triggers", wa, crmTriggersRouter);
+app.use("/api/whatsapp/automation", wa, automationRouter);
 app.use("/api/whatsapp/settings", settingsRouter);
-app.use("/api/leads", leadsRouter);
+app.use(
+  "/api/leads",
+  (req, res, next) => {
+    // Mirrors the requireAuth bypass above: an external platform's
+    // API-key-authenticated POST to /inbound has no req.user (requireAuth
+    // never ran for it), so requireModule's permission check must be
+    // skipped here too — otherwise every inbound webhook call gets
+    // rejected as "no access" before it ever reaches the route's own
+    // x-api-key check.
+    if (req.method === "POST" && req.path === "/inbound") return next();
+    return requireModule("crm-workspace", "leads")(req, res, next);
+  },
+  leadsRouter
+);
+app.use("/api/documents", requireModule("data-room"), documentsRouter);
 app.use("/api/ai", aiChatRouter);
-app.use("/api/zoom", zoomRouter);
-app.use("/api/meetings", meetingsRouter);
+app.use("/api/zoom", requireModule("meetings"), zoomRouter);
+app.use("/api/meetings", requireModule("meetings"), meetingsRouter);
 
 // Email cold-outreach domain. Everything here already passed the global
 // requireAuth gate above except the four public-facing routers at the
 // bottom of this block (bounce/Calendly webhooks, unsubscribe, NDA
 // signing, tracking) — those are hit directly by external senders/leads,
 // never through the logged-in app UI.
-app.use("/api/email/campaigns", emailCampaignsRouter);
-app.use("/api/email/leads", emailLeadsRouter);
-app.use("/api/email/templates", emailTemplatesRouter);
+const outreach = requireModule("cold-bulk-mailing", "leads");
+app.use("/api/email/campaigns", outreach, emailCampaignsRouter);
+app.use(
+  "/api/email/leads",
+  (req, res, next) => {
+    // Same reasoning as the /api/leads/inbound bypass above: this call has
+    // no req.user (requireAuth already skipped it), so the module gate must
+    // skip it too, or every external POST dies here with a 403 before ever
+    // reaching the route's own x-api-key check.
+    if (req.method === "POST" && req.path === "/inbound") return next();
+    return outreach(req, res, next);
+  },
+  emailLeadsRouter
+);
+// Still needed by Cold Bulk Mailing to send saved templates, even though
+// the Templates & Cadences screen is no longer in the menu.
+app.use("/api/email/templates", requireModule("cold-bulk-mailing"), emailTemplatesRouter);
+// Not module-gated: everyone manages their own mailbox from Admin Panel →
+// My Account, and the router itself already scopes non-admins to the
+// mailboxes they own.
 app.use("/api/email-accounts", emailAccountsRouter);
-app.use("/api/market-intelligence", marketIntelligenceRouter);
+app.use("/api/market-intelligence", requireModule("market-intelligence"), marketIntelligenceRouter);
 app.use("/api/webhooks/bounce", bouncesRouter);
 app.use("/api/webhooks/calendly", calendlyWebhookRouter);
 app.use("/api/webhooks", webhooksRouter);

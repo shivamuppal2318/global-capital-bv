@@ -1,12 +1,14 @@
 import { ActionButton, Field, ToggleCard } from "../ui.jsx";
-import { WorkflowIcon, SendIcon } from "../Icons.jsx";
+import { WorkflowIcon, SendIcon, ChartBarIcon } from "../Icons.jsx";
 
 // The sequence/automation config for the campaign currently selected on the
 // Campaigns tab — audience, template, sending cap, cadence timing, and
 // reply-routing. Its own tab so this larger form doesn't compete for space
-// with the campaign list or lead intake.
+// with the campaign list or lead intake. The preview below the form (what
+// this config will actually send) lives here rather than on the Leads tab,
+// since it's a direct readout of the settings right above it.
 export function AutomationTab({ mailing }) {
-  const { automationForm, handleFormChange, handleSaveAutomation, automationNotice } = mailing;
+  const { automationForm, handleFormChange, handleSaveAutomation, automationNotice, liveSteps } = mailing;
 
   return (
     <section className="space-y-6">
@@ -27,7 +29,7 @@ export function AutomationTab({ mailing }) {
               className="w-full rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[15px] text-[#102246] outline-none"
             />
           </Field>
-          <Field label="Audience segment">
+          <Field label="Who you're targeting">
             <select
               value={automationForm.audience}
               onChange={(event) => handleFormChange("audience", event.target.value)}
@@ -50,7 +52,7 @@ export function AutomationTab({ mailing }) {
               <option>Portfolio quarterly update</option>
             </select>
           </Field>
-          <Field label="Daily sending cap">
+          <Field label="Emails per day">
             <input
               type="number"
               value={automationForm.dailyLimit}
@@ -70,7 +72,7 @@ export function AutomationTab({ mailing }) {
               <option value="7">7 days</option>
             </select>
           </Field>
-          <Field label="Follow-up count">
+          <Field label="Number of follow-up emails">
             <select
               value={automationForm.followUpCount}
               onChange={(event) => handleFormChange("followUpCount", event.target.value)}
@@ -93,7 +95,7 @@ export function AutomationTab({ mailing }) {
               <option value="no-reply">No reply</option>
             </select>
           </Field>
-          <Field label="Preferred progression">
+          <Field label="What happens next">
             <select
               value={automationForm.preferredPath}
               onChange={(event) => handleFormChange("preferredPath", event.target.value)}
@@ -128,6 +130,44 @@ export function AutomationTab({ mailing }) {
       <div className="rounded-[18px] border border-[#d6deea] bg-white px-4 py-4">
         <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#5f6f89]">Automation status</p>
         <p className="mt-2 text-[15px] font-medium text-[#102246]">{automationNotice}</p>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <SendIcon className="size-5 text-[#21439b]" />
+              <h2 className="text-[16px] font-semibold text-[#102246]">Upcoming follow-up emails</h2>
+            </div>
+            <span className="text-[14px] text-[#5f6f89]">{liveSteps.length} emails</span>
+          </div>
+          <p className="mt-2 text-[13px] text-[#8593ac]">
+            Preview of the follow-up emails "Save automation" will schedule, based on the timing settings above.
+          </p>
+          <div className="mt-6 space-y-4">
+            {liveSteps.map((step) => (
+              <div key={step.title}>
+                <p className="text-[15px] font-semibold text-[#102246]">{step.title}</p>
+                <p className="text-[14px] text-[#5f6f89]">{step.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+          <div className="flex items-center gap-3">
+            <ChartBarIcon className="size-5 text-[#5769d4]" />
+            <h2 className="text-[16px] font-semibold text-[#102246]">Follow-up settings</h2>
+          </div>
+          <div className="mt-5 space-y-3 text-[14px] text-[#435471]">
+            <p>Audience: <span className="font-medium text-[#102246]">{automationForm.audience}</span></p>
+            <p>Template: <span className="font-medium text-[#102246]">{automationForm.template}</span></p>
+            <p>Days between emails: <span className="font-medium text-[#102246]">{automationForm.delayDays}</span></p>
+            <p>Emails per day: <span className="font-medium text-[#102246]">{automationForm.dailyLimit}</span></p>
+            <p>A/B test: <span className="font-medium text-[#102246]">{automationForm.abTest ? "Enabled" : "Disabled"}</span></p>
+            <p>Reply type: <span className="font-medium text-[#102246]">{automationForm.replyType}</span></p>
+          </div>
+        </div>
       </div>
     </section>
   );

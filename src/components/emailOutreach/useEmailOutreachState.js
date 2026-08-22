@@ -43,7 +43,21 @@ function buildAutomationSteps(campaignName, delayDays, followUpCount) {
   });
 }
 
-function buildWorkflowSteps(flowState) {
+// Reflects the SELECTED LEAD's actual tracked progress (ndaSignedAt,
+// callStatus derived from Calendly webhooks / manual call-completed
+// confirmation — see schema.prisma's EmailLead comments), not just the
+// Automation tab's generic reply-type/path config. The config still decides
+// which branch applies and, for "interested", which step comes first
+// (preferredPath is a real per-campaign setting) — but "done" only shows
+// once this lead's own data confirms it happened. Steps with no tracked
+// field yet (data room, IOI/LOI) can only honestly show "pending" — there's
+// nothing in EmailLead to confirm those completed.
+function buildWorkflowSteps(flowState, lead) {
+  const ndaDone = Boolean(lead?.ndaSignedAt);
+  const zoomDone = lead?.callStatus === "completed";
+  const zoomBooked = zoomDone || lead?.callStatus === "booked";
+  const ndaFirst = flowState.preferredPath !== "zoom-first";
+
   const steps = [
     {
       key: "outreach",
@@ -60,23 +74,38 @@ function buildWorkflowSteps(flowState) {
   ];
 
   if (flowState.replyType === "interested") {
-    steps.push({
-      key: "nda",
-      title: "Send NDA e-signature",
-      desc: "Auto-send NDA email and schedule up to 2 reminders, 3 working days apart.",
-      state: "done"
-    });
-    steps.push({
-      key: "zoom1",
-      title: "Schedule Zoom Call 1",
-      desc: "Send booking link and confirm introductory Zoom meeting.",
-      state: flowState.preferredPath === "zoom-first" ? "done" : "current"
-    });
+    if (ndaFirst) {
+      steps.push({
+        key: "nda",
+        title: "Send NDA e-signature",
+        desc: "Auto-send NDA email and schedule up to 2 reminders, 3 working days apart.",
+        state: ndaDone ? "done" : "current"
+      });
+      steps.push({
+        key: "zoom1",
+        title: "Schedule Zoom Call 1",
+        desc: "Send booking link and confirm introductory Zoom meeting.",
+        state: zoomDone ? "done" : zoomBooked || ndaDone ? "current" : "pending"
+      });
+    } else {
+      steps.push({
+        key: "zoom1",
+        title: "Schedule Zoom Call 1",
+        desc: "Send booking link and confirm introductory Zoom meeting.",
+        state: zoomDone ? "done" : "current"
+      });
+      steps.push({
+        key: "nda",
+        title: "Send NDA e-signature",
+        desc: "Auto-send NDA email and schedule up to 2 reminders, 3 working days apart.",
+        state: ndaDone ? "done" : zoomDone ? "current" : "pending"
+      });
+    }
     steps.push({
       key: "data-room",
       title: "Request Data Room",
       desc: "Ask for documents and trigger AI gap-check follow-up reminders.",
-      state: flowState.preferredPath === "nda-first" ? "current" : "pending"
+      state: ndaDone && zoomDone ? "current" : "pending"
     });
     steps.push({
       key: "ioi",
@@ -89,19 +118,19 @@ function buildWorkflowSteps(flowState) {
       key: "zoom1",
       title: "Schedule Zoom Call 1 first",
       desc: "Lead prefers a meeting before NDA. Auto-send Zoom link and reminder email.",
-      state: "current"
+      state: zoomDone ? "done" : "current"
     });
     steps.push({
       key: "nda-after-zoom",
       title: "Post-Zoom NDA email",
       desc: "After Zoom completion, send NDA and supporting deck automatically.",
-      state: "pending"
+      state: ndaDone ? "done" : zoomDone ? "current" : "pending"
     });
     steps.push({
       key: "data-room",
       title: "Request Data Room",
       desc: "Once NDA is signed, send data-room request and reminder flow.",
-      state: "pending"
+      state: ndaDone && zoomDone ? "current" : "pending"
     });
   } else if (flowState.replyType === "info-request") {
     steps.push({
@@ -228,6 +257,17 @@ export function useEmailOutreachState() {
   // (from real inbound replies, or from clicking "Simulate reply" against
   // a real lead).
   const [repliedLeads, setRepliedLeads] = useState([]);
+  // Every lead in the selected campaign, replied or not — repliedLeads
+  // alone left a freshly-added lead invisible everywhere in the UI until
+  // it replied, which read as "nothing happened" even though the backend
+  // had genuinely saved it.
+  const [allLeads, setAllLeads] = useState([]);
+  // null while loading — lets the UI show nothing rather than a wrong
+  // "sending is off" banner for the split second before this resolves.
+  const [systemStatus, setSystemStatus] = useState(null);
+  // null = not tested this session yet; { pending: true } while in flight;
+  // { success, message } once the backend responds.
+  const [testConnectionResult, setTestConnectionResult] = useState(null);
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [leadActivity, setLeadActivity] = useState({});
   const [templateDrafts, setTemplateDrafts] = useState({
@@ -326,6 +366,7 @@ export function useEmailOutreachState() {
             stage: lead.stage,
             bounced: lead.bounced,
             unsubscribed: lead.unsubscribed,
+            ndaSignedAt: lead.ndaSignedAt,
             callStatus: lead.callCanceledAt
               ? "canceled"
               : lead.callCompletedAt
@@ -337,6 +378,17 @@ export function useEmailOutreachState() {
         });
         setRepliedLeads(mapped);
         setSelectedLeadId(mapped[0].id);
+        // Without this, the "Next automated email" panel showed whatever
+        // replyType/preferredPath the form happened to default to (always
+        // "interested"/"nda-first") rather than the auto-selected lead's
+        // actual reply — e.g. a zoom-request lead loaded with an NDA draft
+        // and the wrong workflow steps until manually re-clicked.
+        setAutomationForm((current) => ({
+          ...current,
+          campaignName: mapped[0].campaign,
+          replyType: mapped[0].replyType,
+          preferredPath: mapped[0].replyType === "zoom-request" ? "zoom-first" : "nda-first"
+        }));
         setAutomationNotice(`Loaded ${mapped.length} replied lead(s) from the backend.`);
       })
       .catch(() => {
@@ -344,6 +396,26 @@ export function useEmailOutreachState() {
         // showing fabricated leads.
       });
   }, []);
+
+  function loadAllLeadsForCampaign(campaignId) {
+    if (!campaignId) {
+      return;
+    }
+    emailLeadsApi
+      .list(campaignId)
+      .then((leads) => setAllLeads(leads))
+      .catch(() => {
+        // Backend unreachable — leave whatever was already loaded.
+      });
+  }
+
+  // Re-fetches whenever the selected campaign changes — including the
+  // switch from the local seed id to the real backend id once campaigns
+  // finish loading above, which is what makes this correct on first mount
+  // too, not just when the user later picks a different campaign.
+  useEffect(() => {
+    loadAllLeadsForCampaign(selectedCampaignId);
+  }, [selectedCampaignId]);
 
   // Refresh the activity timeline from the backend whenever the selected
   // lead changes.
@@ -381,9 +453,12 @@ export function useEmailOutreachState() {
     replyType: "interested",
     preferredPath: "nda-first"
   });
-  const [automationNotice, setAutomationNotice] = useState("Automation ready. Select a campaign or create a new sequence.");
+  const [automationNotice, setAutomationNotice] = useState("Automation ready. Select a campaign or create a new one.");
   const [newLeadForm, setNewLeadForm] = useState({ name: "", company: "", email: "" });
   const [csvText, setCsvText] = useState("");
+  const [csvPreview, setCsvPreview] = useState(null);
+  const [csvImportBusy, setCsvImportBusy] = useState(false);
+  const [csvPreviewBusy, setCsvPreviewBusy] = useState(false);
   const [previewHtml, setPreviewHtml] = useState(null);
   const [emailAccounts, setEmailAccounts] = useState([]);
   const [newAccountForm, setNewAccountForm] = useState({
@@ -408,6 +483,15 @@ export function useEmailOutreachState() {
       });
   }, []);
 
+  useEffect(() => {
+    emailCampaignsApi
+      .systemStatus()
+      .then((status) => setSystemStatus(status))
+      .catch(() => {
+        // Backend unreachable — no banner rather than a wrong one.
+      });
+  }, []);
+
   const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedCampaignId) ?? campaigns[0];
   const selectedLead = repliedLeads.find((lead) => lead.id === selectedLeadId) ?? repliedLeads[0];
   const selectedLeadTimeline = selectedLead ? leadActivity[selectedLead.id] ?? [] : [];
@@ -418,7 +502,7 @@ export function useEmailOutreachState() {
     Number(automationForm.delayDays) || 3,
     Number(automationForm.followUpCount) || 3
   );
-  const workflowSteps = buildWorkflowSteps(automationForm);
+  const workflowSteps = buildWorkflowSteps(automationForm, selectedLead);
   const defaultReplyAction = buildReplyAction(automationForm);
   const replyAction = {
     ...defaultReplyAction,
@@ -458,7 +542,21 @@ export function useEmailOutreachState() {
       replyType: lead.replyType,
       preferredPath: lead.replyType === "zoom-request" ? "zoom-first" : "nda-first"
     }));
-    setAutomationNotice(`${lead.name} moved from bulk replies into the workflow automation queue.`);
+    setAutomationNotice(`Loaded ${lead.name}'s reply into the follow-up panel.`);
+  }
+
+  async function handleDeleteLead(lead) {
+    try {
+      await emailLeadsApi.remove(lead.id);
+      setRepliedLeads((current) => current.filter((l) => l.id !== lead.id));
+      setAllLeads((current) => current.filter((l) => l.id !== lead.id));
+      if (selectedLeadId === lead.id) {
+        setSelectedLeadId(null);
+      }
+      setAutomationNotice(`${lead.name} (${lead.company}) deleted.`);
+    } catch (error) {
+      setAutomationNotice(`Could not delete ${lead.name} (${error.message}).`);
+    }
   }
 
   async function handleToggleCampaignStatus() {
@@ -514,22 +612,34 @@ export function useEmailOutreachState() {
         owner: "Rahul R",
         campaignId: selectedCampaign.id
       });
-      setAutomationNotice(`${newLeadForm.name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`);
+      setAutomationNotice(
+        result.cadenceScheduled > 0
+          ? `${newLeadForm.name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`
+          : `${newLeadForm.name} added to "${selectedCampaign.name}". No follow-up emails scheduled yet (this campaign has none set up, or the sending queue isn't running) — the lead was still saved.`
+      );
       setNewLeadForm({ name: "", company: "", email: "" });
+      loadAllLeadsForCampaign(selectedCampaign.id);
     } catch (error) {
       // The backend 409s on a duplicate (same email already in this
-      // campaign) rather than silently double-enrolling them in the
-      // cadence — surfaced as its own case so it doesn't read like a
-      // generic backend failure.
-      setAutomationNotice(
-        error.message.includes("already in this campaign")
-          ? `${newLeadForm.email} is already in "${selectedCampaign.name}" — not added again.`
-          : `Could not add lead via the backend (${error.message}). No local-only fallback for this action.`
-      );
+      // campaign) and 422s on an email that fails real DNS deliverability
+      // checks (see server/src/lib/emailValidation.js) — both surfaced as
+      // their own case so neither reads like a generic backend failure.
+      if (error.message.includes("already in this campaign")) {
+        setAutomationNotice(`${newLeadForm.email} is already in "${selectedCampaign.name}" — not added again.`);
+      } else if (error.message.includes("looks undeliverable")) {
+        setAutomationNotice(error.message);
+      } else {
+        setAutomationNotice(`Could not add lead via the backend (${error.message}). No local-only fallback for this action.`);
+      }
     }
   }
 
-  async function handleImportCsv() {
+  // Shows what will happen BEFORE anything is sent to the backend: parses the
+  // pasted CSV client-side and cross-checks every row's email against leads
+  // already loaded for this campaign (allLeads) and against the rest of the
+  // pasted batch, so duplicates and bad rows are visible up front instead of
+  // only surfacing afterward in a single collapsed notice line.
+  async function handlePreviewCsv() {
     if (!csvText.trim()) {
       setAutomationNotice("Paste some CSV rows first.");
       return;
@@ -540,25 +650,112 @@ export function useEmailOutreachState() {
     }
 
     const { rows, errors } = parseLeadsCsv(csvText);
-    if (rows.length === 0) {
-      setAutomationNotice(`CSV import: nothing to import. ${errors[0] ?? ""}`);
+    const existingEmails = new Set(allLeads.map((lead) => lead.email.toLowerCase()));
+    const seenInFile = new Set();
+    const previewRows = [];
+
+    errors.forEach((message) => {
+      previewRows.push({ name: "", company: "", email: "", owner: "", status: "invalid", reason: message });
+    });
+
+    rows.forEach((row) => {
+      const emailKey = row.email.toLowerCase();
+      let status = "ready";
+      let reason = "Ready to import";
+      if (seenInFile.has(emailKey)) {
+        status = "duplicate-in-file";
+        reason = "Duplicate email earlier in this same paste.";
+      } else if (existingEmails.has(emailKey)) {
+        status = "duplicate-existing";
+        reason = `Already in "${selectedCampaign.name}".`;
+      }
+      seenInFile.add(emailKey);
+      previewRows.push({ ...row, status, reason });
+    });
+
+    // Format/duplicate checks above are instant and local; a real
+    // deliverability check (DNS MX/A/AAAA lookup) needs the backend, so it
+    // only runs for rows that passed those free checks — no point DNS
+    // -checking an email that's already going to be skipped as a duplicate.
+    setCsvPreviewBusy(true);
+    try {
+      const candidateRows = previewRows.filter((row) => row.status === "ready");
+      if (candidateRows.length > 0) {
+        const { results } = await emailLeadsApi.validateEmails(candidateRows.map((row) => row.email));
+        const deliverabilityByEmail = new Map(results.map((result) => [result.email.toLowerCase(), result]));
+        previewRows.forEach((row) => {
+          if (row.status !== "ready") return;
+          const deliverability = deliverabilityByEmail.get(row.email.toLowerCase());
+          if (deliverability && !deliverability.valid) {
+            row.status = "invalid";
+            row.reason = deliverability.reason;
+          }
+        });
+      }
+    } catch (error) {
+      setAutomationNotice(`Preview built, but the deliverability check failed (${error.message}) — showing format/duplicate checks only.`);
+    } finally {
+      setCsvPreviewBusy(false);
+    }
+
+    const readyCount = previewRows.filter((row) => row.status === "ready").length;
+    const duplicateCount = previewRows.filter((row) => row.status === "duplicate-in-file" || row.status === "duplicate-existing").length;
+    const invalidCount = previewRows.filter((row) => row.status === "invalid").length;
+
+    setCsvPreview({ rows: previewRows, readyCount, duplicateCount, invalidCount });
+    setAutomationNotice(
+      `Preview ready: ${readyCount} row(s) will be imported, ${duplicateCount} duplicate(s) and ${invalidCount} invalid row(s) will be skipped.`
+    );
+  }
+
+  async function handleImportCsv() {
+    if (!selectedCampaign) {
+      setAutomationNotice("Select a campaign first.");
       return;
     }
 
+    // If nothing's been previewed yet, build one first instead of importing
+    // blind — the user always sees the row-by-row breakdown before anything
+    // is created.
+    if (!csvPreview) {
+      handlePreviewCsv();
+      return;
+    }
+
+    const readyRows = csvPreview.rows.filter((row) => row.status === "ready").map(({ name, company, email, owner }) => ({ name, company, email, owner }));
+    if (readyRows.length === 0) {
+      setAutomationNotice("Nothing to import — every row was a duplicate or invalid. Fix the CSV and preview again.");
+      return;
+    }
+
+    setCsvImportBusy(true);
     try {
-      const result = await emailLeadsApi.bulkCreate(selectedCampaign.id, rows);
-      const parseErrorNote = errors.length ? ` ${errors.length} row(s) skipped during parsing (see console).` : "";
-      if (errors.length) {
-        console.warn("CSV parse errors:", errors);
-      }
+      const result = await emailLeadsApi.bulkCreate(selectedCampaign.id, readyRows);
       const duplicateNote = result.duplicateCount ? `, ${result.duplicateCount} already in this campaign (skipped)` : "";
+      // Should normally be 0 here — the preview step already DNS-checked
+      // every "ready" row — but the backend re-validates independently at
+      // import time regardless (see POST /bulk), so this stays honest if
+      // something changed between preview and import (e.g. a domain's DNS
+      // dropped its MX record in the meantime).
+      const invalidNote = result.invalidCount ? `, ${result.invalidCount} failed a deliverability re-check (skipped)` : "";
       setAutomationNotice(
-        `CSV import: ${result.createdCount} lead(s) added to "${selectedCampaign.name}"${duplicateNote}, ${result.failedCount} failed on the backend.${parseErrorNote}`
+        `CSV import: ${result.createdCount} lead(s) added to "${selectedCampaign.name}"${duplicateNote}${invalidNote}, ${result.failedCount} failed on the backend.`
       );
       setCsvText("");
+      setCsvPreview(null);
+      loadAllLeadsForCampaign(selectedCampaign.id);
     } catch (error) {
       setAutomationNotice(`CSV import failed via the backend (${error.message}). No local-only fallback for this action.`);
+    } finally {
+      setCsvImportBusy(false);
     }
+  }
+
+  function handleCsvTextChange(value) {
+    setCsvText(value);
+    // A preview describes an exact snapshot of the pasted text — once the
+    // text changes, that snapshot is stale and must be rebuilt before import.
+    setCsvPreview(null);
   }
 
   async function handleAddEmailAccount() {
@@ -629,6 +826,16 @@ export function useEmailOutreachState() {
     }
   }
 
+  async function handleTestConnection() {
+    setTestConnectionResult({ pending: true });
+    try {
+      const result = await emailCampaignsApi.testConnection();
+      setTestConnectionResult(result);
+    } catch (error) {
+      setTestConnectionResult({ success: false, message: error.message });
+    }
+  }
+
   async function handleSaveAutomation() {
     const followUpCount = Number(automationForm.followUpCount) || 3;
     const dailyLimit = Number(automationForm.dailyLimit) || 2000;
@@ -655,7 +862,7 @@ export function useEmailOutreachState() {
       if (isEditingSelected) {
         const campaign = await emailCampaignsApi.update(selectedCampaign.id, payload);
         setCampaigns((current) => current.map((c) => (c.id === campaign.id ? { ...c, ...payload } : c)));
-        setAutomationNotice(`"${campaign.name}" updated on the backend — ${followUpCount + 1} automated touches, ${dailyLimit}/day cap.`);
+        setAutomationNotice(`"${campaign.name}" updated on the backend — ${followUpCount + 1} follow-up emails, ${dailyLimit}/day limit.`);
         return;
       }
 
@@ -673,7 +880,7 @@ export function useEmailOutreachState() {
       setCampaigns((current) => [mapped, ...current]);
       setSelectedCampaignId(mapped.id);
       setAutomationNotice(
-        `"${mapped.name}" saved to the backend — ${followUpCount + 1} automated touches, ${dailyLimit}/day cap. Note: it has no cadence steps yet.`
+        `"${mapped.name}" saved to the backend — ${followUpCount + 1} follow-up emails, ${dailyLimit}/day limit. Note: no leads are enrolled yet.`
       );
     } catch (error) {
       setAutomationNotice(`Could not save "${automationForm.campaignName}" — backend unreachable (${error.message}).`);
@@ -823,13 +1030,13 @@ export function useEmailOutreachState() {
 
   return {
     campaigns, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
-    repliedLeads, selectedLeadId, leadActivity,
+    repliedLeads, allLeads, systemStatus, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
     automationForm, automationNotice, newLeadForm, setNewLeadForm,
-    csvText, setCsvText, previewHtml, setPreviewHtml,
+    csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, csvImportBusy, csvPreviewBusy, previewHtml, setPreviewHtml,
     emailAccounts, newAccountForm, setNewAccountForm,
     selectedCampaign, selectedLead, selectedLeadTimeline, activeReplyRule,
     liveSteps, workflowSteps, replyAction,
-    handleFormChange, handleTemplateDraftChange, handleApplyRule, loadLeadIntoWorkflow,
+    handleFormChange, handleTemplateDraftChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
     handleToggleCampaignStatus, handleAddLead, handleImportCsv, handleAddEmailAccount,
     handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation,
     handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, simulateIncomingReply

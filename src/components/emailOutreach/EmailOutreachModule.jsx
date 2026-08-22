@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
-import { MailIcon, UsersIcon, WorkflowIcon, CogIcon } from "../Icons.jsx";
+import { MailIcon, UsersIcon, InboxIcon, WorkflowIcon, CogIcon } from "../Icons.jsx";
 import { noteToneClass, StatCard } from "../ui.jsx";
 import { useEmailOutreachState } from "./useEmailOutreachState.js";
 import { CampaignsTab } from "./CampaignsTab.jsx";
 import { LeadsTab } from "./LeadsTab.jsx";
+import { RepliesTab } from "./RepliesTab.jsx";
 import { AutomationTab } from "./AutomationTab.jsx";
 import { SettingsTab } from "./SettingsTab.jsx";
 
 const tabs = [
   { id: "campaigns", label: "Campaigns", icon: MailIcon },
   { id: "leads", label: "Leads", icon: UsersIcon },
+  { id: "replies", label: "Replies", icon: InboxIcon },
   { id: "automation", label: "Automation", icon: WorkflowIcon },
   { id: "settings", label: "Settings", icon: CogIcon }
 ];
@@ -17,6 +19,7 @@ const tabs = [
 const tabContent = {
   campaigns: CampaignsTab,
   leads: LeadsTab,
+  replies: RepliesTab,
   automation: AutomationTab,
   settings: SettingsTab
 };
@@ -56,13 +59,13 @@ export function EmailOutreachModule({ initialTab = "campaigns" }) {
     {
       label: "Replied leads",
       value: String(mailing.repliedLeads.length),
-      note: `${mailing.repliedLeads.filter((l) => l.movedToWorkflow).length} in workflow`,
+      note: `${mailing.repliedLeads.filter((l) => l.movedToWorkflow).length} in follow-up`,
       noteTone: "green"
     },
     {
-      label: "Next sequence length",
+      label: "Follow-up emails per lead",
       value: String(mailing.liveSteps.length),
-      note: "touches per lead",
+      note: "if no reply comes in",
       noteTone: "violet"
     }
   ];
@@ -73,8 +76,8 @@ export function EmailOutreachModule({ initialTab = "campaigns" }) {
         <div className="max-w-3xl">
           <h1 className="text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Email Outreach</h1>
           <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
-            Cold email campaigns, warm-up-aware sending limits, multi-step cadences, and the reply-classify-auto-respond loop that
-            fires once a lead writes back.
+            Send cold email campaigns, follow up automatically until someone replies, and route each reply to the right next
+            step — NDA, a call, or more info.
           </p>
         </div>
 
@@ -85,10 +88,20 @@ export function EmailOutreachModule({ initialTab = "campaigns" }) {
         </div>
       </section>
 
+      {mailing.systemStatus && (!mailing.systemStatus.queueEnabled || mailing.systemStatus.emailProvider === "dev") ? (
+        <div className="rounded-[16px] border border-[#ffd4a7] bg-[#fff4e7] px-4 py-3 text-[13px] leading-5 text-[#8a5a1e]">
+          <span className="font-semibold">Sending isn't fully live yet:</span>{" "}
+          {mailing.systemStatus.emailProvider === "dev" ? "emails are only being logged, not actually delivered" : null}
+          {mailing.systemStatus.emailProvider === "dev" && !mailing.systemStatus.queueEnabled ? ", and " : null}
+          {!mailing.systemStatus.queueEnabled ? "automatic follow-ups aren't scheduled (the sending queue isn't running)" : null}
+          {" "}— leads you add are still saved for real, they just won't get an intro/follow-up email until this is configured.
+        </div>
+      ) : null}
+
       <nav className="flex flex-wrap gap-2 rounded-[18px] border border-[#d6deea] bg-white p-2 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         {tabs.map((tab) => {
           const active = tab.id === activeTab;
-          const badgeCount = tab.id === "leads" ? mailing.repliedLeads.length : null;
+          const badgeCount = tab.id === "replies" ? mailing.repliedLeads.length : null;
           return (
             <button
               key={tab.id}

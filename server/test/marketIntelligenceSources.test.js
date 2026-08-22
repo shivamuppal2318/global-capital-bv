@@ -1,10 +1,21 @@
-import { test } from "node:test";
+import "dotenv/config";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { normalizeNewsApiArticle, isNewsApiConfigured } from "../src/lib/marketIntelligence/sources/newsApiSource.js";
 import { normalizeExaResult, isExaConfigured } from "../src/lib/marketIntelligence/sources/exaSource.js";
 import { normalizeFirecrawlPage, isFirecrawlConfigured } from "../src/lib/marketIntelligence/sources/firecrawlSource.js";
 import { normalizeApolloOrganization, summarizeApolloEnrichment, isApolloConfigured } from "../src/lib/marketIntelligence/sources/apolloSource.js";
 import { parseGoogleNewsRss, isGoogleNewsConfigured } from "../src/lib/marketIntelligence/sources/googleNewsRssSource.js";
+import { invalidateMarketIntelSettingsCache, getMarketIntelSettingsRow } from "../src/lib/marketIntelligenceSettings.js";
+import { initEncryptionKey } from "../src/lib/credentialCrypto.js";
+
+// Real Admin Panel-saved provider keys are encrypted with the app's actual
+// ENCRYPTION_KEY (from .env, loaded above) — not a test-only fake one, since
+// a stored key from real use (see the isConfigured test below) must
+// genuinely decrypt, not just round-trip within this test file.
+before(async () => {
+  await initEncryptionKey();
+});
 
 test("normalizeNewsApiArticle maps to the common signal shape", () => {
   const article = { url: "https://news.example.com/a", title: "Acme raises $50M", body: "Full body text", dateTimePub: "2026-01-01 12:00:00" };
@@ -177,26 +188,61 @@ test("parseGoogleNewsRss skips an item missing a title or link", () => {
   assert.deepEqual(parseGoogleNewsRss(xml), []);
 });
 
-test("each source's isConfigured() correctly reflects its own env var only", () => {
-  const envVars = { NEWSAPI_AI_KEY: isNewsApiConfigured, EXA_API_KEY: isExaConfigured, FIRECRAWL_API_KEY: isFirecrawlConfigured, APOLLO_API_KEY: isApolloConfigured };
+// isConfigured() now checks the database first (Admin Panel → Market
+// Intelligence, see lib/marketIntelligenceSettings.js) before falling back
+// to the env var — same reasoning as the AI key. That DB check means this
+// needs a real Postgres connection; skipped rather than failed when only a
+// local/non-Postgres DATABASE_URL is available, same as any other test
+// that can't reach its dependency.
+test("each source's isConfigured() correctly reflects its own env var, unless a real key is already stored in the DB", async (t) => {
+  // A provider saved via Admin Panel → Market Intelligence always wins over
+  // its env var by design (see marketIntelligenceSettings.js) — so a
+  // provider that already has a real DB-stored key (from actual use, not
+  // just this test) can't be driven down to "unconfigured" by clearing its
+  // env var. That's correct behavior, not something to fight in the test:
+  // for those providers, only confirm they still report configured.
+  const envVars = { NEWSAPI_AI_KEY: ["newsapi", isNewsApiConfigured], EXA_API_KEY: ["exa", isExaConfigured], FIRECRAWL_API_KEY: ["firecrawl", isFirecrawlConfigured], APOLLO_API_KEY: ["apollo", isApolloConfigured] };
+  const fieldByProvider = {
+    newsapi: "newsApiKeyEncrypted",
+    exa: "exaApiKeyEncrypted",
+    firecrawl: "firecrawlApiKeyEncrypted",
+    apollo: "apolloApiKeyEncrypted"
+  };
   const originals = {};
   for (const key of Object.keys(envVars)) {
     originals[key] = process.env[key];
     delete process.env[key];
   }
 
-  for (const [key, isConfigured] of Object.entries(envVars)) {
-    assert.equal(isConfigured(), false, `${key} should report unconfigured when unset`);
-    process.env[key] = "test-value";
-    assert.equal(isConfigured(), true, `${key} should report configured when set`);
-    delete process.env[key];
-  }
-
-  for (const [key, value] of Object.entries(originals)) {
-    if (value === undefined) {
+  try {
+    const row = await getMarketIntelSettingsRow();
+    for (const [key, [provider, isConfigured]] of Object.entries(envVars)) {
+      if (row?.[fieldByProvider[provider]]) {
+        invalidateMarketIntelSettingsCache();
+        assert.equal(await isConfigured(), true, `${key} should still report configured via its stored DB key`);
+        continue;
+      }
+      invalidateMarketIntelSettingsCache();
+      assert.equal(await isConfigured(), false, `${key} should report unconfigured when unset`);
+      process.env[key] = "test-value";
+      invalidateMarketIntelSettingsCache();
+      assert.equal(await isConfigured(), true, `${key} should report configured when set`);
       delete process.env[key];
-    } else {
-      process.env[key] = value;
     }
+  } catch (err) {
+    if (err.name === "PrismaClientInitializationError" || err.name === "PrismaClientKnownRequestError") {
+      t.skip(`No reachable database for marketIntelSettings lookup: ${err.message.split("\n")[0]}`);
+      return;
+    }
+    throw err;
+  } finally {
+    for (const [key, value] of Object.entries(originals)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    invalidateMarketIntelSettingsCache();
   }
 });

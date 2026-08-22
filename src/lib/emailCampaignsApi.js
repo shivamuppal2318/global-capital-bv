@@ -9,6 +9,8 @@ function request(path, options = {}) {
 
 export const emailCampaignsApi = {
   list: () => request(""),
+  systemStatus: () => request("/system-status"),
+  testConnection: () => request("/test-connection", { method: "POST" }),
   // Create-only — no upsert-by-name. Calling this twice with the same name
   // creates two separate campaigns. Use update() to edit one already created.
   create: (body) => request("", { method: "POST", body }),

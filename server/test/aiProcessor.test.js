@@ -70,15 +70,30 @@ test("parseProcessingResponse throws when relevanceScore is out of 0-100 range",
   assert.throws(() => parseProcessingResponse(negative), /invalid relevanceScore/);
 });
 
-test("isAiProcessorConfigured reflects ANTHROPIC_API_KEY presence", () => {
+// isAiProcessorConfigured is now async — credentials can come from the
+// database (Admin Panel → AI Assistant) before falling back to
+// ANTHROPIC_API_KEY, see lib/aiSettings.js. That DB check means this needs
+// a real Postgres connection to run at all; skipped rather than failed
+// when only a local/non-Postgres DATABASE_URL is available, same as any
+// other test that can't reach its dependency.
+test("isAiProcessorConfigured reflects ANTHROPIC_API_KEY presence", async (t) => {
   const original = process.env.ANTHROPIC_API_KEY;
-  delete process.env.ANTHROPIC_API_KEY;
-  assert.equal(isAiProcessorConfigured(), false);
-  process.env.ANTHROPIC_API_KEY = "test-key";
-  assert.equal(isAiProcessorConfigured(), true);
-  if (original === undefined) {
+  try {
     delete process.env.ANTHROPIC_API_KEY;
-  } else {
-    process.env.ANTHROPIC_API_KEY = original;
+    assert.equal(await isAiProcessorConfigured(), false);
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    assert.equal(await isAiProcessorConfigured(), true);
+  } catch (err) {
+    if (err.name === "PrismaClientInitializationError" || err.name === "PrismaClientKnownRequestError") {
+      t.skip(`No reachable database for aiSettings lookup: ${err.message.split("\n")[0]}`);
+      return;
+    }
+    throw err;
+  } finally {
+    if (original === undefined) {
+      delete process.env.ANTHROPIC_API_KEY;
+    } else {
+      process.env.ANTHROPIC_API_KEY = original;
+    }
   }
 });
