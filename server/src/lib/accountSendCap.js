@@ -25,7 +25,12 @@ export async function isAccountUnderDailyCap(account, client = prisma) {
     where: {
       kind: "BRANCH_EMAIL_SENT",
       createdAt: { gte: startOfDayUtc },
-      lead: { campaign: { emailAccountId: account.id } }
+      // The account a send actually went through (see leadSender.js /
+      // cadenceQueue.js) — not inferred via the lead's campaign assignment,
+      // since country-based routing (accountRouting.js) can send a lead
+      // through a different mailbox than the one its campaign is assigned
+      // to.
+      emailAccountId: account.id
     }
   });
 

@@ -48,6 +48,11 @@ const createAccountSchema = z.object({
   smtpPass: z.string().min(1),
   fromAddress: z.string().email(),
   dailyLimit: z.number().int().positive().default(500),
+  // Country/region this mailbox represents (e.g. "IN", "AE", "NL") — matched
+  // case-insensitively against EmailLead.country to auto-route a lead's send
+  // through it (see src/lib/accountRouting.js). Omit/null for a mailbox with
+  // no country routing (only used via direct campaign assignment).
+  country: z.string().trim().min(1).nullable().optional(),
   // Admin-only: assign a mailbox to a specific employee, or omit/null it to
   // create a shared company mailbox. Ignored (forced to self) for employees.
   ownerId: z.string().nullable().optional()

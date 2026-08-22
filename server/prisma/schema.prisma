@@ -597,8 +597,16 @@ model EmailAccount {
   fromAddress       String
   dailyLimit        Int      @default(500)
   isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  // Which country/region this mailbox represents (e.g. "IN", "AE", "NL") —
+  // matched case-insensitively against EmailLead.country at send time (see
+  // src/lib/accountRouting.js) so a lead automatically sends through the
+  // mailbox for their own country instead of always using whatever single
+  // mailbox is assigned to the whole campaign. Null = no country match,
+  // this account is only used when directly assigned to a campaign (or as
+  // the global fallback).
+  country   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // null = a shared/company mailbox (managed by an Admin, usable in any
   // campaign). Set = a personal mailbox owned by that employee — only they
@@ -607,8 +615,10 @@ model EmailAccount {
   ownerId String?
 
   campaigns EmailCampaign[]
+  sentActivity EmailActivityLog[]
 
   @@index([ownerId])
+  @@index([country])
 }
 
 model CadenceStep {
@@ -629,6 +639,11 @@ model EmailLead {
   company      String
   email        String
   owner        String
+  // Which country this lead is in — drives automatic sending-mailbox
+  // routing (see src/lib/accountRouting.js): matched case-insensitively
+  // against EmailAccount.country. Null = no country-based routing, this
+  // lead just uses whatever mailbox the campaign is assigned to.
+  country      String?
   campaign     EmailCampaign @relation(fields: [campaignId], references: [id])
   campaignId   String
   replyType    ReplyType @default(NO_REPLY)
@@ -684,7 +699,18 @@ model EmailActivityLog {
   detail    String
   createdAt DateTime          @default(now())
 
+  // Which mailbox a real send actually went out through — set only on
+  // BRANCH_EMAIL_SENT rows (see src/lib/leadSender.js and
+  // src/queue/cadenceQueue.js). This is what the per-mailbox daily cap
+  // (src/lib/accountSendCap.js) counts against; it deliberately doesn't
+  // infer the account from the campaign's assignment, since country-based
+  // routing (src/lib/accountRouting.js) can resolve a different account
+  // per lead than whatever the campaign itself is assigned to.
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  emailAccountId String?
+
   @@index([leadId, createdAt])
+  @@index([emailAccountId, kind, createdAt])
 }
 
 model EmailTemplate {

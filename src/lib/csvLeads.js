@@ -47,7 +47,11 @@ export function parseLeadsCsv(text) {
       name: record.name,
       company: record.company,
       email: record.email,
-      owner: record.owner || "Rahul R"
+      owner: record.owner || "Rahul R",
+      // Optional — drives automatic sending-mailbox routing by country (see
+      // server/src/lib/accountRouting.js). Blank is fine, just means no
+      // country-based routing for that row.
+      country: record.country || null
     });
   }
 
@@ -66,7 +70,7 @@ function escapeCsvCell(value) {
 // and "download the rows that will actually be imported" cases — same shape
 // parseLeadsCsv expects back, so a downloaded/re-uploaded file round-trips.
 export function buildLeadsCsv(rows) {
-  const header = ["name", "company", "email", "owner"];
+  const header = ["name", "company", "email", "owner", "country"];
   const lines = [header.join(","), ...rows.map((row) => header.map((field) => escapeCsvCell(row[field])).join(","))];
   return lines.join("\n");
 }
