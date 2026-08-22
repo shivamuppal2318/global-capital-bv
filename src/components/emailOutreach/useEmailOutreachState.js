@@ -353,6 +353,22 @@ export function useEmailOutreachState() {
       });
   }, []);
 
+  // Real aggregates for the Dashboard tab's chart/funnel/activity/mailbox
+  // panels — a separate call (not derived from `campaigns`) since it needs
+  // cross-campaign ActivityLog/EmailAccount queries the plain list doesn't
+  // return. Null until it loads, so the Dashboard can show a loading state
+  // instead of a flash of empty charts.
+  const [dashboardSummary, setDashboardSummary] = useState(null);
+  useEffect(() => {
+    emailCampaignsApi
+      .dashboardSummary()
+      .then(setDashboardSummary)
+      .catch(() => {
+        // Backend unreachable or pre-migration — Dashboard tab falls back to
+        // its own campaigns-only totals.
+      });
+  }, []);
+
   // Same pattern for leads: only overwrite the seed repliedLeads list if
   // the backend actually returned something with at least one reply on
   // record, so an empty/fresh database doesn't wipe out the demo data.
@@ -1049,7 +1065,7 @@ export function useEmailOutreachState() {
 
   return {
     campaigns, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
-    repliedLeads, allLeads, systemStatus, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
+    repliedLeads, allLeads, systemStatus, dashboardSummary, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
     automationForm, automationNotice, newLeadForm, setNewLeadForm,
     csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, csvImportBusy, csvPreviewBusy, previewHtml, setPreviewHtml,
     emailAccounts, newAccountForm, setNewAccountForm,

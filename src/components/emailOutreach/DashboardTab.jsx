@@ -1,54 +1,51 @@
-import { ActionButton, noteToneClass } from "../ui.jsx";
-import { MegaphoneIcon, UsersIcon, MailIcon, InboxIcon, SendIcon, ChartBarIcon, TagIcon, PlusIcon, CogIcon } from "../Icons.jsx";
+import { ActionButton, Card, SectionTitle, ProgressBar } from "../ui.jsx";
+import { SendIcon, ChartBarIcon, ClockIcon, FunnelIcon, DatabaseIcon, PlusIcon } from "../Icons.jsx";
 
-const campaignToneClass = {
-  Sending: "bg-[#dff5e7] text-[#2b9b60]",
-  Scheduled: "bg-[#dff2ff] text-[#2995db]",
-  Completed: "bg-[#efe5ff] text-[#8853d0]",
-  Draft: "bg-[#edf1f6] text-[#748096]"
+const funnelTone = ["bg-[#1b97d2]", "bg-[#8b52d0]", "bg-[#2ba84a]", "bg-[#ff9f35]"];
+
+// One dot color per EmailActivityKind (schema.prisma) — every kind that can
+// appear in dashboardSummary.recentActivity gets a deliberate tone; an
+// unmapped one (there shouldn't be any) falls back to slate rather than
+// crashing.
+const activityToneDot = {
+  BULK_INTRO_SENT: "bg-[#3046b2]",
+  BRANCH_EMAIL_SENT: "bg-[#3046b2]",
+  REPLY_RECEIVED: "bg-[#8b52d0]",
+  EMAIL_OPENED: "bg-[#1192cb]",
+  LINK_CLICKED: "bg-[#2b9b60]",
+  NDA_SIGNED: "bg-[#2b9b60]",
+  CALL_BOOKED: "bg-[#2b9b60]",
+  CALL_COMPLETED: "bg-[#2b9b60]",
+  CALL_CANCELED: "bg-[#f29b3a]",
+  BOUNCED: "bg-[#e0483f]",
+  SEND_BLOCKED: "bg-[#f29b3a]",
+  STAGE_CHANGED: "bg-[#8592ab]",
+  MANUAL_NOTE: "bg-[#8592ab]"
 };
 
-function IconStat({ icon: Icon, iconTone, label, value }) {
-  return (
-    <div className="flex items-center gap-4 rounded-[20px] border border-[#d6deea] bg-white px-5 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-      <div className={`grid size-12 shrink-0 place-items-center rounded-[14px] ${iconTone}`}>
-        <Icon className="size-5" />
-      </div>
-      <div>
-        <p className="text-[1.7rem] font-semibold leading-none tracking-[-0.03em] text-[#0f2042]">{value}</p>
-        <p className="mt-1.5 text-[13px] text-[#5c6b87]">{label}</p>
-      </div>
-    </div>
-  );
+function timeAgo(dateString) {
+  const minutes = Math.round((Date.now() - new Date(dateString).getTime()) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }
 
-function EngagementStat({ icon: Icon, label, value, tone }) {
-  return (
-    <div className="rounded-[20px] border border-[#d6deea] bg-white px-5 py-5 text-center shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-      <div className={`mx-auto grid size-10 place-items-center rounded-full ${tone}`}>
-        <Icon className="size-4" />
-      </div>
-      <p className="mt-3 text-[2.4rem] font-bold leading-none text-[#0f2042]">{value}</p>
-      <p className="mt-2 text-[13px] font-medium uppercase tracking-[0.14em] text-[#8593ac]">{label}</p>
-    </div>
-  );
-}
-
-// The MailX landing view — a real dashboard (aggregate stats + a recent-
-// campaigns glance + one-click shortcuts to the tab you actually want),
-// rather than dropping straight into the Campaigns table. All numbers are
-// summed from the same `campaigns`/`emailAccounts`/`repliedLeads` data the
-// other tabs already use — nothing here is fabricated for the view.
+// Mirrors WhatsApp Business's own Dashboard tab layout/component choices
+// (Card + SectionTitle + ProgressBar, the same 1.4fr/0.6fr card grid) at the
+// user's request — but every panel here is real, queried data
+// (dashboardSummary from GET /api/email/campaigns/dashboard-summary), not
+// the static mock arrays that module's dashboard renders.
 export function DashboardTab({ mailing, onNavigateTab }) {
-  const { campaigns, emailAccounts, repliedLeads, systemStatus } = mailing;
+  const { campaigns, systemStatus, dashboardSummary } = mailing;
 
-  const totalLeads = campaigns.reduce((sum, c) => sum + (c.leadCount ?? 0), 0);
-  const totalSent = campaigns.reduce((sum, c) => sum + (c.sentCount ?? 0), 0);
-  const totalOpened = campaigns.reduce((sum, c) => sum + (c.openedCount ?? 0), 0);
-  const totalClicked = campaigns.reduce((sum, c) => sum + (c.clickedCount ?? 0), 0);
-  const activeMailboxes = emailAccounts.filter((a) => a.isActive).length;
+  const maxVolume = dashboardSummary
+    ? Math.max(1, ...dashboardSummary.volumeByDay.map((d) => Math.max(d.sent, d.opened)))
+    : 1;
+  const funnelMax = dashboardSummary ? Math.max(1, dashboardSummary.funnel[0]?.count ?? 1) : 1;
 
-  const recentCampaigns = campaigns.slice(0, 5);
+  const topCampaigns = [...campaigns].sort((a, b) => (b.openedCount ?? 0) - (a.openedCount ?? 0)).slice(0, 5);
 
   return (
     <section className="space-y-6">
@@ -62,72 +59,145 @@ export function DashboardTab({ mailing, onNavigateTab }) {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <IconStat icon={MegaphoneIcon} iconTone="bg-[#eef1ff] text-[#4766cc]" label="Total campaigns" value={campaigns.length} />
-        <IconStat icon={UsersIcon} iconTone="bg-[#dff5e7] text-[#2b9b60]" label="Total leads" value={totalLeads} />
-        <IconStat icon={MailIcon} iconTone="bg-[#fff4e7] text-[#f29b3a]" label="Connected mailboxes" value={activeMailboxes} />
-        <IconStat icon={InboxIcon} iconTone="bg-[#ffe4ee] text-[#ef5b8f]" label="Replied leads" value={repliedLeads.length} />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <EngagementStat icon={SendIcon} label="Emails sent" value={totalSent} tone="bg-[#eef1ff] text-[#4766cc]" />
-        <EngagementStat icon={ChartBarIcon} label="Opened" value={totalOpened} tone="bg-[#dff5e7] text-[#2b9b60]" />
-        <EngagementStat icon={TagIcon} label="Clicked" value={totalClicked} tone="bg-[#fff4e7] text-[#f29b3a]" />
-      </div>
-
       <div className="grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
-        <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-[16px] font-semibold text-[#102246]">Recent campaigns</h2>
-            <button
-              type="button"
-              onClick={() => onNavigateTab("campaigns")}
-              className="text-[13px] font-semibold text-[#3046b2] hover:underline"
-            >
-              View all
-            </button>
-          </div>
+        <Card className="px-5 py-5">
+          <SectionTitle icon={ChartBarIcon}>Email volume (7 days)</SectionTitle>
+          {dashboardSummary ? (
+            <>
+              <div className="mt-6 flex items-end justify-between gap-3">
+                {dashboardSummary.volumeByDay.map((d, index) => (
+                  <div key={`${d.day}-${index}`} className="flex flex-1 flex-col items-center gap-2">
+                    <div className="flex h-40 w-full items-end justify-center gap-1">
+                      <div
+                        className="w-3.5 rounded-t-full bg-[#3046b2]"
+                        style={{ height: `${(d.sent / maxVolume) * 100}%` }}
+                        title={`Sent: ${d.sent}`}
+                      />
+                      <div
+                        className="w-3.5 rounded-t-full bg-[#9fb4ea]"
+                        style={{ height: `${(d.opened / maxVolume) * 100}%` }}
+                        title={`Opened: ${d.opened}`}
+                      />
+                    </div>
+                    <p className="text-[12px] font-medium text-[#6a7790]">{d.day}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 flex items-center gap-5 border-t border-dashed border-[#d9e2ef] pt-4 text-[13px] text-[#5f6f89]">
+                <span className="inline-flex items-center gap-2">
+                  <span className="size-2.5 rounded-full bg-[#3046b2]" /> Sent
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="size-2.5 rounded-full bg-[#9fb4ea]" /> Opened
+                </span>
+              </div>
+            </>
+          ) : (
+            <p className="mt-6 text-[13px] text-[#9aa6ba]">Loading…</p>
+          )}
+        </Card>
 
-          {recentCampaigns.length > 0 ? (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-left text-[14px]">
+        <Card className="px-5 py-5">
+          <SectionTitle icon={FunnelIcon} iconClass="text-[#8b52d0]">
+            Lead funnel
+          </SectionTitle>
+          {dashboardSummary ? (
+            <div className="mt-6 space-y-5">
+              {dashboardSummary.funnel.map((row, index) => (
+                <div key={row.stage}>
+                  <div className="mb-2 flex items-center justify-between gap-4">
+                    <p className="text-[14px] font-semibold text-[#12213a]">{row.stage}</p>
+                    <p className="text-[14px] text-[#5f6f89]">{row.count}</p>
+                  </div>
+                  <ProgressBar width={`${Math.round((row.count / funnelMax) * 100)}%`} tone={funnelTone[index]} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-6 text-[13px] text-[#9aa6ba]">Loading…</p>
+          )}
+        </Card>
+
+        <Card className="px-5 py-5">
+          <SectionTitle icon={SendIcon}>Top performing campaigns</SectionTitle>
+          {topCampaigns.length > 0 ? (
+            <div className="mt-5 space-y-3">
+              {topCampaigns.map((campaign) => (
+                <div
+                  key={campaign.id}
+                  className="flex items-center justify-between gap-4 rounded-[16px] border border-[#e7edf5] px-4 py-3"
+                >
+                  <p className="min-w-0 flex-1 truncate text-[14px] font-medium text-[#102246]">{campaign.name}</p>
+                  <p className="w-20 shrink-0 text-right text-[13px] text-[#5f6f89]">{campaign.sentCount ?? 0} sent</p>
+                  <p className="w-16 shrink-0 text-right text-[13px] font-semibold text-[#2b9b60]">{campaign.open}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-5 text-[13px] text-[#9aa6ba]">No campaigns yet.</p>
+          )}
+        </Card>
+
+        <Card className="px-5 py-5">
+          <SectionTitle icon={ClockIcon} iconClass="text-[#f29b3a]">
+            Recent activity
+          </SectionTitle>
+          {dashboardSummary?.recentActivity.length ? (
+            <div className="mt-5 space-y-4">
+              {dashboardSummary.recentActivity.map((item) => (
+                <div key={item.id} className="flex items-start gap-3">
+                  <span className={`mt-1.5 size-2 shrink-0 rounded-full ${activityToneDot[item.kind] ?? "bg-[#8592ab]"}`} />
+                  <div className="min-w-0">
+                    <p className="text-[14px] text-[#12213a]">
+                      <span className="font-semibold">{item.leadName}</span> — {item.title}
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-[#8592ab]">
+                      {item.campaignName} · {timeAgo(item.createdAt)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-5 text-[13px] text-[#9aa6ba]">{dashboardSummary ? "No activity yet." : "Loading…"}</p>
+          )}
+        </Card>
+
+        <Card className="px-5 py-5 xl:col-span-2">
+          <SectionTitle
+            icon={DatabaseIcon}
+            iconClass="text-[#2995db]"
+            action={<ActionButton label="Add mailbox" icon={PlusIcon} small onClick={() => onNavigateTab("settings")} />}
+          >
+            Mailbox performance
+          </SectionTitle>
+          {dashboardSummary?.mailboxPerformance.length ? (
+            <div className="mt-5 overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left">
                 <thead>
-                  <tr className="border-b border-[#e7edf5] text-[12px] uppercase tracking-[0.08em] text-[#8593ac]">
-                    <th className="pb-2 font-medium">Campaign</th>
-                    <th className="pb-2 font-medium">Status</th>
-                    <th className="pb-2 text-right font-medium">Recipients</th>
-                    <th className="pb-2 text-right font-medium">Opened</th>
+                  <tr className="text-[12px] uppercase tracking-[0.12em] text-[#60708b]">
+                    <th className="pb-3 font-medium">Mailbox</th>
+                    <th className="pb-3 font-medium">Country</th>
+                    <th className="pb-3 font-medium">Sent today</th>
+                    <th className="pb-3 text-right font-medium">Daily limit</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#f0f3f9]">
-                  {recentCampaigns.map((campaign) => (
-                    <tr key={campaign.id}>
-                      <td className="py-3 font-medium text-[#102246]">{campaign.name}</td>
-                      <td className="py-3">
-                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${campaignToneClass[campaign.status] ?? noteToneClass.slate}`}>
-                          {campaign.status}
-                        </span>
-                      </td>
-                      <td className="py-3 text-right text-[#435471]">{campaign.leadCount ?? 0}</td>
-                      <td className="py-3 text-right text-[#435471]">{campaign.openedCount ?? 0}</td>
+                <tbody>
+                  {dashboardSummary.mailboxPerformance.map((account) => (
+                    <tr key={account.id} className="border-t border-[#e7edf5]">
+                      <td className="py-3 text-[14px] font-medium text-[#102246]">{account.label}</td>
+                      <td className="py-3 text-[14px] text-[#5f6f89]">{account.country ?? "—"}</td>
+                      <td className="py-3 text-[14px] text-[#5f6f89]">{account.sentToday}</td>
+                      <td className="py-3 text-right text-[14px] font-semibold text-[#2b9b60]">{account.dailyLimit}/day</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <p className="mt-4 text-[13px] text-[#9aa6ba]">No campaigns yet.</p>
+            <p className="mt-5 text-[13px] text-[#9aa6ba]">{dashboardSummary ? "No mailboxes added yet." : "Loading…"}</p>
           )}
-        </div>
-
-        <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-          <h2 className="text-[16px] font-semibold text-[#102246]">Quick actions</h2>
-          <div className="mt-4 flex flex-col gap-2.5">
-            <ActionButton label="New campaign" icon={PlusIcon} primary onClick={() => onNavigateTab("campaigns")} />
-            <ActionButton label="New template" icon={TagIcon} onClick={() => onNavigateTab("templates")} />
-            <ActionButton label="Add mailbox" icon={CogIcon} onClick={() => onNavigateTab("settings")} />
-          </div>
-        </div>
+        </Card>
       </div>
     </section>
   );

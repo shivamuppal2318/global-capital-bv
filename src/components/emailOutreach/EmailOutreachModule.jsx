@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { GridIcon, MailIcon, UsersIcon, InboxIcon, WorkflowIcon, TagIcon, CogIcon } from "../Icons.jsx";
-import { noteToneClass } from "../ui.jsx";
+import { noteToneClass, StatCard } from "../ui.jsx";
 import { useEmailOutreachState } from "./useEmailOutreachState.js";
 import { DashboardTab } from "./DashboardTab.jsx";
 import { CampaignsTab } from "./CampaignsTab.jsx";
@@ -52,8 +52,28 @@ export function EmailOutreachModule({ initialTab = "dashboard" }) {
   }, [initialTab]);
   const ActiveContent = tabContent[activeTab] ?? DashboardTab;
 
+  // Same idea as WhatsApp Business's own module header stats (StatCard,
+  // ui.jsx) — kept visible across every tab, not just Dashboard, so "how's
+  // MailX doing overall" never requires switching tabs to check. Real
+  // numbers from the same `mailing` state every tab already shares.
+  const totalLeads = mailing.campaigns.reduce((sum, c) => sum + (c.leadCount ?? 0), 0);
+  const activeMailboxes = mailing.emailAccounts.filter((a) => a.isActive).length;
+  const replyRate = totalLeads > 0 ? Math.round((mailing.repliedLeads.length / totalLeads) * 100) : 0;
+  const moduleStats = [
+    { label: "TOTAL CAMPAIGNS", value: mailing.campaigns.length, note: `${mailing.campaigns.filter((c) => c.status === "Sending").length} sending`, noteTone: "blue" },
+    { label: "TOTAL LEADS", value: totalLeads, note: "Live from Postgres", noteTone: "cyan" },
+    { label: "CONNECTED MAILBOXES", value: activeMailboxes, note: `${mailing.emailAccounts.length} total`, noteTone: "amber" },
+    { label: "REPLIED LEADS", value: mailing.repliedLeads.length, note: `${replyRate}% reply rate`, noteTone: "pink" }
+  ];
+
   return (
     <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {moduleStats.map((card) => (
+          <StatCard key={card.label} card={card} />
+        ))}
+      </div>
+
       <nav className="flex flex-wrap gap-2 rounded-[18px] border border-[#d6deea] bg-white p-2 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         {tabs.map((tab) => {
           const active = tab.id === activeTab;
