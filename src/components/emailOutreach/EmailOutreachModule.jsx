@@ -1,26 +1,35 @@
 import { useEffect, useState } from "react";
-import { MailIcon, UsersIcon, InboxIcon, WorkflowIcon, CogIcon } from "../Icons.jsx";
-import { noteToneClass, StatCard } from "../ui.jsx";
+import { GridIcon, MailIcon, UsersIcon, InboxIcon, WorkflowIcon, TagIcon, CogIcon } from "../Icons.jsx";
+import { noteToneClass } from "../ui.jsx";
 import { useEmailOutreachState } from "./useEmailOutreachState.js";
+import { DashboardTab } from "./DashboardTab.jsx";
 import { CampaignsTab } from "./CampaignsTab.jsx";
 import { LeadsTab } from "./LeadsTab.jsx";
 import { RepliesTab } from "./RepliesTab.jsx";
 import { AutomationTab } from "./AutomationTab.jsx";
 import { SettingsTab } from "./SettingsTab.jsx";
+import { EmailTemplatesCadencesModule } from "../emailTemplates/EmailTemplatesCadencesModule.jsx";
 
 const tabs = [
+  { id: "dashboard", label: "Dashboard", icon: GridIcon },
   { id: "campaigns", label: "Campaigns", icon: MailIcon },
   { id: "leads", label: "Leads", icon: UsersIcon },
   { id: "replies", label: "Replies", icon: InboxIcon },
   { id: "automation", label: "Automation", icon: WorkflowIcon },
+  { id: "templates", label: "Templates", icon: TagIcon },
   { id: "settings", label: "Settings", icon: CogIcon }
 ];
 
 const tabContent = {
+  dashboard: DashboardTab,
   campaigns: CampaignsTab,
   leads: LeadsTab,
   replies: RepliesTab,
   automation: AutomationTab,
+  // Self-contained (fetches its own templates via emailTemplatesApi) — takes
+  // no props, so the `mailing` prop every other tab needs is simply unused
+  // here rather than requiring a separate render path.
+  templates: EmailTemplatesCadencesModule,
   settings: SettingsTab
 };
 
@@ -29,7 +38,7 @@ const tabContent = {
 // sequence config, mailbox setup) instead of all four crammed onto one
 // screen. All tabs share one state hook (useEmailOutreachState) so
 // switching tabs never desyncs which campaign/lead is selected.
-export function EmailOutreachModule({ initialTab = "campaigns" }) {
+export function EmailOutreachModule({ initialTab = "dashboard" }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const mailing = useEmailOutreachState();
 
@@ -41,63 +50,10 @@ export function EmailOutreachModule({ initialTab = "campaigns" }) {
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
-  const ActiveContent = tabContent[activeTab] ?? CampaignsTab;
-
-  const stats = [
-    {
-      label: "Active campaigns",
-      value: String(mailing.campaigns.filter((c) => c.status === "Sending").length),
-      note: `${mailing.campaigns.length} total`,
-      noteTone: "blue"
-    },
-    {
-      label: "Connected mailboxes",
-      value: String(mailing.emailAccounts.filter((a) => a.isActive).length),
-      note: `${mailing.emailAccounts.length} registered`,
-      noteTone: "cyan"
-    },
-    {
-      label: "Replied leads",
-      value: String(mailing.repliedLeads.length),
-      note: `${mailing.repliedLeads.filter((l) => l.movedToWorkflow).length} in follow-up`,
-      noteTone: "green"
-    },
-    {
-      label: "Follow-up emails per lead",
-      value: String(mailing.liveSteps.length),
-      note: "if no reply comes in",
-      noteTone: "violet"
-    }
-  ];
+  const ActiveContent = tabContent[activeTab] ?? DashboardTab;
 
   return (
     <div className="space-y-6">
-      <section>
-        <div className="max-w-3xl">
-          <h1 className="text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Email Outreach</h1>
-          <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
-            Send cold email campaigns, follow up automatically until someone replies, and route each reply to the right next
-            step — NDA, a call, or more info.
-          </p>
-        </div>
-
-        <div className="mt-7 grid gap-4 xl:grid-cols-4">
-          {stats.map((card) => (
-            <StatCard key={card.label} card={card} />
-          ))}
-        </div>
-      </section>
-
-      {mailing.systemStatus && (!mailing.systemStatus.queueEnabled || mailing.systemStatus.emailProvider === "dev") ? (
-        <div className="rounded-[16px] border border-[#ffd4a7] bg-[#fff4e7] px-4 py-3 text-[13px] leading-5 text-[#8a5a1e]">
-          <span className="font-semibold">Sending isn't fully live yet:</span>{" "}
-          {mailing.systemStatus.emailProvider === "dev" ? "emails are only being logged, not actually delivered" : null}
-          {mailing.systemStatus.emailProvider === "dev" && !mailing.systemStatus.queueEnabled ? ", and " : null}
-          {!mailing.systemStatus.queueEnabled ? "automatic follow-ups aren't scheduled (the sending queue isn't running)" : null}
-          {" "}— leads you add are still saved for real, they just won't get an intro/follow-up email until this is configured.
-        </div>
-      ) : null}
-
       <nav className="flex flex-wrap gap-2 rounded-[18px] border border-[#d6deea] bg-white p-2 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         {tabs.map((tab) => {
           const active = tab.id === activeTab;
@@ -127,7 +83,7 @@ export function EmailOutreachModule({ initialTab = "campaigns" }) {
         })}
       </nav>
 
-      <ActiveContent mailing={mailing} />
+      <ActiveContent mailing={mailing} onNavigateTab={setActiveTab} />
     </div>
   );
 }

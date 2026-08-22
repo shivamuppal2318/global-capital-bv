@@ -17,9 +17,12 @@ export const navSections = [
     title: "CRM & Outreach",
     items: [
       { id: "crm-workspace", label: "CRM Workspace", icon: "users" },
-      { id: "cold-bulk-mailing", label: "Cold Bulk Mailing", icon: "mailbox" },
-      { id: "whatsapp-business", label: "WhatsApp Business", icon: "message" },
-      { id: "templates-cadences", label: "Templates & Cadences", icon: "send" }
+      // "MailX" groups everything email-related — Campaigns, Leads, Replies,
+      // Automation (drip sequences), Templates, Settings — as tabs inside
+      // one module (see EmailOutreachModule.jsx), rather than Templates &
+      // Cadences living as its own separate top-level nav entry.
+      { id: "cold-bulk-mailing", label: "MailX", icon: "mailbox" },
+      { id: "whatsapp-business", label: "WhatsApp Business", icon: "message" }
     ]
   },
   {
