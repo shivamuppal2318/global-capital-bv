@@ -7,6 +7,7 @@ import { recordReply } from "../lib/replyRecorder.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { calculateLeadScore, deriveQualification } from "../lib/leadScoring.js";
 import { verifyEmailDeliverability, verifyEmailsDeliverability } from "../lib/emailValidation.js";
+import { recordAudit } from "../lib/auditLog.js";
 
 export const emailLeadsRouter = Router();
 
@@ -378,6 +379,7 @@ emailLeadsRouter.delete("/:id", asyncHandler(async (req, res) => {
   await prisma.emailActivityLog.deleteMany({ where: { leadId: lead.id } });
   await prisma.replyEvent.deleteMany({ where: { leadId: lead.id } });
   await prisma.emailLead.delete({ where: { id: lead.id } });
+  await recordAudit({ req, action: "lead.deleted", entityType: "EmailLead", entityId: lead.id, detail: `${lead.name} (${lead.email})` });
 
   res.status(204).end();
 }));

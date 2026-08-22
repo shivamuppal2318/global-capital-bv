@@ -130,6 +130,37 @@ model User {
   emailAccounts EmailAccount[]
   passwordResets PasswordResetToken[]
   documents      Document[]
+  auditLogs      AuditLog[]
+}
+
+// Who did what, when — logins, admin actions (employee/permission changes,
+// credential edits), and the higher-stakes MailX actions (campaigns,
+// mailboxes, lead deletion). Written by src/lib/auditLog.js, never edited
+// or deleted through the app itself; that's what makes it useful as a real
+// record instead of just another mutable table.
+model AuditLog {
+  id     String @id @default(cuid())
+  // Kept even if the actor's account is later deleted — an audit trail
+  // that goes blank the moment someone is removed defeats its own purpose,
+  // so the actor's name/email are snapshotted at write time (actor* below)
+  // rather than only ever joined live off User.
+  actor      User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorId    String?
+  actorName  String
+  actorEmail String
+  // Dot-namespaced (e.g. "campaign.paused", "employee.permissions_updated")
+  // so the Admin Panel's filter can match a whole namespace or one exact
+  // action.
+  action     String
+  entityType String?
+  entityId   String?
+  detail     String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([action])
 }
 
 // Single row holding the company-wide "system" mailbox used for

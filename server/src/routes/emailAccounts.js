@@ -4,6 +4,7 @@ import nodemailer from "nodemailer";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { encryptSecret, decryptSecret } from "../lib/credentialCrypto.js";
+import { recordAudit } from "../lib/auditLog.js";
 
 export const emailAccountsRouter = Router();
 
@@ -70,6 +71,7 @@ emailAccountsRouter.post("/", asyncHandler(async (req, res) => {
   const account = await prisma.emailAccount.create({
     data: { ...rest, ownerId: resolvedOwnerId, smtpPassEncrypted: encryptSecret(smtpPass) }
   });
+  await recordAudit({ req, action: "mailbox.created", entityType: "EmailAccount", entityId: account.id, detail: `${account.label} (${account.smtpHost})` });
 
   res.status(201).json(redact(account));
 }));
@@ -111,6 +113,7 @@ emailAccountsRouter.post("/:id/deactivate", asyncHandler(async (req, res) => {
   }
 
   const account = await prisma.emailAccount.update({ where: { id: existing.id }, data: { isActive: false } });
+  await recordAudit({ req, action: "mailbox.deactivated", entityType: "EmailAccount", entityId: account.id, detail: account.label });
   res.json(redact(account));
 }));
 
@@ -160,5 +163,6 @@ emailAccountsRouter.delete("/:id", asyncHandler(async (req, res) => {
   }
 
   await prisma.emailAccount.delete({ where: { id: existing.id } });
+  await recordAudit({ req, action: "mailbox.deleted", entityType: "EmailAccount", entityId: existing.id, detail: existing.label });
   res.status(204).end();
 }));
