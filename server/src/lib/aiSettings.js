@@ -1,5 +1,6 @@
 import { prisma } from "../db.js";
 import { encryptSecret, decryptSecret } from "./credentialCrypto.js";
+import { DEFAULT_AI_DATA_SOURCES } from "./aiDataSources.js";
 
 // Resolves the Claude credentials the AI Assistant and Market Intelligence
 // both run on. Checked in this order:
@@ -64,16 +65,29 @@ export async function getAiSettingsRow() {
   return prisma.aiSettings.findFirst();
 }
 
-export async function saveAiSettings({ apiKey, model }) {
+export async function saveAiSettings({ apiKey, model, dataSources, companyProfile }) {
   const existing = await prisma.aiSettings.findFirst();
   const data = {
     model: model || DEFAULT_MODEL,
-    ...(apiKey ? { apiKeyEncrypted: encryptSecret(apiKey) } : {})
+    ...(apiKey ? { apiKeyEncrypted: encryptSecret(apiKey) } : {}),
+    // Undefined means "not part of this request" (e.g. saving just the
+    // key) and leaves the stored value alone. An empty array is a real
+    // choice — no database access — and is written through.
+    ...(dataSources !== undefined ? { dataSources } : {}),
+    ...(companyProfile !== undefined ? { companyProfile: companyProfile || null } : {})
   };
 
   const saved = existing
     ? await prisma.aiSettings.update({ where: { id: existing.id }, data })
-    : await prisma.aiSettings.create({ data: { ...data, apiKeyEncrypted: encryptSecret(apiKey) } });
+    : await prisma.aiSettings.create({
+        data: {
+          ...data,
+          apiKeyEncrypted: encryptSecret(apiKey),
+          // First save pins the full list explicitly, so later unticking
+          // everything is distinguishable from never having configured it.
+          dataSources: dataSources ?? DEFAULT_AI_DATA_SOURCES
+        }
+      });
 
   invalidateAiConfigCache();
   return saved;

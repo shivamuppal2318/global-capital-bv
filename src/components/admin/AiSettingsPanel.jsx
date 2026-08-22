@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { adminApi } from "../../lib/adminApi";
 import { ActionButton, Badge, Card, SectionTitle } from "../ui";
-import { SparklesIcon, XIcon, ZapIcon } from "../Icons";
+import { DatabaseIcon, SparklesIcon, XIcon, ZapIcon } from "../Icons";
+import { AiKnowledgePanel } from "./AiKnowledgePanel";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
@@ -24,6 +25,12 @@ export function AiSettingsPanel() {
   const [message, setMessage] = useState(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [sources, setSources] = useState([]);
+  const [enabledSources, setEnabledSources] = useState(null);
+  const [savingSources, setSavingSources] = useState(false);
+  const [sourcesMessage, setSourcesMessage] = useState(null);
+  const [companyProfile, setCompanyProfile] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const load = () =>
     adminApi
@@ -31,9 +38,44 @@ export function AiSettingsPanel() {
       .then((data) => {
         setModel(data.model);
         setStatus(data);
+        setSources(data.availableDataSources ?? []);
+        // null = never configured, which the backend treats as everything
+        // on; mirror that here so the boxes start ticked.
+        setEnabledSources(data.dataSources ?? (data.availableDataSources ?? []).map((s) => s.id));
+        setCompanyProfile(data.companyProfile ?? "");
       })
       .catch((err) => setMessage({ ok: false, text: err.message }))
       .finally(() => setLoading(false));
+
+  const toggleSource = (id) =>
+    setEnabledSources((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
+
+  const handleSaveSources = async () => {
+    setSavingSources(true);
+    setSourcesMessage(null);
+    try {
+      const saved = await adminApi.saveAiSettings({ model, dataSources: enabledSources });
+      setEnabledSources(saved.dataSources);
+      setSourcesMessage({ ok: true, text: "Data access updated — applies to the next question asked." });
+    } catch (err) {
+      setSourcesMessage({ ok: false, text: err.message });
+    } finally {
+      setSavingSources(false);
+    }
+  };
+
+  const handleSaveProfile = async (profile) => {
+    setSavingProfile(true);
+    try {
+      const saved = await adminApi.saveAiSettings({ model, companyProfile: profile });
+      setCompanyProfile(saved.companyProfile ?? "");
+      setMessage({ ok: true, text: "Company profile saved." });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -189,6 +231,64 @@ export function AiSettingsPanel() {
           ) : null}
         </div>
       </Card>
+
+      <Card className="px-5 py-5">
+        <SectionTitle
+          icon={DatabaseIcon}
+          iconClass="text-[#2995db]"
+          subtitle="What the assistant may read when answering. Unticked sections are never fetched, so they cost nothing and can't reach the model."
+          action={
+            <Badge tone={enabledSources?.length ? "blue" : "amber"}>
+              {enabledSources?.length ?? 0} of {sources.length} on
+            </Badge>
+          }
+        >
+          Database access
+        </SectionTitle>
+
+        <div className="mt-4 grid gap-2 md:grid-cols-2">
+          {sources.map((source) => {
+            const on = enabledSources?.includes(source.id);
+            return (
+              <label
+                key={source.id}
+                className={`flex cursor-pointer items-start gap-3 rounded-[14px] border px-4 py-3 transition ${
+                  on ? "border-[#c5d3f0] bg-[#f7faff]" : "border-[#e7edf5] hover:bg-[#f8faff]"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(on)}
+                  onChange={() => toggleSource(source.id)}
+                  className="mt-0.5 size-4 shrink-0 accent-[#3046b2]"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[14px] font-medium text-[#102246]">{source.label}</span>
+                  <span className="mt-0.5 block text-[12px] leading-5 text-[#8592ab]">{source.description}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+
+        {enabledSources?.length === 0 ? (
+          <p className="mt-3 rounded-[12px] bg-[#fff4e7] px-4 py-3 text-[13px] leading-6 text-[#c47f1a]">
+            With every box unticked the assistant has no business data at all — it can still answer from the company profile
+            and pinned documents below, but not about leads, calls or customers.
+          </p>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <ActionButton label={savingSources ? "Saving…" : "Save data access"} primary small onClick={handleSaveSources} disabled={savingSources} />
+          <ActionButton label="Select all" small onClick={() => setEnabledSources(sources.map((s) => s.id))} />
+          <ActionButton label="Clear all" small onClick={() => setEnabledSources([])} />
+          {sourcesMessage ? (
+            <p className={`text-[13px] font-medium ${sourcesMessage.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>{sourcesMessage.text}</p>
+          ) : null}
+        </div>
+      </Card>
+
+      <AiKnowledgePanel companyProfile={companyProfile} onSaveProfile={handleSaveProfile} savingProfile={savingProfile} />
     </div>
   );
 }

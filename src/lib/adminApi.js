@@ -28,6 +28,11 @@ export const adminApi = {
   saveAiSettings: (body) => request("/ai-settings", { method: "PUT", body }),
   testAiSettings: () => request("/ai-settings/test", { method: "POST" }),
   removeAiKey: () => request("/ai-settings", { method: "DELETE" }),
+  // Knowledge base = the pinned subset of Data Room documents, so this
+  // lists everything and pinning promotes an existing file rather than
+  // needing a second upload.
+  listAiKnowledge: () => request("/ai-knowledge"),
+  pinAiDocument: (id, pinned) => request(`/ai-knowledge/${id}/pin`, { method: "POST", body: { pinned } }),
   // Market Intelligence's data-source keys (Exa, NewsAPI.ai, Firecrawl,
   // Apollo) — same never-returned-key / hasKey+preview+source shape as AI
   // settings above, one provider at a time.

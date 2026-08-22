@@ -1,9 +1,11 @@
 // Only modules that are actually built out are listed. Lead Discovery,
-// Qualification, Telephony & SMS, Companies, Contacts, Communications and
-// Deals were placeholder entries that rendered an empty page, so they're
-// removed rather than shipped as dead links. Keep this in step with
-// server/src/lib/permissions.js — the ids there drive both the Admin Panel
-// checkboxes and the API's own access checks.
+// Qualification, Telephony & SMS, Companies, Contacts, Communications,
+// Deals and Pipeline are not shown — they were placeholders rendering an
+// empty page. Templates & Cadences isn't a top-level entry either, but
+// unlike those it IS reachable — as a tab inside MailX (see
+// EmailOutreachModule.jsx) rather than its own nav item. Keep this in step
+// with server/src/lib/permissions.js — the ids there drive both the Admin
+// Panel checkboxes and the API's own access checks.
 export const navSections = [
   {
     title: "Intelligence",
@@ -31,10 +33,6 @@ export const navSections = [
       { id: "meetings", label: "Meetings", icon: "calendar" },
       { id: "data-room", label: "Data Room", icon: "folder" }
     ]
-  },
-  {
-    title: "Deal Execution",
-    items: [{ id: "pipeline", label: "Pipeline", icon: "pipeline" }]
   },
   {
     title: "Administration",

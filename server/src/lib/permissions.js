@@ -7,12 +7,10 @@ export const MODULES = [
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence" },
   { id: "leads", label: "Leads", group: "Intelligence" },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },
-  { id: "cold-bulk-mailing", label: "Cold Bulk Mailing", group: "CRM & Outreach" },
+  { id: "cold-bulk-mailing", label: "MailX", group: "CRM & Outreach" },
   { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach" },
-  { id: "templates-cadences", label: "Templates & Cadences", group: "CRM & Outreach" },
   { id: "meetings", label: "Meetings", group: "Relationships" },
-  { id: "data-room", label: "Data Room", group: "Relationships" },
-  { id: "pipeline", label: "Pipeline", group: "Deal Execution" }
+  { id: "data-room", label: "Data Room", group: "Relationships" }
 ];
 
 export const MODULE_IDS = MODULES.map((m) => m.id);
@@ -45,9 +43,9 @@ export function hasModule(user, moduleId) {
   return Array.isArray(user?.permissions) && user.permissions.includes(moduleId);
 }
 
-// Route guard. Pass every module that should unlock the route — a router
-// shared by two modules (e.g. email templates serve both Cold Bulk Mailing
-// and Templates & Cadences) passes both rather than being locked to one.
+// Route guard. Pass every module that should unlock the route — for a
+// router shared by more than one module, pass all of them rather than
+// locking it to one.
 export function requireModule(...moduleIds) {
   return (req, res, next) => {
     if (moduleIds.some((id) => hasModule(req.user, id))) return next();

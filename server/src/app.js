@@ -122,7 +122,10 @@ app.use(
   },
   emailLeadsRouter
 );
-app.use("/api/email/templates", requireModule("cold-bulk-mailing", "templates-cadences"), emailTemplatesRouter);
+// Templates & Cadences is a tab inside MailX now (see
+// EmailOutreachModule.jsx), not its own nav entry, so it shares MailX's
+// module id rather than needing one of its own.
+app.use("/api/email/templates", requireModule("cold-bulk-mailing"), emailTemplatesRouter);
 // Not module-gated: everyone manages their own mailbox from Admin Panel →
 // My Account, and the router itself already scopes non-admins to the
 // mailboxes they own.
