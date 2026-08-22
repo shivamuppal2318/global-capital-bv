@@ -1,7 +1,9 @@
 // Only modules that are actually built out are listed. Lead Discovery,
-// Qualification, Telephony & SMS, Companies, Contacts, Communications and
-// Deals were placeholder entries that rendered an empty page, so they're
-// removed rather than shipped as dead links. Keep this in step with
+// Qualification, Telephony & SMS, Companies, Contacts, Communications,
+// Deals, Pipeline and Templates & Cadences are not shown — either they were
+// placeholders rendering an empty page, or (Templates & Cadences) the
+// screen exists but isn't wanted in the menu. Its route in App.jsx is left
+// intact, so restoring it is a one-line change here. Keep this in step with
 // server/src/lib/permissions.js — the ids there drive both the Admin Panel
 // checkboxes and the API's own access checks.
 export const navSections = [
@@ -18,8 +20,7 @@ export const navSections = [
     items: [
       { id: "crm-workspace", label: "CRM Workspace", icon: "users" },
       { id: "cold-bulk-mailing", label: "Cold Bulk Mailing", icon: "mailbox" },
-      { id: "whatsapp-business", label: "WhatsApp Business", icon: "message" },
-      { id: "templates-cadences", label: "Templates & Cadences", icon: "send" }
+      { id: "whatsapp-business", label: "WhatsApp Business", icon: "message" }
     ]
   },
   {
@@ -28,10 +29,6 @@ export const navSections = [
       { id: "meetings", label: "Meetings", icon: "calendar" },
       { id: "data-room", label: "Data Room", icon: "folder" }
     ]
-  },
-  {
-    title: "Deal Execution",
-    items: [{ id: "pipeline", label: "Pipeline", icon: "pipeline" }]
   },
   {
     title: "Administration",

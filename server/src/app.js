@@ -122,7 +122,9 @@ app.use(
   },
   emailLeadsRouter
 );
-app.use("/api/email/templates", requireModule("cold-bulk-mailing", "templates-cadences"), emailTemplatesRouter);
+// Still needed by Cold Bulk Mailing to send saved templates, even though
+// the Templates & Cadences screen is no longer in the menu.
+app.use("/api/email/templates", requireModule("cold-bulk-mailing"), emailTemplatesRouter);
 // Not module-gated: everyone manages their own mailbox from Admin Panel →
 // My Account, and the router itself already scopes non-admins to the
 // mailboxes they own.
