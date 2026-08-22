@@ -24,7 +24,10 @@ export const navSections = [
   },
   {
     title: "Relationships",
-    items: [{ id: "meetings", label: "Meetings", icon: "calendar" }]
+    items: [
+      { id: "meetings", label: "Meetings", icon: "calendar" },
+      { id: "data-room", label: "Data Room", icon: "folder" }
+    ]
   },
   {
     title: "Deal Execution",

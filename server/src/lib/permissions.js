@@ -11,6 +11,7 @@ export const MODULES = [
   { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach" },
   { id: "templates-cadences", label: "Templates & Cadences", group: "CRM & Outreach" },
   { id: "meetings", label: "Meetings", group: "Relationships" },
+  { id: "data-room", label: "Data Room", group: "Relationships" },
   { id: "pipeline", label: "Pipeline", group: "Deal Execution" }
 ];
 

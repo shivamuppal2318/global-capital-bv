@@ -22,6 +22,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      # Data Room uploads. A deploy replaces the container, so without this
+      # named volume every uploaded document would be lost on the next
+      # release — the database rows would survive and point at files that
+      # no longer exist.
+      - document_uploads:/app/uploads
     # No host port binding — Coolify's reverse proxy reaches this container
     # over the internal Docker network using the port set in its Domains
     # config (4000), so publishing 4000:4000 on the host would collide with
@@ -110,3 +116,4 @@ services:
 
 volumes:
   postgres_data:
+  document_uploads:
