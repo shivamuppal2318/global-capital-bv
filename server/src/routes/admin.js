@@ -13,6 +13,7 @@ import { AI_DATA_SOURCES, AI_DATA_SOURCE_IDS } from "../lib/aiDataSources.js";
 import { getProviderKey, getMarketIntelSettingsRow, saveMarketIntelSettings, clearProviderKey } from "../lib/marketIntelligenceSettings.js";
 import { testProviderConnection } from "../lib/marketIntelligenceProviderTest.js";
 import { appBaseUrl } from "../lib/appUrl.js";
+import { recordAudit } from "../lib/auditLog.js";
 
 const router = Router();
 
@@ -82,6 +83,7 @@ router.post("/employees", asyncHandler(async (req, res) => {
   // than failing the request and leaving an account nobody was told about.
   const mail = welcomeEmail({ name: user.name, email: user.email, temporaryPassword, appUrl: appBaseUrl() });
   const delivery = await sendSystemEmail({ to: user.email, ...mail });
+  await recordAudit({ req, action: "employee.created", entityType: "User", entityId: user.id, detail: `Created ${user.email} (${user.role})` });
 
   // temporaryPassword is only ever exposed here, at creation time — there
   // is no "view password" anywhere else in the app.
@@ -107,6 +109,13 @@ router.patch("/employees/:id", asyncHandler(async (req, res) => {
 
   const user = await prisma.user.update({ where: { id: req.params.id }, data: parsed.data }).catch(() => null);
   if (!user) return res.status(404).json({ error: "Employee not found" });
+  await recordAudit({
+    req,
+    action: "employee.updated",
+    entityType: "User",
+    entityId: user.id,
+    detail: `Updated ${user.email}: ${Object.entries(parsed.data).map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(",") : v}`).join(", ")}`
+  });
   res.json(publicUser(user));
 }));
 
@@ -119,6 +128,7 @@ router.post("/employees/:id/reset-password", asyncHandler(async (req, res) => {
     .update({ where: { id: req.params.id }, data: { passwordHash: await hashPassword(temporaryPassword) } })
     .catch(() => null);
   if (!user) return res.status(404).json({ error: "Employee not found" });
+  await recordAudit({ req, action: "employee.password_reset", entityType: "User", entityId: user.id, detail: `Admin reset password for ${user.email}` });
   res.json({ ...publicUser(user), temporaryPassword });
 }));
 
@@ -128,6 +138,10 @@ router.delete("/employees/:id", asyncHandler(async (req, res) => {
   }
   const user = await prisma.user.delete({ where: { id: req.params.id } }).catch(() => null);
   if (!user) return res.status(404).json({ error: "Employee not found" });
+  // Not FK'd to the deleted user (actorId/entityId both go stale on
+  // purpose) — the snapshot fields (actorName/actorEmail, detail) are what
+  // keep this row meaningful after the account is gone.
+  await recordAudit({ req, action: "employee.deleted", entityType: "User", entityId: user.id, detail: `Deleted ${user.email}` });
   res.status(204).end();
 }));
 
@@ -175,6 +189,7 @@ router.put("/system-email", asyncHandler(async (req, res) => {
     const created = await prisma.systemEmailSettings.create({
       data: { ...rest, smtpPassEncrypted: encryptSecret(smtpPass) }
     });
+    await recordAudit({ req, action: "system_email.configured", entityType: "SystemEmailSettings", entityId: created.id, detail: `${created.smtpHost} · ${created.fromAddress}` });
     return res.json(redactSystemEmail(created));
   }
 
@@ -182,6 +197,7 @@ router.put("/system-email", asyncHandler(async (req, res) => {
     where: { id: existing.id },
     data: { ...rest, ...(smtpPass ? { smtpPassEncrypted: encryptSecret(smtpPass) } : {}) }
   });
+  await recordAudit({ req, action: "system_email.updated", entityType: "SystemEmailSettings", entityId: updated.id, detail: `${updated.smtpHost} · ${updated.fromAddress}` });
   res.json(redactSystemEmail(updated));
 }));
 
@@ -258,6 +274,11 @@ router.put("/ai-settings", asyncHandler(async (req, res) => {
 
   const saved = await saveAiSettings(parsed.data);
   const config = await getAiConfig();
+  await recordAudit({
+    req,
+    action: "ai_settings.updated",
+    detail: `Model ${saved.model}${parsed.data.apiKey ? ", API key changed" : ""}${parsed.data.dataSources ? `, data sources: ${parsed.data.dataSources.join(",")}` : ""}`
+  });
   res.json({
     model: config.model,
     hasKey: Boolean(config.apiKey),
@@ -325,9 +346,10 @@ router.post("/ai-settings/test", asyncHandler(async (_req, res) => {
 // features fall back to ANTHROPIC_API_KEY if that's set, otherwise to
 // their "not configured" behaviour — which is honest, rather than leaving
 // a key that's shown as configured but rejected on every call.
-router.delete("/ai-settings", asyncHandler(async (_req, res) => {
+router.delete("/ai-settings", asyncHandler(async (req, res) => {
   await clearAiSettings();
   const config = await getAiConfig();
+  await recordAudit({ req, action: "ai_settings.key_cleared" });
   res.json({ model: config.model, hasKey: Boolean(config.apiKey), keyPreview: null, source: config.source });
 }));
 
@@ -366,6 +388,7 @@ router.put("/market-intelligence-settings/:provider", requireKnownProvider, asyn
 
   await saveMarketIntelSettings({ [req.params.provider]: parsed.data.apiKey });
   const { apiKey, source } = await getProviderKey(req.params.provider);
+  await recordAudit({ req, action: "market_intel_settings.key_saved", detail: `Provider: ${req.params.provider}` });
   res.json({ hasKey: Boolean(apiKey), keyPreview: apiKey ? `…${apiKey.slice(-4)}` : null, source });
 }));
 
@@ -380,7 +403,43 @@ router.post("/market-intelligence-settings/:provider/test", requireKnownProvider
 router.delete("/market-intelligence-settings/:provider", requireKnownProvider, asyncHandler(async (req, res) => {
   await clearProviderKey(req.params.provider);
   const { apiKey, source } = await getProviderKey(req.params.provider);
+  await recordAudit({ req, action: "market_intel_settings.key_cleared", detail: `Provider: ${req.params.provider}` });
   res.json({ hasKey: Boolean(apiKey), keyPreview: apiKey ? `…${apiKey.slice(-4)}` : null, source });
+}));
+
+// --- Audit log ------------------------------------------------------------
+
+const MAX_AUDIT_PAGE_SIZE = 100;
+
+// Simple offset pagination plus optional action-prefix filter (e.g.
+// "employee." matches every employee.* action) — enough for a company this
+// size; a growing table would want keyset pagination instead, but that's
+// not a real problem yet.
+router.get("/audit-logs", asyncHandler(async (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(MAX_AUDIT_PAGE_SIZE, Math.max(1, Number(req.query.pageSize) || 25));
+  const actionPrefix = req.query.action ? String(req.query.action) : null;
+
+  const where = actionPrefix ? { action: { startsWith: actionPrefix } } : {};
+
+  const [rows, total] = await Promise.all([
+    prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize
+    }),
+    prisma.auditLog.count({ where })
+  ]);
+
+  res.json({ rows, total, page, pageSize });
+}));
+
+// Distinct action names actually in use, for the filter dropdown — avoids
+// hardcoding a list in the frontend that drifts from what's really written.
+router.get("/audit-logs/actions", asyncHandler(async (_req, res) => {
+  const rows = await prisma.auditLog.findMany({ distinct: ["action"], select: { action: true }, orderBy: { action: "asc" } });
+  res.json(rows.map((r) => r.action));
 }));
 
 export default router;

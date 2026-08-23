@@ -7,6 +7,7 @@ import { recordReply } from "../lib/replyRecorder.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { calculateLeadScore, deriveQualification } from "../lib/leadScoring.js";
 import { verifyEmailDeliverability, verifyEmailsDeliverability } from "../lib/emailValidation.js";
+import { recordAudit } from "../lib/auditLog.js";
 
 export const emailLeadsRouter = Router();
 
@@ -101,7 +102,11 @@ const createLeadSchema = z.object({
   company: z.string().min(1),
   email: z.string().email(),
   owner: z.string().min(1),
-  campaignId: z.string().min(1)
+  campaignId: z.string().min(1),
+  // Drives automatic sending-mailbox routing (see src/lib/accountRouting.js)
+  // — matched case-insensitively against EmailAccount.country. Optional:
+  // omitted/null just means no country-based routing for this lead.
+  country: z.string().trim().min(1).nullable().optional()
 });
 
 // Adds a lead to a campaign and enrolls them in its no-reply cadence in one
@@ -172,7 +177,8 @@ const EMAIL_INBOUND_FIELD_ALIASES = {
   email: ["email", "email_address", "emailaddress", "contact_email"],
   owner: ["owner", "assigned_to", "assignedto", "rep"],
   campaignId: ["campaign_id", "campaignid"],
-  campaignName: ["campaign", "campaign_name", "campaignname"]
+  campaignName: ["campaign", "campaign_name", "campaignname"],
+  country: ["country", "country_code", "countrycode", "region"]
 };
 
 function pickInboundField(flatBody, aliases) {
@@ -198,6 +204,7 @@ emailLeadsRouter.post("/inbound", asyncHandler(async (req, res) => {
   const owner = pickInboundField(flatBody, EMAIL_INBOUND_FIELD_ALIASES.owner) ?? "Unassigned";
   const campaignId = pickInboundField(flatBody, EMAIL_INBOUND_FIELD_ALIASES.campaignId);
   const campaignName = pickInboundField(flatBody, EMAIL_INBOUND_FIELD_ALIASES.campaignName);
+  const country = pickInboundField(flatBody, EMAIL_INBOUND_FIELD_ALIASES.country);
 
   if (!name) return res.status(400).json({ error: "A name field is required (name, full_name, lead_name, ...)." });
   if (!email) return res.status(400).json({ error: "An email field is required (email, email_address, ...)." });
@@ -224,7 +231,7 @@ emailLeadsRouter.post("/inbound", asyncHandler(async (req, res) => {
   }
 
   const lead = await prisma.emailLead.create({
-    data: { name, company: company ?? "—", email, owner, campaignId: campaign.id }
+    data: { name, company: company ?? "—", email, owner, campaignId: campaign.id, country }
   });
   const scheduledCount = await scheduleCadenceSteps(lead, campaign.cadenceSteps);
 
@@ -250,7 +257,8 @@ const bulkCreateLeadSchema = z.object({
         name: z.string().min(1),
         company: z.string().min(1),
         email: z.string().email(),
-        owner: z.string().min(1)
+        owner: z.string().min(1),
+        country: z.string().trim().min(1).nullable().optional()
       })
     )
     .min(1)
@@ -371,6 +379,7 @@ emailLeadsRouter.delete("/:id", asyncHandler(async (req, res) => {
   await prisma.emailActivityLog.deleteMany({ where: { leadId: lead.id } });
   await prisma.replyEvent.deleteMany({ where: { leadId: lead.id } });
   await prisma.emailLead.delete({ where: { id: lead.id } });
+  await recordAudit({ req, action: "lead.deleted", entityType: "EmailLead", entityId: lead.id, detail: `${lead.name} (${lead.email})` });
 
   res.status(204).end();
 }));

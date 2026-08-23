@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { CalendarIcon, CopyIcon, PlusIcon, VideoIcon } from "../Icons";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
 import { meetingsApi } from "../../lib/zoomApi";
+import { callsApi } from "../../lib/relationshipsApi";
 import { leadsApi } from "../../lib/leadsApi";
 import { ZoomConnectionPanel } from "./ZoomConnectionPanel";
+import { CallOutcomePanel } from "./CallOutcomePanel";
 
 function formatDateTime(iso) {
   return new Date(iso).toLocaleString(undefined, {
@@ -34,14 +36,21 @@ export function MeetingsModule() {
   const [scheduling, setScheduling] = useState(false);
   const [scheduleError, setScheduleError] = useState(null);
   const [copied, setCopied] = useState(null);
+  const [metrics, setMetrics] = useState(null);
+  const [openCapture, setOpenCapture] = useState(null);
 
-  const refresh = () => meetingsApi.list().then(setMeetings);
+  const refresh = () =>
+    Promise.all([meetingsApi.list(), callsApi.metrics()]).then(([m, k]) => {
+      setMeetings(m);
+      setMetrics(k);
+    });
 
   useEffect(() => {
-    Promise.all([meetingsApi.list(), leadsApi.list()])
-      .then(([m, l]) => {
+    Promise.all([meetingsApi.list(), leadsApi.list(), callsApi.metrics()])
+      .then(([m, l, k]) => {
         setMeetings(m);
         setLeads(l);
+        setMetrics(k);
       })
       .catch((err) => setLoadError(err.message))
       .finally(() => setLoading(false));
@@ -105,18 +114,45 @@ export function MeetingsModule() {
     );
   }
 
-  const upcoming = meetings.filter((m) => m.status === "Scheduled" && new Date(m.startTime) >= new Date());
+  const has = (v) => v !== null && v !== undefined;
   const stats = [
-    { label: "Total meetings", value: String(meetings.length), note: "All time", noteTone: "blue" },
-    { label: "Upcoming", value: String(upcoming.length), note: "Scheduled", noteTone: "green" },
-    { label: "Cancelled", value: String(meetings.filter((m) => m.status === "Cancelled").length), note: "This workspace", noteTone: "amber" }
+    {
+      label: "Calls completed",
+      value: String(metrics?.completed ?? 0),
+      note: metrics?.upcoming ? `${metrics.upcoming} upcoming` : "None upcoming",
+      noteTone: "blue"
+    },
+    {
+      label: "Average duration",
+      value: has(metrics?.avgDurationMinutes) ? `${metrics.avgDurationMinutes}m` : "\u2014",
+      note: "Actual where recorded",
+      noteTone: "green"
+    },
+    {
+      label: "Follow-up created",
+      value: has(metrics?.followUpRate) ? `${metrics.followUpRate}%` : "\u2014",
+      note: metrics?.completed ? `${metrics.followUpCreated}/${metrics.completed} calls` : "No calls yet",
+      noteTone: "amber"
+    },
+    {
+      label: "Client satisfaction",
+      value: has(metrics?.avgSatisfaction) ? `${metrics.avgSatisfaction}/5` : "\u2014",
+      note: metrics?.ratedCount ? `${metrics.ratedCount} rated` : "Not rated yet",
+      noteTone: "green"
+    },
+    {
+      label: "Next meeting set",
+      value: has(metrics?.nextMeetingRate) ? `${metrics.nextMeetingRate}%` : "\u2014",
+      note: metrics?.completed ? `${metrics.nextMeetingScheduled}/${metrics.completed} calls` : "No calls yet",
+      noteTone: "blue"
+    }
   ];
 
   return (
     <div className="space-y-6">
       <Header stats={stats} />
 
-      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
         <div className="space-y-4">
           <Card className="px-5 py-5">
             <SectionTitle icon={PlusIcon} iconClass="text-[#3046b2]">
@@ -232,6 +268,30 @@ export function MeetingsModule() {
                       ) : null}
                     </div>
                   ) : null}
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#f0f3f8] pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setOpenCapture(openCapture === m.id ? null : m.id)}
+                      className="text-[13px] font-semibold text-[#3046b2] hover:underline"
+                    >
+                      {openCapture === m.id ? "Hide call record" : m.notes ? "Edit call record" : "Log call outcome"}
+                    </button>
+                    {m.notes ? <Badge tone="green">Notes</Badge> : null}
+                    {m.aiSummary ? <Badge tone="blue">AI summary</Badge> : null}
+                    {m.nextAction ? <Badge tone="amber">Follow-up</Badge> : null}
+                    {m.clientSatisfaction ? <Badge tone="slate">{m.clientSatisfaction}/5</Badge> : null}
+                  </div>
+
+                  {openCapture === m.id ? (
+                    <CallOutcomePanel
+                      // Keyed by id so switching between meetings resets the
+                      // form rather than carrying the previous call's answers.
+                      key={m.id}
+                      meeting={m}
+                      onSaved={() => refresh()}
+                    />
+                  ) : null}
                 </div>
               ))
             )}
@@ -249,14 +309,15 @@ function Header({ stats }) {
         <span className="inline-flex rounded-full bg-[#dff2ff] px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2995db]">
           Module
         </span>
-        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Meetings</h1>
+        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Zoom Call</h1>
         <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
-          Schedule and join Zoom calls linked directly to your leads — connected once, available everywhere.
+          Schedule Zoom calls against your leads, then capture what happened — attendees, duration, notes, an AI
+          summary and the next action — so the follow-through is measurable.
         </p>
       </div>
 
       {stats ? (
-        <div className="mt-7 grid gap-4 sm:grid-cols-3">
+        <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           {stats.map((card) => (
             <StatCard key={card.label} card={card} />
           ))}

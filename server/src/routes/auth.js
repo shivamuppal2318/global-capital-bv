@@ -7,6 +7,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
 import { liveModules } from "../lib/permissions.js";
 import { appBaseUrl } from "../lib/appUrl.js";
+import { recordAudit } from "../lib/auditLog.js";
 
 const router = Router();
 
@@ -35,17 +36,28 @@ router.post("/login", asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({ where: { email } });
   // Same generic message whether the email doesn't exist or the password is
   // wrong — distinguishing the two lets an attacker enumerate valid emails.
+  // The audit trail is allowed to be more specific than the HTTP response;
+  // that asymmetry is the whole point (an admin reviewing failed logins
+  // should see more than an attacker probing the login form does).
   const invalid = () => res.status(401).json({ error: "Invalid email or password." });
 
-  if (!user) return invalid();
+  if (!user) {
+    await recordAudit({ req, action: "auth.login_failed", detail: `Attempted login for unknown email: ${email}` });
+    return invalid();
+  }
   if (user.status === "SUSPENDED") {
+    await recordAudit({ req, actor: user, action: "auth.login_blocked", entityType: "User", entityId: user.id, detail: "Login blocked — account is suspended" });
     return res.status(403).json({ error: "This account has been suspended. Contact an admin." });
   }
 
   const ok = await verifyPassword(password, user.passwordHash);
-  if (!ok) return invalid();
+  if (!ok) {
+    await recordAudit({ req, actor: user, action: "auth.login_failed", entityType: "User", entityId: user.id, detail: "Wrong password" });
+    return invalid();
+  }
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  await recordAudit({ req, actor: user, action: "auth.login", entityType: "User", entityId: user.id });
 
   res.json({ token: signToken(user), user: publicUser(user) });
 }));
@@ -71,6 +83,7 @@ router.patch("/me/password", requireAuth, asyncHandler(async (req, res) => {
 
   const passwordHash = await hashPassword(newPassword);
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+  await recordAudit({ req, action: "auth.password_changed", entityType: "User", entityId: user.id });
   res.json({ ok: true });
 }));
 
@@ -138,6 +151,7 @@ router.post("/reset-password", asyncHandler(async (req, res) => {
     // the one that was clicked.
     prisma.passwordResetToken.deleteMany({ where: { userId: record.userId, usedAt: null } })
   ]);
+  await recordAudit({ req, actor: record.user, action: "auth.password_reset", entityType: "User", entityId: record.userId, detail: "Reset via emailed link" });
 
   res.json({ ok: true, message: "Password updated — you can sign in now." });
 }));

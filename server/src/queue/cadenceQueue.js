@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { getEmailProvider } from "../lib/emailProvider.js";
 import { isUnderDailyCap } from "../lib/sendCap.js";
 import { isAccountUnderDailyCap } from "../lib/accountSendCap.js";
+import { resolveEmailAccount } from "../lib/accountRouting.js";
 import { isLeadEligibleForCadenceStep } from "../lib/cadenceEligibility.js";
 
 const QUEUE_NAME = "cadence-steps";
@@ -70,10 +71,12 @@ export function startCadenceWorker() {
       const lead = await prisma.emailLead.findUniqueOrThrow({ where: { id: leadId } });
       const campaign = await prisma.emailCampaign.findUniqueOrThrow({ where: { id: campaignId }, include: { emailAccount: true } });
       // Resolved per-job, not once at worker startup — a global provider
-      // grabbed once would ignore any campaign-specific EmailAccount and
-      // silently send every cadence step through the default mailbox
-      // regardless of which account the campaign was actually assigned.
-      const emailProvider = getEmailProvider(campaign.emailAccount);
+      // grabbed once would ignore per-lead country routing (a match on
+      // EmailLead.country overrides the campaign's assigned EmailAccount,
+      // see accountRouting.js) and silently send every cadence step through
+      // the same default mailbox regardless of the lead's own country.
+      const resolvedAccount = await resolveEmailAccount(lead, campaign);
+      const emailProvider = getEmailProvider(resolvedAccount);
 
       // The actual "stop the no-reply cadence once they reply" check — a
       // job that was enqueued 3 days ago for "Day 3 follow-up" still fires
@@ -104,11 +107,11 @@ export function startCadenceWorker() {
         throw new Error("Daily send cap reached for this campaign.");
       }
 
-      const accountWithinCap = await isAccountUnderDailyCap(campaign.emailAccount);
+      const accountWithinCap = await isAccountUnderDailyCap(resolvedAccount);
       if (!accountWithinCap) {
         // Same TODO as above: only retries for a few minutes, not until
         // tomorrow's reset.
-        throw new Error(`Daily send cap reached for mailbox "${campaign.emailAccount.label}".`);
+        throw new Error(`Daily send cap reached for mailbox "${resolvedAccount.label}".`);
       }
 
       const { providerMessageId } = await emailProvider.send({ to: lead.email, subject, body });
@@ -118,7 +121,8 @@ export function startCadenceWorker() {
           leadId,
           kind: "BRANCH_EMAIL_SENT",
           title: subject,
-          detail: `Sent via ${emailProvider.name} provider (message id ${providerMessageId}).`
+          detail: `Sent via ${emailProvider.name} provider (message id ${providerMessageId}).`,
+          emailAccountId: resolvedAccount?.id ?? null
         }
       });
     },

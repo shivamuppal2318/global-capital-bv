@@ -20,6 +20,9 @@ import aiChatRouter from "./routes/aiChat.js";
 import zoomRouter from "./routes/zoom.js";
 import meetingsRouter from "./routes/meetings.js";
 import { documentsRouter } from "./routes/documents.js";
+import { dealStagesRouter } from "./routes/dealStages.js";
+import { ndaRecordsRouter } from "./routes/ndaRecords.js";
+import { visitPlansRouter } from "./routes/visitPlans.js";
 // Email cold-outreach domain (merged from the `crm` branch) — kept as
 // separate routers/mount paths from the WhatsApp domain above, matching the
 // separate Email*-prefixed Prisma models (see schema.prisma).
@@ -99,6 +102,19 @@ app.use(
   leadsRouter
 );
 app.use("/api/documents", requireModule("data-room"), documentsRouter);
+// One router serves all seven stages (the stage is a filter, not a route),
+// so it unlocks for anyone holding any of the stage modules; the screens
+// themselves are still gated individually in the sidebar.
+app.use(
+  "/api/deal-stages",
+  requireModule("nda", "meetings", "data-room", "ioi", "visit-planning", "field-visit", "term-sheet"),
+  dealStagesRouter
+);
+// NDA tracking and visit planning outgrew the shared deal-stage table, so
+// they have dedicated routers. Note this is not "/api/nda" — that path is
+// the public token-based signing page and must stay unauthenticated.
+app.use("/api/nda-records", requireModule("nda"), ndaRecordsRouter);
+app.use("/api/visit-plans", requireModule("visit-planning"), visitPlansRouter);
 app.use("/api/ai", aiChatRouter);
 app.use("/api/zoom", requireModule("meetings"), zoomRouter);
 app.use("/api/meetings", requireModule("meetings"), meetingsRouter);
@@ -122,8 +138,9 @@ app.use(
   },
   emailLeadsRouter
 );
-// Still needed by Cold Bulk Mailing to send saved templates, even though
-// the Templates & Cadences screen is no longer in the menu.
+// Templates & Cadences is a tab inside MailX now (see
+// EmailOutreachModule.jsx), not its own nav entry, so it shares MailX's
+// module id rather than needing one of its own.
 app.use("/api/email/templates", requireModule("cold-bulk-mailing"), emailTemplatesRouter);
 // Not module-gated: everyone manages their own mailbox from Admin Panel →
 // My Account, and the router itself already scopes non-admins to the

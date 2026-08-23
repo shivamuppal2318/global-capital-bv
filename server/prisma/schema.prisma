@@ -130,6 +130,37 @@ model User {
   emailAccounts EmailAccount[]
   passwordResets PasswordResetToken[]
   documents      Document[]
+  auditLogs      AuditLog[]
+}
+
+// Who did what, when — logins, admin actions (employee/permission changes,
+// credential edits), and the higher-stakes MailX actions (campaigns,
+// mailboxes, lead deletion). Written by src/lib/auditLog.js, never edited
+// or deleted through the app itself; that's what makes it useful as a real
+// record instead of just another mutable table.
+model AuditLog {
+  id     String @id @default(cuid())
+  // Kept even if the actor's account is later deleted — an audit trail
+  // that goes blank the moment someone is removed defeats its own purpose,
+  // so the actor's name/email are snapshotted at write time (actor* below)
+  // rather than only ever joined live off User.
+  actor      User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorId    String?
+  actorName  String
+  actorEmail String
+  // Dot-namespaced (e.g. "campaign.paused", "employee.permissions_updated")
+  // so the Admin Panel's filter can match a whole namespace or one exact
+  // action.
+  action     String
+  entityType String?
+  entityId   String?
+  detail     String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([action])
 }
 
 // Single row holding the company-wide "system" mailbox used for
@@ -222,12 +253,86 @@ model Document {
 
   uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   uploadedById String?
+  dealStages   DealStageRecord[]
+  ndaDocuments NdaRecord[] @relation("NdaDocument")
+  visitReports VisitPlan[] @relation("VisitReport")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([category])
   @@index([createdAt])
+}
+
+// The deal progression a lead moves through: NDA -> Zoom call -> Data Room
+// -> IOI -> visit planning -> field visit -> term sheet.
+//
+// One table rather than seven, because the stages share a lifecycle
+// (owner, status, planned/actual dates, notes, an optional document) and
+// differ only in which of a handful of extra fields apply — amount and
+// valuation for IOI/term sheet, location and attendees for the visits.
+// Seven near-identical tables would mean seven of every query, route and
+// screen; the per-stage differences are handled by field config in the UI
+// (see src/components/dealStages/stageConfig.js).
+enum DealStage {
+  NDA
+  ZOOM_CALL
+  DATA_ROOM
+  IOI
+  VISIT_PLANNING
+  FIELD_VISIT
+  TERM_SHEET
+}
+
+enum DealStageStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+  ON_HOLD
+}
+
+model DealStageRecord {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  stage  DealStage
+  status DealStageStatus @default(NOT_STARTED)
+
+  // Planned vs actual. scheduledAt is the intended date (NDA sent, visit
+  // booked, term sheet issued); completedAt is when it actually happened
+  // (signed, visited, accepted) — keeping both is what makes "overdue" and
+  // "how long did this take" answerable later.
+  scheduledAt DateTime?
+  completedAt DateTime?
+
+  // IOI / term sheet money. Free text rather than a numeric type: these
+  // arrive as "EUR 2–4M" or "TBC" as often as a single figure, and forcing
+  // a number would lose that.
+  amount    String?
+  valuation String?
+
+  // Visit stages.
+  location  String?
+  attendees String?
+
+  counterparty String?
+  notes        String?
+  owner        String?
+
+  // Optional supporting file, reusing the Data Room rather than a separate
+  // upload path — a signed NDA or term sheet belongs in both places.
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  documentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One record per lead per stage; re-running a stage updates it rather
+  // than silently creating a second row that queries would double-count.
+  @@unique([leadId, stage])
+  @@index([stage, status])
 }
 
 model PasswordResetToken {
@@ -289,6 +394,9 @@ model Lead {
   notes            String?
   rawPayload       Json?
   meetings         Meeting[]
+  dealStages       DealStageRecord[]
+  ndaRecord        NdaRecord?
+  visitPlans       VisitPlan[]
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
@@ -318,7 +426,129 @@ model Meeting {
   status          String    @default("Scheduled")
   createdAt       DateTime  @default(now())
 
+  // --- Qualitative capture (Zoom Call module) ---------------------------
+  // Everything below is filled in after the call, so all of it is optional:
+  // a meeting exists from the moment it's booked, long before there's
+  // anything to record about it.
+
+  // Who from the client side actually attended — often differs from who was
+  // invited, and that difference is itself worth knowing.
+  clientAttendees String?
+  // Our own attendees (date-of-engagement contact / deal owner side).
+  ourAttendees String?
+  // Actual minutes, as opposed to durationMinutes which is what was booked.
+  actualDurationMinutes Int?
+  notes                 String?
+  // Generated from notes by Claude on request (see POST /:id/summarise) —
+  // stored so it isn't regenerated (and re-billed) on every page load.
+  aiSummary          String?
+  aiSummaryUpdatedAt DateTime?
+  nextAction         String?
+  nextActionDueAt    DateTime?
+  // Whether a further meeting came out of this one — drives the
+  // "next meeting scheduled %" KPI.
+  nextMeetingScheduled Boolean @default(false)
+  recordingLink        String?
+  // 1-5, set by hand. Deliberately not inferred from the notes: a satisfaction
+  // score a model guessed would look like data while being opinion.
+  clientSatisfaction Int?
+
   @@index([startTime])
+}
+
+// NDA tracking. Split out of DealStageRecord because chasing signatures has
+// its own shape — two reminder timestamps, and the signing-time and
+// reminder-effectiveness metrics that depend on them — which the shared
+// stage table has no room for without becoming a wide grab-bag.
+model NdaRecord {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String @unique
+
+  // SENT -> REMINDER_1 -> REMINDER_2 -> SIGNED, or DECLINED/EXPIRED.
+  status NdaStatus @default(DRAFT)
+
+  sentAt       DateTime?
+  reminder1At  DateTime?
+  reminder2At  DateTime?
+  signedAt     DateTime?
+  expiresAt    DateTime?
+
+  signerName  String?
+  signerEmail String?
+  owner       String?
+  notes       String?
+
+  // The signed copy, kept in the Data Room rather than a second upload path.
+  document   Document? @relation("NdaDocument", fields: [documentId], references: [id], onDelete: SetNull)
+  documentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+enum NdaStatus {
+  DRAFT
+  SENT
+  REMINDER_1
+  REMINDER_2
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+// Site-visit planning. Separate from FIELD_VISIT (the visit itself) because
+// planning is about travel efficiency — cost, geography, clustering — and
+// several planned visits can share one trip.
+model VisitPlan {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  status VisitPlanStatus @default(PLANNED)
+
+  plannedFor  DateTime?
+  completedAt DateTime?
+
+  // Free text, plus a coarse region used to cluster visits. Region is what
+  // makes "how many trips could be combined" answerable without geocoding
+  // every address — see lib/visitMetrics.js.
+  location String?
+  region   String?
+  country  String?
+
+  attendees String?
+  purpose   String?
+  notes     String?
+  owner     String?
+
+  // Actual spend, in whole currency units. Numeric here (unlike IOI/term
+  // sheet amounts) because cost-per-visit has to be averaged.
+  costAmount   Float?
+  costCurrency String  @default("EUR")
+
+  travelMode String?
+
+  reportSubmitted Boolean   @default(false)
+  reportAt        DateTime?
+  report          Document? @relation("VisitReport", fields: [reportId], references: [id], onDelete: SetNull)
+  reportId        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([plannedFor])
+  @@index([region])
+}
+
+enum VisitPlanStatus {
+  PLANNED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
 }
 
 model Conversation {
@@ -614,8 +844,16 @@ model EmailAccount {
   fromAddress       String
   dailyLimit        Int      @default(500)
   isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  // Which country/region this mailbox represents (e.g. "IN", "AE", "NL") —
+  // matched case-insensitively against EmailLead.country at send time (see
+  // src/lib/accountRouting.js) so a lead automatically sends through the
+  // mailbox for their own country instead of always using whatever single
+  // mailbox is assigned to the whole campaign. Null = no country match,
+  // this account is only used when directly assigned to a campaign (or as
+  // the global fallback).
+  country   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // null = a shared/company mailbox (managed by an Admin, usable in any
   // campaign). Set = a personal mailbox owned by that employee — only they
@@ -624,8 +862,10 @@ model EmailAccount {
   ownerId String?
 
   campaigns EmailCampaign[]
+  sentActivity EmailActivityLog[]
 
   @@index([ownerId])
+  @@index([country])
 }
 
 model CadenceStep {
@@ -646,6 +886,11 @@ model EmailLead {
   company      String
   email        String
   owner        String
+  // Which country this lead is in — drives automatic sending-mailbox
+  // routing (see src/lib/accountRouting.js): matched case-insensitively
+  // against EmailAccount.country. Null = no country-based routing, this
+  // lead just uses whatever mailbox the campaign is assigned to.
+  country      String?
   campaign     EmailCampaign @relation(fields: [campaignId], references: [id])
   campaignId   String
   replyType    ReplyType @default(NO_REPLY)
@@ -701,7 +946,18 @@ model EmailActivityLog {
   detail    String
   createdAt DateTime          @default(now())
 
+  // Which mailbox a real send actually went out through — set only on
+  // BRANCH_EMAIL_SENT rows (see src/lib/leadSender.js and
+  // src/queue/cadenceQueue.js). This is what the per-mailbox daily cap
+  // (src/lib/accountSendCap.js) counts against; it deliberately doesn't
+  // infer the account from the campaign's assignment, since country-based
+  // routing (src/lib/accountRouting.js) can resolve a different account
+  // per lead than whatever the campaign itself is assigned to.
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  emailAccountId String?
+
   @@index([leadId, createdAt])
+  @@index([emailAccountId, kind, createdAt])
 }
 
 model EmailTemplate {

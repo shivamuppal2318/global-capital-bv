@@ -25,7 +25,7 @@ test("returns false when sent count exceeds the account's dailyLimit", async () 
   assert.equal(await isAccountUnderDailyCap(account, fakeClient(501)), false);
 });
 
-test("scopes the count query to sends across every campaign sharing this account", async () => {
+test("scopes the count query directly to the account a send actually went through", async () => {
   let capturedArgs;
   const client = {
     emailActivityLog: {
@@ -39,6 +39,10 @@ test("scopes the count query to sends across every campaign sharing this account
   await isAccountUnderDailyCap({ id: "acct-42", dailyLimit: 100 }, client);
 
   assert.equal(capturedArgs.where.kind, "BRANCH_EMAIL_SENT");
-  assert.equal(capturedArgs.where.lead.campaign.emailAccountId, "acct-42");
+  // Not lead.campaign.emailAccountId — country-based routing
+  // (accountRouting.js) can send a lead through a different mailbox than
+  // whatever its campaign is assigned to, so the cap has to count against
+  // the real emailAccountId recorded on the activity log row itself.
+  assert.equal(capturedArgs.where.emailAccountId, "acct-42");
   assert.ok(capturedArgs.where.createdAt.gte instanceof Date);
 });

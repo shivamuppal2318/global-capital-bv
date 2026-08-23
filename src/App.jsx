@@ -26,10 +26,13 @@ import { MeetingsModule } from "./components/meetings/MeetingsModule";
 // Email cold-outreach domain (merged from the `crm` branch) — three
 // modules matching the existing nav placeholders.
 import { EmailOutreachModule } from "./components/emailOutreach/EmailOutreachModule";
-import { EmailTemplatesCadencesModule } from "./components/emailTemplates/EmailTemplatesCadencesModule";
 import { MarketIntelligenceModule } from "./components/marketIntelligence/MarketIntelligenceModule";
 import { AdminPanelModule } from "./components/admin/AdminPanelModule";
 import { DataRoomModule } from "./components/dataRoom/DataRoomModule";
+import { DealStageModule } from "./components/dealStages/DealStageModule";
+import { MODULE_TO_STAGE } from "./components/dealStages/stageConfig";
+import { NdaModule } from "./components/relationships/NdaModule";
+import { VisitPlanningModule } from "./components/relationships/VisitPlanningModule";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./components/auth/LoginPage";
 import {
@@ -57,7 +60,9 @@ const iconMap = {
   pipeline: SendIcon,
   briefcase: GridIcon,
   shield: ShieldIcon,
-  folder: FolderIcon
+  folder: FolderIcon,
+  note: NoteIcon,
+  userCheck: UserCheckIcon
 };
 
 const barToneClass = {
@@ -174,13 +179,21 @@ function AppShell() {
             ) : activePage === "meetings" ? (
               <MeetingsModule />
             ) : activePage === "cold-bulk-mailing" || activePage === "leads" ? (
-              <EmailOutreachModule initialTab={activePage === "leads" ? "leads" : "campaigns"} />
-            ) : activePage === "templates-cadences" ? (
-              <EmailTemplatesCadencesModule />
+              <EmailOutreachModule initialTab={activePage === "leads" ? "leads" : "dashboard"} />
             ) : activePage === "market-intelligence" ? (
               <MarketIntelligenceModule />
             ) : activePage === "data-room" ? (
               <DataRoomModule />
+            ) : activePage === "nda" ? (
+              <NdaModule />
+            ) : activePage === "visit-planning" ? (
+              <VisitPlanningModule />
+            ) : MODULE_TO_STAGE[activePage] ? (
+              // IOI / Field Visit / Term Sheet still share one component,
+              // keyed so switching between them remounts rather than reusing
+              // the previous stage's state. NDA and Visit Planning outgrew it
+              // and have dedicated screens above.
+              <DealStageModule key={activePage} stage={MODULE_TO_STAGE[activePage]} />
             ) : activePage === "admin-panel" ? (
               <AdminPanelModule />
             ) : (

@@ -3,7 +3,7 @@
 // Assistant, falling back to ANTHROPIC_API_KEY (see lib/aiSettings.js).
 // The prompt format and response-parsing below are fully tested against
 // realistic mock model output.
-import { getAiConfig, isAiConfigured } from "../aiSettings.js";
+import { getAiConfig, isAiConfigured, extractResponseText } from "../aiSettings.js";
 
 const VALID_SIGNAL_TYPES = ["FUNDING", "ACQUISITION", "EXPANSION", "LEADERSHIP_CHANGE", "DISTRESS", "OTHER"];
 
@@ -87,6 +87,5 @@ export async function processSignalWithAi(rawSignal) {
   }
 
   const data = await response.json();
-  const text = data?.content?.[0]?.text ?? "";
-  return parseProcessingResponse(text);
+  return parseProcessingResponse(extractResponseText(data));
 }

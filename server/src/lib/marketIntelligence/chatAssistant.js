@@ -4,7 +4,7 @@
 // as aiProcessor.js (and the same REQUIRED_ENV), so it's already wired for
 // whichever provider aiProcessor.js gets swapped to later — the prompt/
 // parsing here don't care which model produced the reply.
-import { getAiConfig, isAiConfigured } from "../aiSettings.js";
+import { getAiConfig, isAiConfigured, extractResponseText } from "../aiSettings.js";
 
 const MAX_SIGNALS_IN_CONTEXT = 40;
 
@@ -42,8 +42,8 @@ ${contextBlock}`;
 
 // Pure — testable with any mock LLM response shape.
 export function parseChatResponse(data) {
-  const text = data?.content?.[0]?.text;
-  if (typeof text !== "string" || !text.trim()) {
+  const text = extractResponseText(data);
+  if (!text.trim()) {
     throw new Error("AI processor returned an empty response.");
   }
   return text.trim();
@@ -78,11 +78,11 @@ async function callAnthropic(message, { signals, history }) {
   return parseChatResponse(data);
 }
 
-// Anthropic occasionally returns a 200 with no text content for reasons
-// that aren't surfaced (observed intermittently, not tied to any
-// particular question) — a same-request retry has reliably succeeded when
-// tested, so it's worth one silent retry before actually failing the
-// user's question.
+// The real cause of "empty response" was a parsing bug (content[0] was
+// often a thinking block, not the reply — see extractResponseText), now
+// fixed. This retry stays as a cheap safety net for the genuinely rare case
+// of a reply with no text block at all (e.g. the model asks only for a tool
+// call), not as the primary fix.
 export async function askChatAssistant(message, { signals = [], history = [] } = {}) {
   try {
     return await callAnthropic(message, { signals, history });

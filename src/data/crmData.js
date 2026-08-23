@@ -1,11 +1,11 @@
 // Only modules that are actually built out are listed. Lead Discovery,
 // Qualification, Telephony & SMS, Companies, Contacts, Communications,
-// Deals, Pipeline and Templates & Cadences are not shown — either they were
-// placeholders rendering an empty page, or (Templates & Cadences) the
-// screen exists but isn't wanted in the menu. Its route in App.jsx is left
-// intact, so restoring it is a one-line change here. Keep this in step with
-// server/src/lib/permissions.js — the ids there drive both the Admin Panel
-// checkboxes and the API's own access checks.
+// Deals and Pipeline are not shown — they were placeholders rendering an
+// empty page. Templates & Cadences isn't a top-level entry either, but
+// unlike those it IS reachable — as a tab inside MailX (see
+// EmailOutreachModule.jsx) rather than its own nav item. Keep this in step
+// with server/src/lib/permissions.js — the ids there drive both the Admin
+// Panel checkboxes and the API's own access checks.
 export const navSections = [
   {
     title: "Intelligence",
@@ -19,15 +19,27 @@ export const navSections = [
     title: "CRM & Outreach",
     items: [
       { id: "crm-workspace", label: "CRM Workspace", icon: "users" },
-      { id: "cold-bulk-mailing", label: "Cold Bulk Mailing", icon: "mailbox" },
+      // "MailX" groups everything email-related — Campaigns, Leads, Replies,
+      // Automation (drip sequences), Templates, Settings — as tabs inside
+      // one module (see EmailOutreachModule.jsx), rather than Templates &
+      // Cadences living as its own separate top-level nav entry.
+      { id: "cold-bulk-mailing", label: "MailX", icon: "mailbox" },
       { id: "whatsapp-business", label: "WhatsApp Business", icon: "message" }
     ]
   },
   {
+    // The deal progression, in the order a deal actually moves through it.
+    // Zoom Call and Data Room point at the existing purpose-built screens;
+    // the other five share DealStageModule (see stageConfig.js).
     title: "Relationships",
     items: [
-      { id: "meetings", label: "Meetings", icon: "calendar" },
-      { id: "data-room", label: "Data Room", icon: "folder" }
+      { id: "nda", label: "NDA", icon: "shield" },
+      { id: "meetings", label: "Zoom Call", icon: "calendar" },
+      { id: "data-room", label: "Data Room", icon: "folder" },
+      { id: "ioi", label: "IOI", icon: "note" },
+      { id: "visit-planning", label: "Visit Planning", icon: "radar" },
+      { id: "field-visit", label: "Field Visit", icon: "userCheck" },
+      { id: "term-sheet", label: "Term Sheet", icon: "send" }
     ]
   },
   {

@@ -211,6 +211,8 @@ export function SettingsTab({ mailing }) {
         </div>
         <p className="mt-1 pl-8 text-[14px] text-[#5f6f89]">
           Register as many SMTP accounts as you need; assign one to a campaign from the Campaigns tab (or leave it on the default).
+          Tag a mailbox with a country and any lead with that same country automatically sends through it, regardless of which
+          mailbox the campaign itself is assigned to.
         </p>
 
         {emailAccounts.length > 0 ? (
@@ -224,6 +226,11 @@ export function SettingsTab({ mailing }) {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {account.country ? (
+                    <span className="rounded-full bg-[#eef1ff] px-2 py-0.5 text-[11px] font-semibold text-[#4766cc]" title="Leads with this country auto-route here">
+                      {account.country}
+                    </span>
+                  ) : null}
                   <span
                     className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                       account.isActive ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#748096]"
@@ -291,6 +298,12 @@ export function SettingsTab({ mailing }) {
             placeholder="Daily limit (e.g. 500)"
             value={newAccountForm.dailyLimit}
             onChange={(event) => setNewAccountForm((current) => ({ ...current, dailyLimit: event.target.value }))}
+            className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[14px] text-[#102246] outline-none"
+          />
+          <input
+            placeholder="Country (e.g. IN, AE, NL) — optional"
+            value={newAccountForm.country}
+            onChange={(event) => setNewAccountForm((current) => ({ ...current, country: event.target.value }))}
             className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[14px] text-[#102246] outline-none"
           />
           <label className="flex items-center gap-2 text-[13px] text-[#5f6f89]">

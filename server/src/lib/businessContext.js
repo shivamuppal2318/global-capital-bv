@@ -1,5 +1,6 @@
 import { prisma } from "../db.js";
 import { isSourceEnabled } from "./aiDataSources.js";
+import { ndaMetrics, callMetrics, visitMetrics } from "./relationshipMetrics.js";
 
 const LEAD_STATUS_LABEL = {
   NEW: "New",
@@ -43,7 +44,10 @@ export async function buildBusinessContext(enabledSources = null) {
     emailLeads,
     emailCampaigns,
     users,
-    marketSignals
+    marketSignals,
+    dealStages,
+    ndaRecords,
+    visitPlans
   ] = await Promise.all([
     on("leads") ? prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: MAX_ROWS }) : [],
     on("whatsapp") ? prisma.contact.findMany({ take: MAX_ROWS }) : [],
@@ -75,6 +79,27 @@ export async function buildBusinessContext(enabledSources = null) {
       : [],
     on("market-signals")
       ? prisma.marketSignal.findMany({ orderBy: { createdAt: "desc" }, take: 100 })
+      : [],
+    on("deal-stages")
+      ? prisma.dealStageRecord.findMany({
+          include: { lead: { select: { name: true, company: true } } },
+          orderBy: { updatedAt: "desc" },
+          take: MAX_ROWS
+        })
+      : [],
+    on("nda")
+      ? prisma.ndaRecord.findMany({
+          include: { lead: { select: { name: true, company: true } } },
+          orderBy: { updatedAt: "desc" },
+          take: MAX_ROWS
+        })
+      : [],
+    on("visits")
+      ? prisma.visitPlan.findMany({
+          include: { lead: { select: { name: true, company: true } } },
+          orderBy: { plannedFor: "desc" },
+          take: MAX_ROWS
+        })
       : []
   ]);
 
@@ -119,13 +144,67 @@ export async function buildBusinessContext(enabledSources = null) {
       total: meetings.length,
       upcoming: meetings.filter((m) => m.startTime > now).length,
       past: meetings.filter((m) => m.startTime <= now).length,
+      kpis: callMetrics(meetings),
       records: meetings.map((m) => ({
         topic: m.topic,
         startTime: m.startTime,
         durationMinutes: m.durationMinutes,
+        actualDurationMinutes: m.actualDurationMinutes,
         status: m.status,
         isZoom: Boolean(m.zoomMeetingId),
-        withLead: m.lead ? `${m.lead.name} (${m.lead.company})` : null
+        withLead: m.lead ? `${m.lead.name} (${m.lead.company})` : null,
+        clientAttendees: m.clientAttendees,
+        ourAttendees: m.ourAttendees,
+        // The notes are the substance of the call - this is what lets the
+        // assistant answer "what did they say about X".
+        notes: m.notes,
+        aiSummary: m.aiSummary,
+        nextAction: m.nextAction,
+        nextActionDueAt: m.nextActionDueAt,
+        nextMeetingScheduled: m.nextMeetingScheduled,
+        clientSatisfaction: m.clientSatisfaction
+      }))
+    };
+  }
+
+  if (on("nda")) {
+    context.ndas = {
+      total: ndaRecords.length,
+      kpis: ndaMetrics(ndaRecords),
+      records: ndaRecords.map((r) => ({
+        lead: r.lead ? `${r.lead.name} (${r.lead.company})` : null,
+        status: r.status,
+        sentAt: r.sentAt,
+        reminder1At: r.reminder1At,
+        reminder2At: r.reminder2At,
+        signedAt: r.signedAt,
+        expiresAt: r.expiresAt,
+        signerName: r.signerName,
+        owner: r.owner,
+        notes: r.notes
+      }))
+    };
+  }
+
+  if (on("visits")) {
+    context.visits = {
+      total: visitPlans.length,
+      kpis: visitMetrics(visitPlans),
+      records: visitPlans.map((p) => ({
+        lead: p.lead ? `${p.lead.name} (${p.lead.company})` : null,
+        status: p.status,
+        plannedFor: p.plannedFor,
+        completedAt: p.completedAt,
+        location: p.location,
+        region: p.region,
+        country: p.country,
+        purpose: p.purpose,
+        attendees: p.attendees,
+        owner: p.owner,
+        travelMode: p.travelMode,
+        cost: p.costAmount === null ? null : `${p.costCurrency} ${p.costAmount}`,
+        reportSubmitted: p.reportSubmitted,
+        notes: p.notes
       }))
     };
   }
@@ -240,6 +319,34 @@ export async function buildBusinessContext(enabledSources = null) {
         status: u.status,
         lastLoginAt: u.lastLoginAt,
         joinedAt: u.createdAt
+      }))
+    };
+  }
+
+  if (on("deal-stages")) {
+    const byStage = dealStages.reduce((acc, r) => {
+      acc[r.stage] ??= { total: 0, completed: 0, inProgress: 0 };
+      acc[r.stage].total += 1;
+      if (r.status === "COMPLETED") acc[r.stage].completed += 1;
+      if (r.status === "IN_PROGRESS") acc[r.stage].inProgress += 1;
+      return acc;
+    }, {});
+
+    context.dealProgression = {
+      summaryByStage: byStage,
+      records: dealStages.map((r) => ({
+        lead: r.lead ? `${r.lead.name} (${r.lead.company})` : null,
+        stage: r.stage,
+        status: r.status,
+        scheduledAt: r.scheduledAt,
+        completedAt: r.completedAt,
+        amount: r.amount,
+        valuation: r.valuation,
+        location: r.location,
+        attendees: r.attendees,
+        counterparty: r.counterparty,
+        owner: r.owner,
+        notes: r.notes
       }))
     };
   }

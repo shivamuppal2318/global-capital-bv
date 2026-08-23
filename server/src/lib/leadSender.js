@@ -4,6 +4,7 @@ import { renderEmail } from "./renderTemplate.js";
 import { checkSpamSignals } from "./spamCheck.js";
 import { isUnderDailyCap } from "./sendCap.js";
 import { isAccountUnderDailyCap } from "./accountSendCap.js";
+import { resolveEmailAccount } from "./accountRouting.js";
 import { signUnsubscribeToken } from "./unsubscribeToken.js";
 import { signNdaToken } from "./ndaSignToken.js";
 import { injectTrackingPixel, wrapLinksForClickTracking } from "./emailTracking.js";
@@ -57,19 +58,27 @@ export async function loadSendableLead(leadId) {
     );
   }
 
-  // Separate from the campaign-level cap above: multiple campaigns can
-  // share one mailbox, and this is the check that actually protects the
-  // mailbox's own real-world sending limit rather than just each
-  // campaign's individually-configured one.
-  const accountWithinCap = await isAccountUnderDailyCap(lead.campaign.emailAccount);
+  // The mailbox this send will actually use — a country match (see
+  // accountRouting.js) overrides the campaign's manually-assigned mailbox,
+  // so this must be resolved before the account-level cap check below (that
+  // check has to protect the mailbox that's really about to be used, not
+  // necessarily the campaign's static assignment).
+  const resolvedAccount = await resolveEmailAccount(lead, lead.campaign);
+
+  // Separate from the campaign-level cap above: multiple campaigns (or
+  // country-routed leads from campaigns with a different default) can share
+  // one mailbox, and this is the check that actually protects the mailbox's
+  // own real-world sending limit rather than just each campaign's
+  // individually-configured one.
+  const accountWithinCap = await isAccountUnderDailyCap(resolvedAccount);
   if (!accountWithinCap) {
     throw httpError(
       429,
-      `Daily send cap (${lead.campaign.emailAccount.dailyLimit}) reached for mailbox "${lead.campaign.emailAccount.label}" — shared across every campaign assigned to it. Try again tomorrow.`
+      `Daily send cap (${resolvedAccount.dailyLimit}) reached for mailbox "${resolvedAccount.label}" — shared across every campaign/lead routed to it. Try again tomorrow.`
     );
   }
 
-  return lead;
+  return { ...lead, resolvedAccount };
 }
 
 // Open/click tracking needs the ActivityLog row's id to exist *before* the
@@ -77,9 +86,9 @@ export async function loadSendableLead(leadId) {
 // a placeholder first, then updated with the final provider result after
 // sending, instead of being created only after a successful send like
 // every other write in this file used to work.
-async function createPendingSendActivity(leadId, title) {
+async function createPendingSendActivity(leadId, title, emailAccountId) {
   return prisma.emailActivityLog.create({
-    data: { leadId, kind: "BRANCH_EMAIL_SENT", title, detail: "Sending…" }
+    data: { leadId, kind: "BRANCH_EMAIL_SENT", title, detail: "Sending…", emailAccountId }
   });
 }
 
@@ -106,10 +115,10 @@ export async function sendRawEmail(leadId, { subject, body, html }) {
   const warnings = checkSpamSignals({ subject, body });
   const unsubscribeUrl = unsubscribeUrlFor(lead.id);
 
-  const pendingActivity = await createPendingSendActivity(lead.id, subject);
+  const pendingActivity = await createPendingSendActivity(lead.id, subject, lead.resolvedAccount?.id ?? null);
   const trackedHtml = applyTracking(html, pendingActivity.id, unsubscribeUrl);
 
-  const emailProvider = getEmailProvider(lead.campaign.emailAccount);
+  const emailProvider = getEmailProvider(lead.resolvedAccount);
   const { providerMessageId } = await emailProvider.send({ to: lead.email, subject, body, html: trackedHtml, unsubscribeUrl });
 
   const activity = await finalizeSendActivity(pendingActivity.id, {
@@ -139,10 +148,10 @@ export async function sendTemplateEmail(leadId, templateKey) {
   });
   const warnings = checkSpamSignals({ subject: rendered.subject, body: rendered.body });
 
-  const pendingActivity = await createPendingSendActivity(lead.id, rendered.subject);
+  const pendingActivity = await createPendingSendActivity(lead.id, rendered.subject, lead.resolvedAccount?.id ?? null);
   const trackedHtml = applyTracking(rendered.html, pendingActivity.id, unsubscribeUrl);
 
-  const emailProvider = getEmailProvider(lead.campaign.emailAccount);
+  const emailProvider = getEmailProvider(lead.resolvedAccount);
   const { providerMessageId } = await emailProvider.send({
     to: lead.email,
     subject: rendered.subject,

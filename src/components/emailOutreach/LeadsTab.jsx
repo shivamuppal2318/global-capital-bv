@@ -3,7 +3,7 @@ import { ActionButton, Field, noteToneClass } from "../ui.jsx";
 import { UsersIcon, SearchIcon, PlusIcon, UploadIcon } from "../Icons.jsx";
 import { buildLeadsCsv } from "../../lib/csvLeads.js";
 
-const csvTemplateExampleRow = { name: "Deepa Paul", company: "Nordwind Energy", email: "deepa@nordwind.de", owner: "Rahul R" };
+const csvTemplateExampleRow = { name: "Deepa Paul", company: "Nordwind Energy", email: "deepa@nordwind.de", owner: "Rahul R", country: "NL" };
 
 function downloadCsvFile(filename, csvText) {
   const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
@@ -121,7 +121,7 @@ export function LeadsTab({ mailing }) {
         <div className="px-4 py-4">
           {leadEntryMode === "single" ? (
             <>
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-4">
                 <Field label="Name">
                   <input
                     value={newLeadForm.name}
@@ -144,7 +144,19 @@ export function LeadsTab({ mailing }) {
                     className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
                   />
                 </Field>
+                <Field label="Country (optional)">
+                  <input
+                    placeholder="e.g. IN, AE, NL"
+                    value={newLeadForm.country}
+                    onChange={(event) => setNewLeadForm((current) => ({ ...current, country: event.target.value }))}
+                    className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+                  />
+                </Field>
               </div>
+              <p className="mt-2 text-[12px] text-[#8593ac]">
+                Matches a Settings → Sending mailbox tagged with the same country — that mailbox is used automatically instead of
+                the campaign's default one.
+              </p>
               <div className="mt-4">
                 <ActionButton label="Add lead" icon={PlusIcon} primary onClick={handleAddLead} />
               </div>
@@ -153,8 +165,9 @@ export function LeadsTab({ mailing }) {
             <>
               <p className="text-[13px] leading-5 text-[#6a7790]">
                 Upload a .csv file or paste rows with a header of{" "}
-                <code className="rounded bg-[#f0f3f9] px-1.5 py-0.5 text-[12px]">name,company,email,owner</code> (owner is
-                optional). One bad row won't block the rest of the batch.{" "}
+                <code className="rounded bg-[#f0f3f9] px-1.5 py-0.5 text-[12px]">name,company,email,owner,country</code> (owner
+                and country are both optional — a matching country auto-routes to a same-tagged sending mailbox). One bad row
+                won't block the rest of the batch.{" "}
                 <button
                   type="button"
                   onClick={() => downloadCsvFile("leads-template.csv", buildLeadsCsv([csvTemplateExampleRow]))}
@@ -172,7 +185,7 @@ export function LeadsTab({ mailing }) {
               </div>
               <textarea
                 rows={5}
-                placeholder={"name,company,email,owner\nDeepa Paul,Nordwind Energy,deepa@nordwind.de,Rahul R"}
+                placeholder={"name,company,email,owner,country\nDeepa Paul,Nordwind Energy,deepa@nordwind.de,Rahul R,NL"}
                 value={csvText}
                 onChange={(event) => handleCsvTextChange(event.target.value)}
                 className="mt-3 w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2.5 text-[13px] font-mono text-[#102246] outline-none focus:border-[#3046b2]"
@@ -226,6 +239,7 @@ export function LeadsTab({ mailing }) {
                           <th className="px-3 py-2 font-semibold">Name</th>
                           <th className="px-3 py-2 font-semibold">Company</th>
                           <th className="px-3 py-2 font-semibold">Email</th>
+                          <th className="px-3 py-2 font-semibold">Country</th>
                           <th className="px-3 py-2 font-semibold">Status</th>
                           <th className="px-3 py-2 font-semibold">Reason</th>
                         </tr>
@@ -236,6 +250,7 @@ export function LeadsTab({ mailing }) {
                             <td className="px-3 py-2 text-[#102246]">{row.name || "—"}</td>
                             <td className="px-3 py-2 text-[#5f6f89]">{row.company || "—"}</td>
                             <td className="px-3 py-2 text-[#5f6f89]">{row.email || "—"}</td>
+                            <td className="px-3 py-2 text-[#5f6f89]">{row.country || "—"}</td>
                             <td className="px-3 py-2">
                               <span
                                 className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
@@ -342,6 +357,7 @@ export function LeadsTab({ mailing }) {
                     <th className="px-5 py-3.5 font-medium">Name</th>
                     <th className="px-5 py-3.5 font-medium">Company</th>
                     <th className="px-5 py-3.5 font-medium">Email</th>
+                    <th className="px-5 py-3.5 font-medium">Country</th>
                     <th className="px-5 py-3.5 font-medium">Owner</th>
                     <th className="px-5 py-3.5 font-medium">Status</th>
                     <th className="px-5 py-3.5 font-medium">Score</th>
@@ -356,6 +372,7 @@ export function LeadsTab({ mailing }) {
                       <td className="px-5 py-5 align-top font-semibold text-[#102246]">{lead.name}</td>
                       <td className="px-5 py-5 align-top text-[#435471]">{lead.company}</td>
                       <td className="px-5 py-5 align-top text-[#435471]">{lead.email}</td>
+                      <td className="px-5 py-5 align-top text-[#435471]">{lead.country || "—"}</td>
                       <td className="px-5 py-5 align-top text-[#435471]">{lead.owner}</td>
                       <td className="px-5 py-5 align-top">
                         <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${leadStatusToneClass[lead.replyType] ?? "bg-[#edf2f7] text-[#748096]"}`}>
