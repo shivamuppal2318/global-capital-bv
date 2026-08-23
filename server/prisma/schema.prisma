@@ -254,6 +254,8 @@ model Document {
   uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   uploadedById String?
   dealStages   DealStageRecord[]
+  ndaDocuments NdaRecord[] @relation("NdaDocument")
+  visitReports VisitPlan[] @relation("VisitReport")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -393,6 +395,8 @@ model Lead {
   rawPayload       Json?
   meetings         Meeting[]
   dealStages       DealStageRecord[]
+  ndaRecord        NdaRecord?
+  visitPlans       VisitPlan[]
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
@@ -422,7 +426,129 @@ model Meeting {
   status          String    @default("Scheduled")
   createdAt       DateTime  @default(now())
 
+  // --- Qualitative capture (Zoom Call module) ---------------------------
+  // Everything below is filled in after the call, so all of it is optional:
+  // a meeting exists from the moment it's booked, long before there's
+  // anything to record about it.
+
+  // Who from the client side actually attended — often differs from who was
+  // invited, and that difference is itself worth knowing.
+  clientAttendees String?
+  // Our own attendees (date-of-engagement contact / deal owner side).
+  ourAttendees String?
+  // Actual minutes, as opposed to durationMinutes which is what was booked.
+  actualDurationMinutes Int?
+  notes                 String?
+  // Generated from notes by Claude on request (see POST /:id/summarise) —
+  // stored so it isn't regenerated (and re-billed) on every page load.
+  aiSummary          String?
+  aiSummaryUpdatedAt DateTime?
+  nextAction         String?
+  nextActionDueAt    DateTime?
+  // Whether a further meeting came out of this one — drives the
+  // "next meeting scheduled %" KPI.
+  nextMeetingScheduled Boolean @default(false)
+  recordingLink        String?
+  // 1-5, set by hand. Deliberately not inferred from the notes: a satisfaction
+  // score a model guessed would look like data while being opinion.
+  clientSatisfaction Int?
+
   @@index([startTime])
+}
+
+// NDA tracking. Split out of DealStageRecord because chasing signatures has
+// its own shape — two reminder timestamps, and the signing-time and
+// reminder-effectiveness metrics that depend on them — which the shared
+// stage table has no room for without becoming a wide grab-bag.
+model NdaRecord {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String @unique
+
+  // SENT -> REMINDER_1 -> REMINDER_2 -> SIGNED, or DECLINED/EXPIRED.
+  status NdaStatus @default(DRAFT)
+
+  sentAt       DateTime?
+  reminder1At  DateTime?
+  reminder2At  DateTime?
+  signedAt     DateTime?
+  expiresAt    DateTime?
+
+  signerName  String?
+  signerEmail String?
+  owner       String?
+  notes       String?
+
+  // The signed copy, kept in the Data Room rather than a second upload path.
+  document   Document? @relation("NdaDocument", fields: [documentId], references: [id], onDelete: SetNull)
+  documentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+enum NdaStatus {
+  DRAFT
+  SENT
+  REMINDER_1
+  REMINDER_2
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+// Site-visit planning. Separate from FIELD_VISIT (the visit itself) because
+// planning is about travel efficiency — cost, geography, clustering — and
+// several planned visits can share one trip.
+model VisitPlan {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  status VisitPlanStatus @default(PLANNED)
+
+  plannedFor  DateTime?
+  completedAt DateTime?
+
+  // Free text, plus a coarse region used to cluster visits. Region is what
+  // makes "how many trips could be combined" answerable without geocoding
+  // every address — see lib/visitMetrics.js.
+  location String?
+  region   String?
+  country  String?
+
+  attendees String?
+  purpose   String?
+  notes     String?
+  owner     String?
+
+  // Actual spend, in whole currency units. Numeric here (unlike IOI/term
+  // sheet amounts) because cost-per-visit has to be averaged.
+  costAmount   Float?
+  costCurrency String  @default("EUR")
+
+  travelMode String?
+
+  reportSubmitted Boolean   @default(false)
+  reportAt        DateTime?
+  report          Document? @relation("VisitReport", fields: [reportId], references: [id], onDelete: SetNull)
+  reportId        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([plannedFor])
+  @@index([region])
+}
+
+enum VisitPlanStatus {
+  PLANNED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
 }
 
 model Conversation {

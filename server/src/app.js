@@ -21,6 +21,8 @@ import zoomRouter from "./routes/zoom.js";
 import meetingsRouter from "./routes/meetings.js";
 import { documentsRouter } from "./routes/documents.js";
 import { dealStagesRouter } from "./routes/dealStages.js";
+import { ndaRecordsRouter } from "./routes/ndaRecords.js";
+import { visitPlansRouter } from "./routes/visitPlans.js";
 // Email cold-outreach domain (merged from the `crm` branch) — kept as
 // separate routers/mount paths from the WhatsApp domain above, matching the
 // separate Email*-prefixed Prisma models (see schema.prisma).
@@ -108,6 +110,11 @@ app.use(
   requireModule("nda", "meetings", "data-room", "ioi", "visit-planning", "field-visit", "term-sheet"),
   dealStagesRouter
 );
+// NDA tracking and visit planning outgrew the shared deal-stage table, so
+// they have dedicated routers. Note this is not "/api/nda" — that path is
+// the public token-based signing page and must stay unauthenticated.
+app.use("/api/nda-records", requireModule("nda"), ndaRecordsRouter);
+app.use("/api/visit-plans", requireModule("visit-planning"), visitPlansRouter);
 app.use("/api/ai", aiChatRouter);
 app.use("/api/zoom", requireModule("meetings"), zoomRouter);
 app.use("/api/meetings", requireModule("meetings"), meetingsRouter);

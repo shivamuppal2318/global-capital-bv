@@ -31,6 +31,8 @@ import { AdminPanelModule } from "./components/admin/AdminPanelModule";
 import { DataRoomModule } from "./components/dataRoom/DataRoomModule";
 import { DealStageModule } from "./components/dealStages/DealStageModule";
 import { MODULE_TO_STAGE } from "./components/dealStages/stageConfig";
+import { NdaModule } from "./components/relationships/NdaModule";
+import { VisitPlanningModule } from "./components/relationships/VisitPlanningModule";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./components/auth/LoginPage";
 import {
@@ -182,10 +184,15 @@ function AppShell() {
               <MarketIntelligenceModule />
             ) : activePage === "data-room" ? (
               <DataRoomModule />
+            ) : activePage === "nda" ? (
+              <NdaModule />
+            ) : activePage === "visit-planning" ? (
+              <VisitPlanningModule />
             ) : MODULE_TO_STAGE[activePage] ? (
-              // NDA / IOI / Visit Planning / Field Visit / Term Sheet all
-              // render the same component, keyed so switching between them
-              // remounts rather than reusing the previous stage's state.
+              // IOI / Field Visit / Term Sheet still share one component,
+              // keyed so switching between them remounts rather than reusing
+              // the previous stage's state. NDA and Visit Planning outgrew it
+              // and have dedicated screens above.
               <DealStageModule key={activePage} stage={MODULE_TO_STAGE[activePage]} />
             ) : activePage === "admin-panel" ? (
               <AdminPanelModule />
