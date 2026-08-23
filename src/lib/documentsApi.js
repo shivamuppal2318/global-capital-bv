@@ -16,6 +16,13 @@ export const documentsApi = {
     return request(suffix ? `?${suffix}` : "");
   },
   categories: () => request("/categories"),
+  // Single source of truth for the checklist — served from the backend (see
+  // server/src/lib/requiredDocuments.js) so it can never drift from what the
+  // upload classifier and the AI gap check are matching against.
+  requiredDocuments: () => request("/required-documents"),
+  // Reads real document content (not just category tags) against the
+  // checklist — returns { configured: false, message } if no AI key is set.
+  gapCheck: () => request("/gap-check", { method: "POST" }),
   update: (id, body) => request(`/${id}`, { method: "PATCH", body }),
   remove: (id) => request(`/${id}`, { method: "DELETE" }),
 
