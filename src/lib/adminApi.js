@@ -39,5 +39,13 @@ export const adminApi = {
   getMarketIntelSettings: () => request("/market-intelligence-settings"),
   saveMarketIntelProviderKey: (provider, apiKey) => request(`/market-intelligence-settings/${provider}`, { method: "PUT", body: { apiKey } }),
   testMarketIntelProvider: (provider) => request(`/market-intelligence-settings/${provider}/test`, { method: "POST" }),
-  removeMarketIntelProviderKey: (provider) => request(`/market-intelligence-settings/${provider}`, { method: "DELETE" })
+  removeMarketIntelProviderKey: (provider) => request(`/market-intelligence-settings/${provider}`, { method: "DELETE" }),
+  // Who did what, when — see server/src/lib/auditLog.js. `action` filters by
+  // prefix (e.g. "employee." matches every employee.* row).
+  auditLogs: ({ page = 1, pageSize = 25, action } = {}) => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (action) params.set("action", action);
+    return request(`/audit-logs?${params.toString()}`);
+  },
+  auditLogActions: () => request("/audit-logs/actions")
 };

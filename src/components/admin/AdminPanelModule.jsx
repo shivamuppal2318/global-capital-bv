@@ -8,6 +8,7 @@ import { MyAccountPanel } from "./MyAccountPanel";
 import { SystemEmailPanel } from "./SystemEmailPanel";
 import { AiSettingsPanel } from "./AiSettingsPanel";
 import { MarketIntelSettingsPanel } from "./MarketIntelSettingsPanel";
+import { AuditLogPanel } from "./AuditLogPanel";
 
 const ADMIN_TABS = [
   { id: "employees", label: "Employees", icon: UsersIcon },
@@ -15,7 +16,8 @@ const ADMIN_TABS = [
   { id: "market-intelligence-api", label: "Market Intelligence", icon: RadarIcon },
   { id: "whatsapp-api", label: "WhatsApp API", icon: LinkIcon },
   { id: "system-email", label: "System Email", icon: MailIcon },
-  { id: "email-accounts", label: "Email Accounts", icon: MailIcon }
+  { id: "email-accounts", label: "Email Accounts", icon: MailIcon },
+  { id: "audit-log", label: "Audit Log", icon: ShieldIcon }
 ];
 const EVERYONE_TABS = [
   { id: "my-account", label: "My Account", icon: LockIcon }
@@ -71,6 +73,7 @@ export function AdminPanelModule() {
       {currentTab.id === "whatsapp-api" ? <WhatsappApiPanel /> : null}
       {currentTab.id === "system-email" ? <SystemEmailPanel /> : null}
       {currentTab.id === "email-accounts" ? <MailboxManager scope="all" /> : null}
+      {currentTab.id === "audit-log" ? <AuditLogPanel /> : null}
       {currentTab.id === "my-account" ? (
         <div className="space-y-4">
           <MyAccountPanel />

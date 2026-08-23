@@ -15,6 +15,17 @@ import { DEFAULT_AI_DATA_SOURCES } from "./aiDataSources.js";
 
 export const DEFAULT_MODEL = "claude-sonnet-5";
 
+// Extended-thinking models (this one included) can put a { type: "thinking" }
+// block BEFORE the actual reply in the content array — content[0] is then
+// the thinking block, not the answer, and grabbing .text off it silently
+// yields undefined. Every real call observed against this account includes
+// a thinking block, so this isn't an edge case to special-case around; it's
+// the normal shape. Finds the first real text block wherever it lands.
+export function extractResponseText(data) {
+  const block = data?.content?.find((item) => item.type === "text");
+  return block?.text ?? "";
+}
+
 // One decrypt per process rather than per request. Writes clear it, so a
 // key change takes effect immediately instead of needing a restart.
 let cached = null;

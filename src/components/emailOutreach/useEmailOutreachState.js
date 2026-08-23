@@ -325,10 +325,23 @@ export function useEmailOutreachState() {
           id: campaign.id,
           name: campaign.name,
           status: backendCampaignStatusToLocal(campaign.status),
+          // Was missing entirely — the "Sending mailbox" dropdown
+          // (CampaignsTab.jsx) reads selectedCampaign.emailAccountId, so
+          // without this a real, saved assignment would silently appear to
+          // reset to "Default" on every reload even though the backend
+          // still has it.
+          emailAccountId: campaign.emailAccountId ?? null,
           sent: campaign.engagement?.sent ? String(campaign.engagement.sent) : "—",
           open: campaign.engagement?.openRate != null ? `${campaign.engagement.openRate}%` : "—",
           click: campaign.engagement?.clickRate != null ? `${campaign.engagement.clickRate}%` : "—",
-          reply: "—"
+          reply: "—",
+          // Raw counts (not the display-formatted strings above) — kept
+          // alongside them so the Dashboard tab can sum real totals across
+          // campaigns instead of trying to add percentage strings together.
+          leadCount: campaign._count?.leads ?? 0,
+          sentCount: campaign.engagement?.sent ?? 0,
+          openedCount: campaign.engagement?.opened ?? 0,
+          clickedCount: campaign.engagement?.clicked ?? 0
         }));
         setCampaigns(mapped);
         setSelectedCampaignId(mapped[0].id);
@@ -337,6 +350,22 @@ export function useEmailOutreachState() {
       .catch(() => {
         // Backend unreachable or no DB migrated yet — keep the local seed
         // campaigns table already set above.
+      });
+  }, []);
+
+  // Real aggregates for the Dashboard tab's chart/funnel/activity/mailbox
+  // panels — a separate call (not derived from `campaigns`) since it needs
+  // cross-campaign ActivityLog/EmailAccount queries the plain list doesn't
+  // return. Null until it loads, so the Dashboard can show a loading state
+  // instead of a flash of empty charts.
+  const [dashboardSummary, setDashboardSummary] = useState(null);
+  useEffect(() => {
+    emailCampaignsApi
+      .dashboardSummary()
+      .then(setDashboardSummary)
+      .catch(() => {
+        // Backend unreachable or pre-migration — Dashboard tab falls back to
+        // its own campaigns-only totals.
       });
   }, []);
 
@@ -454,7 +483,7 @@ export function useEmailOutreachState() {
     preferredPath: "nda-first"
   });
   const [automationNotice, setAutomationNotice] = useState("Automation ready. Select a campaign or create a new one.");
-  const [newLeadForm, setNewLeadForm] = useState({ name: "", company: "", email: "" });
+  const [newLeadForm, setNewLeadForm] = useState({ name: "", company: "", email: "", country: "" });
   const [csvText, setCsvText] = useState("");
   const [csvPreview, setCsvPreview] = useState(null);
   const [csvImportBusy, setCsvImportBusy] = useState(false);
@@ -469,7 +498,8 @@ export function useEmailOutreachState() {
     smtpUser: "",
     smtpPass: "",
     fromAddress: "",
-    dailyLimit: "500"
+    dailyLimit: "500",
+    country: ""
   });
 
   // Load once on mount — falls back to an empty list (the "add a mailbox"
@@ -610,14 +640,15 @@ export function useEmailOutreachState() {
         company: newLeadForm.company,
         email: newLeadForm.email,
         owner: "Rahul R",
-        campaignId: selectedCampaign.id
+        campaignId: selectedCampaign.id,
+        country: newLeadForm.country.trim() || null
       });
       setAutomationNotice(
         result.cadenceScheduled > 0
           ? `${newLeadForm.name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`
           : `${newLeadForm.name} added to "${selectedCampaign.name}". No follow-up emails scheduled yet (this campaign has none set up, or the sending queue isn't running) — the lead was still saved.`
       );
-      setNewLeadForm({ name: "", company: "", email: "" });
+      setNewLeadForm({ name: "", company: "", email: "", country: "" });
       loadAllLeadsForCampaign(selectedCampaign.id);
     } catch (error) {
       // The backend 409s on a duplicate (same email already in this
@@ -722,7 +753,9 @@ export function useEmailOutreachState() {
       return;
     }
 
-    const readyRows = csvPreview.rows.filter((row) => row.status === "ready").map(({ name, company, email, owner }) => ({ name, company, email, owner }));
+    const readyRows = csvPreview.rows
+      .filter((row) => row.status === "ready")
+      .map(({ name, company, email, owner, country }) => ({ name, company, email, owner, country: country || null }));
     if (readyRows.length === 0) {
       setAutomationNotice("Nothing to import — every row was a duplicate or invalid. Fix the CSV and preview again.");
       return;
@@ -774,7 +807,8 @@ export function useEmailOutreachState() {
         smtpUser,
         smtpPass,
         fromAddress,
-        dailyLimit: Number(newAccountForm.dailyLimit) || 500
+        dailyLimit: Number(newAccountForm.dailyLimit) || 500,
+        country: newAccountForm.country.trim() || null
       });
       setEmailAccounts((current) => [...current, account]);
       setNewAccountForm({
@@ -785,7 +819,8 @@ export function useEmailOutreachState() {
         smtpUser: "",
         smtpPass: "",
         fromAddress: "",
-        dailyLimit: "500"
+        dailyLimit: "500",
+        country: ""
       });
       setAutomationNotice(`Mailbox "${account.label}" added — assign it to a campaign below.`);
     } catch (error) {
@@ -1030,7 +1065,7 @@ export function useEmailOutreachState() {
 
   return {
     campaigns, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
-    repliedLeads, allLeads, systemStatus, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
+    repliedLeads, allLeads, systemStatus, dashboardSummary, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
     automationForm, automationNotice, newLeadForm, setNewLeadForm,
     csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, csvImportBusy, csvPreviewBusy, previewHtml, setPreviewHtml,
     emailAccounts, newAccountForm, setNewAccountForm,

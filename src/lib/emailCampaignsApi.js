@@ -9,6 +9,10 @@ function request(path, options = {}) {
 
 export const emailCampaignsApi = {
   list: () => request(""),
+  // Real aggregates for the Dashboard tab's chart/funnel/activity/mailbox
+  // panels — one call instead of the frontend trying to reconstruct them
+  // from the plain campaign list.
+  dashboardSummary: () => request("/dashboard-summary"),
   systemStatus: () => request("/system-status"),
   testConnection: () => request("/test-connection", { method: "POST" }),
   // Create-only — no upsert-by-name. Calling this twice with the same name

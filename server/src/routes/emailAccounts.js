@@ -4,6 +4,7 @@ import nodemailer from "nodemailer";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { encryptSecret, decryptSecret } from "../lib/credentialCrypto.js";
+import { recordAudit } from "../lib/auditLog.js";
 
 export const emailAccountsRouter = Router();
 
@@ -48,6 +49,11 @@ const createAccountSchema = z.object({
   smtpPass: z.string().min(1),
   fromAddress: z.string().email(),
   dailyLimit: z.number().int().positive().default(500),
+  // Country/region this mailbox represents (e.g. "IN", "AE", "NL") — matched
+  // case-insensitively against EmailLead.country to auto-route a lead's send
+  // through it (see src/lib/accountRouting.js). Omit/null for a mailbox with
+  // no country routing (only used via direct campaign assignment).
+  country: z.string().trim().min(1).nullable().optional(),
   // Admin-only: assign a mailbox to a specific employee, or omit/null it to
   // create a shared company mailbox. Ignored (forced to self) for employees.
   ownerId: z.string().nullable().optional()
@@ -65,6 +71,7 @@ emailAccountsRouter.post("/", asyncHandler(async (req, res) => {
   const account = await prisma.emailAccount.create({
     data: { ...rest, ownerId: resolvedOwnerId, smtpPassEncrypted: encryptSecret(smtpPass) }
   });
+  await recordAudit({ req, action: "mailbox.created", entityType: "EmailAccount", entityId: account.id, detail: `${account.label} (${account.smtpHost})` });
 
   res.status(201).json(redact(account));
 }));
@@ -106,6 +113,7 @@ emailAccountsRouter.post("/:id/deactivate", asyncHandler(async (req, res) => {
   }
 
   const account = await prisma.emailAccount.update({ where: { id: existing.id }, data: { isActive: false } });
+  await recordAudit({ req, action: "mailbox.deactivated", entityType: "EmailAccount", entityId: account.id, detail: account.label });
   res.json(redact(account));
 }));
 
@@ -155,5 +163,6 @@ emailAccountsRouter.delete("/:id", asyncHandler(async (req, res) => {
   }
 
   await prisma.emailAccount.delete({ where: { id: existing.id } });
+  await recordAudit({ req, action: "mailbox.deleted", entityType: "EmailAccount", entityId: existing.id, detail: existing.label });
   res.status(204).end();
 }));

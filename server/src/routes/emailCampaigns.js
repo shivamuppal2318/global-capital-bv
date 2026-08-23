@@ -4,6 +4,7 @@ import nodemailer from "nodemailer";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { isQueueEnabled } from "../queue/cadenceQueue.js";
+import { recordAudit } from "../lib/auditLog.js";
 
 export const emailCampaignsRouter = Router();
 
@@ -104,12 +105,92 @@ emailCampaignsRouter.get("/", asyncHandler(async (_req, res) => {
   res.json(withRates);
 }));
 
+const SEND_KINDS = ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT"];
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Buckets raw ActivityLog rows into local UTC-day counts in JS rather than a
+// DB-side date_trunc — Prisma has no portable groupBy-by-day, and 7 days of
+// rows is small enough that this is simpler than reaching for $queryRaw.
+function bucketByDay(rows, days) {
+  const buckets = new Map(days.map((d) => [d.key, 0]));
+  for (const row of rows) {
+    const key = row.createdAt.toISOString().slice(0, 10);
+    if (buckets.has(key)) {
+      buckets.set(key, buckets.get(key) + 1);
+    }
+  }
+  return days.map((d) => buckets.get(d.key));
+}
+
+// Everything the Dashboard tab's chart/funnel/activity/mailbox panels need,
+// in one call — real aggregates only, matching what's actually in
+// EmailActivityLog/EmailLead/EmailAccount, same principle as
+// withEngagementRates above (no formula-based/fabricated numbers).
+emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (_req, res) => {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - (6 - i));
+    return { key: d.toISOString().slice(0, 10), day: DAY_LABELS[d.getUTCDay()] };
+  });
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
+
+  const [sentRows, openedRows, totalLeads, repliedLeads, interestedLeads, ndaSignedLeads, recentActivity, mailboxes] = await Promise.all([
+    prisma.emailActivityLog.findMany({ where: { kind: { in: SEND_KINDS }, createdAt: { gte: sevenDaysAgo } }, select: { createdAt: true } }),
+    prisma.emailActivityLog.findMany({ where: { kind: "EMAIL_OPENED", createdAt: { gte: sevenDaysAgo } }, select: { createdAt: true } }),
+    prisma.emailLead.count(),
+    prisma.emailLead.count({ where: { replyType: { not: "NO_REPLY" } } }),
+    prisma.emailLead.count({ where: { replyType: "INTERESTED" } }),
+    prisma.emailLead.count({ where: { ndaSignedAt: { not: null } } }),
+    prisma.emailActivityLog.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      include: { lead: { select: { name: true, campaign: { select: { name: true } } } } }
+    }),
+    prisma.emailAccount.findMany({ where: { isActive: true }, orderBy: { label: "asc" } })
+  ]);
+
+  const sentByDay = bucketByDay(sentRows, days);
+  const openedByDay = bucketByDay(openedRows, days);
+
+  const mailboxPerformance = await Promise.all(
+    mailboxes.map(async (account) => {
+      const sentToday = await prisma.emailActivityLog.count({
+        where: { kind: "BRANCH_EMAIL_SENT", emailAccountId: account.id, createdAt: { gte: today } }
+      });
+      return { id: account.id, label: account.label, country: account.country, dailyLimit: account.dailyLimit, sentToday };
+    })
+  );
+
+  res.json({
+    volumeByDay: days.map((d, i) => ({ day: d.day, sent: sentByDay[i], opened: openedByDay[i] })),
+    funnel: [
+      { stage: "Total leads", count: totalLeads },
+      { stage: "Replied", count: repliedLeads },
+      { stage: "Interested", count: interestedLeads },
+      { stage: "NDA signed", count: ndaSignedLeads }
+    ],
+    recentActivity: recentActivity.map((row) => ({
+      id: row.id,
+      leadName: row.lead.name,
+      campaignName: row.lead.campaign.name,
+      kind: row.kind,
+      title: row.title,
+      createdAt: row.createdAt
+    })),
+    mailboxPerformance
+  });
+}));
+
 emailCampaignsRouter.post("/", asyncHandler(async (req, res) => {
   const parsed = createCampaignSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const campaign = await prisma.emailCampaign.create({ data: parsed.data });
+  await recordAudit({ req, action: "campaign.created", entityType: "EmailCampaign", entityId: campaign.id, detail: campaign.name });
   res.status(201).json(campaign);
 }));
 
@@ -130,6 +211,7 @@ emailCampaignsRouter.delete("/:id", asyncHandler(async (req, res) => {
     return res.status(409).json({ error: `"${campaign.name}" has ${campaign._count.leads} lead(s) enrolled — pause it instead of deleting.` });
   }
   await prisma.emailCampaign.delete({ where: { id: req.params.id } });
+  await recordAudit({ req, action: "campaign.deleted", entityType: "EmailCampaign", entityId: campaign.id, detail: campaign.name });
   res.status(204).end();
 }));
 
@@ -168,6 +250,7 @@ emailCampaignsRouter.post("/:id/pause", asyncHandler(async (req, res) => {
     where: { id: req.params.id },
     data: { status: "SCHEDULED" }
   });
+  await recordAudit({ req, action: "campaign.paused", entityType: "EmailCampaign", entityId: campaign.id, detail: campaign.name });
   res.json(campaign);
 }));
 
@@ -176,6 +259,7 @@ emailCampaignsRouter.post("/:id/resume", asyncHandler(async (req, res) => {
     where: { id: req.params.id },
     data: { status: "SENDING" }
   });
+  await recordAudit({ req, action: "campaign.resumed", entityType: "EmailCampaign", entityId: campaign.id, detail: campaign.name });
   res.json(campaign);
 }));
 
@@ -202,6 +286,13 @@ emailCampaignsRouter.post("/:id/email-account", asyncHandler(async (req, res) =>
   const campaign = await prisma.emailCampaign.update({
     where: { id: req.params.id },
     data: { emailAccountId: parsed.data.emailAccountId }
+  });
+  await recordAudit({
+    req,
+    action: "campaign.mailbox_assigned",
+    entityType: "EmailCampaign",
+    entityId: campaign.id,
+    detail: `${campaign.name} → ${parsed.data.emailAccountId ?? "default (global env provider)"}`
   });
   res.json(campaign);
 }));

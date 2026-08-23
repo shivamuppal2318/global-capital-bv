@@ -85,11 +85,15 @@ export function CampaignsTab({ mailing }) {
                   <option value="">Default (global env provider)</option>
                   {emailAccounts.map((account) => (
                     <option key={account.id} value={account.id} disabled={!account.isActive}>
-                      {account.label} {account.isActive ? "" : "(inactive)"}
+                      {account.label} {account.country ? `(${account.country})` : ""} {account.isActive ? "" : "(inactive)"}
                     </option>
                   ))}
                 </select>
               </label>
+              <p className="mt-1.5 max-w-sm text-[11px] text-[#9aa6ba]">
+                Used for leads with no country match — a lead whose Country matches a mailbox tagged with that same country
+                (Settings tab) sends through that one instead, no matter what's picked here.
+              </p>
             </div>
             <div className="flex flex-wrap gap-3">
               <ActionButton
