@@ -6,6 +6,8 @@ import crypto from "node:crypto";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { extractText } from "../lib/documentText.js";
+import { REQUIRED_DOCUMENTS } from "../lib/requiredDocuments.js";
+import { classifyDocumentCategory, runGapCheck } from "../lib/documentClassifier.js";
 
 export const documentsRouter = Router();
 
@@ -71,6 +73,10 @@ documentsRouter.get("/categories", asyncHandler(async (_req, res) => {
   res.json(grouped.map((g) => ({ category: g.category, count: g._count.category })).sort((a, b) => a.category.localeCompare(b.category)));
 }));
 
+// Served from the backend so the checklist, the upload classifier, and the
+// AI gap check all read the exact same list — see lib/requiredDocuments.js.
+documentsRouter.get("/required-documents", (_req, res) => res.json(REQUIRED_DOCUMENTS));
+
 documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file was uploaded." });
@@ -81,13 +87,23 @@ documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) =
   // scanned PDF or an image should still upload successfully.
   const { text, note } = await extractText(filePath, req.file.mimetype, req.file.originalname);
 
+  const requestedCategory = (req.body?.category || "General").trim() || "General";
+  // Only auto-classify when the uploader didn't pick a specific category —
+  // "General" is the form's default, so leaving it there is the real signal
+  // that nobody bothered picking one. An explicit choice (including
+  // deliberately picking "General") is never overridden.
+  const category =
+    requestedCategory === "General"
+      ? (await classifyDocumentCategory({ filename: req.file.originalname, text })) ?? requestedCategory
+      : requestedCategory;
+
   const doc = await prisma.document.create({
     data: {
       originalName: req.file.originalname,
       storedName: req.file.filename,
       mimeType: req.file.mimetype || "application/octet-stream",
       sizeBytes: req.file.size,
-      category: (req.body?.category || "General").trim() || "General",
+      category,
       description: req.body?.description?.trim() || null,
       extractedText: text,
       extractionNote: note,
@@ -97,6 +113,27 @@ documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) =
   });
 
   res.status(201).json(publicDocument(doc));
+}));
+
+// Analyzes real document content (not just category tags) against the
+// required-documents checklist — see lib/documentClassifier.js. Read-only:
+// nothing here is stored, it's recomputed fresh on every call so it always
+// reflects the current Data Room.
+documentsRouter.post("/gap-check", asyncHandler(async (_req, res) => {
+  const documents = await prisma.document.findMany({
+    orderBy: { createdAt: "desc" },
+    select: { id: true, originalName: true, category: true, description: true, extractedText: true }
+  });
+
+  const { configured, results, generatedAt } = await runGapCheck(documents);
+  if (!configured) {
+    return res.json({
+      configured: false,
+      message: "The AI assistant isn't set up yet — an admin can add a Claude API key under Admin Panel → AI Assistant."
+    });
+  }
+
+  res.json({ configured: true, results, generatedAt });
 }));
 
 documentsRouter.get("/:id/download", asyncHandler(async (req, res) => {

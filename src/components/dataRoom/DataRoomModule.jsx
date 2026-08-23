@@ -15,7 +15,13 @@ const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
 const labelClass = "mb-1.5 block text-[13px] font-semibold text-[#334463]";
 
-const CATEGORY_PRESETS = ["General", "Financials", "Legal", "Pitch & Marketing", "Due Diligence", "Portfolio", "HR"];
+const BASE_CATEGORY_PRESETS = ["General", "Financials", "Legal", "Pitch & Marketing", "Due Diligence", "Portfolio", "HR"];
+
+const gapStatusStyle = {
+  covered: { icon: "✓", badge: "border-[#cce7d6] bg-[#f1fbf5]", pill: "bg-[#2b9b60] text-white" },
+  partial: { icon: "!", badge: "border-[#ffe9d0] bg-[#fff8ee]", pill: "bg-[#f29b3a] text-white" },
+  missing: { icon: "—", badge: "border-[#e7edf5] bg-white", pill: "bg-[#edf1f6] text-[#9aa6bd]" }
+};
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -35,6 +41,7 @@ function fileGlyph(mimeType, name) {
 export function DataRoomModule() {
   const [documents, setDocuments] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [requiredDocuments, setRequiredDocuments] = useState([]);
   const [activeCategory, setActiveCategory] = useState("All");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -46,6 +53,15 @@ export function DataRoomModule() {
   const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState(null);
   const fileInputRef = useRef(null);
+
+  // AI gap check: null until run, then either a results array or a
+  // "not configured" message — kept separate from the plain category-count
+  // check below so a stale AI verdict is never shown for a checklist that's
+  // since changed without an explicit re-run.
+  const [gapResults, setGapResults] = useState(null);
+  const [gapGeneratedAt, setGapGeneratedAt] = useState(null);
+  const [gapLoading, setGapLoading] = useState(false);
+  const [gapMessage, setGapMessage] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -64,6 +80,29 @@ export function DataRoomModule() {
     const t = setTimeout(load, query ? 300 : 0);
     return () => clearTimeout(t);
   }, [load, query]);
+
+  useEffect(() => {
+    documentsApi.requiredDocuments().then(setRequiredDocuments).catch(() => {});
+  }, []);
+
+  const handleGapCheck = async () => {
+    setGapLoading(true);
+    setGapMessage(null);
+    try {
+      const result = await documentsApi.gapCheck();
+      if (!result.configured) {
+        setGapMessage(result.message);
+        setGapResults(null);
+      } else {
+        setGapResults(result.results);
+        setGapGeneratedAt(result.generatedAt);
+      }
+    } catch (err) {
+      setGapMessage(`Gap check failed: ${err.message}`);
+    } finally {
+      setGapLoading(false);
+    }
+  };
 
   const handleFiles = async (files) => {
     if (!files?.length) return;
@@ -92,6 +131,9 @@ export function DataRoomModule() {
           ? `Uploaded ${results.length} file(s) — the AI Assistant can now answer from them.`
           : `Uploaded ${results.length} file(s). ${unreadable.length} can't be read as text, so the AI can list them but not quote from them.`
       );
+      // A previous gap check no longer reflects what's actually uploaded —
+      // cleared rather than left stale until someone re-runs it.
+      setGapResults(null);
       load();
     }
   };
@@ -101,6 +143,7 @@ export function DataRoomModule() {
       await documentsApi.remove(doc.id);
       setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
       setNotice(`Deleted ${doc.originalName}.`);
+      setGapResults(null);
     } catch (err) {
       setError(err.message);
     }
@@ -145,6 +188,60 @@ export function DataRoomModule() {
       </section>
 
       <Card className="px-5 py-5">
+        <SectionTitle
+          icon={CheckCircleIcon}
+          iconClass="text-[#2b9b60]"
+          subtitle={
+            gapResults
+              ? `AI gap check ran ${new Date(gapGeneratedAt).toLocaleString()} — verdicts below are based on real document content, not just category tags.`
+              : "The standard due-diligence request list — upload a file tagged with one of these categories to mark it received (leave Category as \"General\" and the AI will try to tag it for you). Reference only, not tied to a specific deal."
+          }
+          action={
+            <ActionButton
+              label={gapLoading ? "Checking…" : "Run AI gap check"}
+              icon={SparklesIcon}
+              small
+              disabled={gapLoading}
+              onClick={handleGapCheck}
+            />
+          }
+        >
+          Required documents checklist
+        </SectionTitle>
+
+        {gapMessage ? <p className="mt-3 text-[13px] font-medium text-[#c47f1a]">{gapMessage}</p> : null}
+
+        <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+          {requiredDocuments.map((item) => {
+            const gapVerdict = gapResults?.find((r) => r.label === item.label);
+            // Falls back to the plain "was a file uploaded under this exact
+            // category" check until a gap check has actually been run —
+            // that's real too, just less discerning about content.
+            const status = gapVerdict?.status ?? (categories.find((c) => c.category === item.label)?.count ? "covered" : "missing");
+            const style = gapStatusStyle[status] ?? gapStatusStyle.missing;
+            const matchCount = categories.find((c) => c.category === item.label)?.count ?? 0;
+
+            return (
+              <div key={item.label} className={`flex items-start gap-3 rounded-[14px] border px-4 py-3 ${style.badge}`} title={item.description}>
+                <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full text-[12px] font-bold ${style.pill}`}>
+                  {style.icon}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[14px] font-medium text-[#102246]">{item.label}</p>
+                  <p className="mt-0.5 text-[12px] text-[#8592ab]">
+                    {gapVerdict ? gapVerdict.reason : matchCount ? `${matchCount} file(s) uploaded` : "Not yet uploaded"}
+                  </p>
+                  {gapVerdict?.matchedFilenames?.length ? (
+                    <p className="mt-1 text-[11px] text-[#5f6f89]">From: {gapVerdict.matchedFilenames.join(", ")}</p>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card className="px-5 py-5">
         <SectionTitle icon={UploadIcon} iconClass="text-[#3046b2]" subtitle="PDF, Word, text, CSV and images up to 25 MB each. Text is extracted automatically where the format allows.">
           Upload
         </SectionTitle>
@@ -160,9 +257,11 @@ export function DataRoomModule() {
               placeholder="General"
             />
             <datalist id="data-room-categories">
-              {[...new Set([...CATEGORY_PRESETS, ...categories.map((c) => c.category)])].map((c) => (
-                <option key={c} value={c} />
-              ))}
+              {[...new Set([...BASE_CATEGORY_PRESETS, ...requiredDocuments.map((d) => d.label), ...categories.map((c) => c.category)])].map(
+                (c) => (
+                  <option key={c} value={c} />
+                )
+              )}
             </datalist>
           </div>
           <div>
