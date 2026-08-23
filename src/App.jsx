@@ -30,6 +30,8 @@ import { EmailTemplatesCadencesModule } from "./components/emailTemplates/EmailT
 import { MarketIntelligenceModule } from "./components/marketIntelligence/MarketIntelligenceModule";
 import { AdminPanelModule } from "./components/admin/AdminPanelModule";
 import { DataRoomModule } from "./components/dataRoom/DataRoomModule";
+import { DealStageModule } from "./components/dealStages/DealStageModule";
+import { MODULE_TO_STAGE } from "./components/dealStages/stageConfig";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./components/auth/LoginPage";
 import {
@@ -57,7 +59,9 @@ const iconMap = {
   pipeline: SendIcon,
   briefcase: GridIcon,
   shield: ShieldIcon,
-  folder: FolderIcon
+  folder: FolderIcon,
+  note: NoteIcon,
+  userCheck: UserCheckIcon
 };
 
 const barToneClass = {
@@ -181,6 +185,11 @@ function AppShell() {
               <MarketIntelligenceModule />
             ) : activePage === "data-room" ? (
               <DataRoomModule />
+            ) : MODULE_TO_STAGE[activePage] ? (
+              // NDA / IOI / Visit Planning / Field Visit / Term Sheet all
+              // render the same component, keyed so switching between them
+              // remounts rather than reusing the previous stage's state.
+              <DealStageModule key={activePage} stage={MODULE_TO_STAGE[activePage]} />
             ) : activePage === "admin-panel" ? (
               <AdminPanelModule />
             ) : (

@@ -24,10 +24,18 @@ export const navSections = [
     ]
   },
   {
+    // The deal progression, in the order a deal actually moves through it.
+    // Zoom Call and Data Room point at the existing purpose-built screens;
+    // the other five share DealStageModule (see stageConfig.js).
     title: "Relationships",
     items: [
-      { id: "meetings", label: "Meetings", icon: "calendar" },
-      { id: "data-room", label: "Data Room", icon: "folder" }
+      { id: "nda", label: "NDA", icon: "shield" },
+      { id: "meetings", label: "Zoom Call", icon: "calendar" },
+      { id: "data-room", label: "Data Room", icon: "folder" },
+      { id: "ioi", label: "IOI", icon: "note" },
+      { id: "visit-planning", label: "Visit Planning", icon: "radar" },
+      { id: "field-visit", label: "Field Visit", icon: "userCheck" },
+      { id: "term-sheet", label: "Term Sheet", icon: "send" }
     ]
   },
   {

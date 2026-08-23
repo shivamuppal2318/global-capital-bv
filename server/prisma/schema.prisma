@@ -222,12 +222,84 @@ model Document {
 
   uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   uploadedById String?
+  dealStages   DealStageRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([category])
   @@index([createdAt])
+}
+
+// The deal progression a lead moves through: NDA -> Zoom call -> Data Room
+// -> IOI -> visit planning -> field visit -> term sheet.
+//
+// One table rather than seven, because the stages share a lifecycle
+// (owner, status, planned/actual dates, notes, an optional document) and
+// differ only in which of a handful of extra fields apply — amount and
+// valuation for IOI/term sheet, location and attendees for the visits.
+// Seven near-identical tables would mean seven of every query, route and
+// screen; the per-stage differences are handled by field config in the UI
+// (see src/components/dealStages/stageConfig.js).
+enum DealStage {
+  NDA
+  ZOOM_CALL
+  DATA_ROOM
+  IOI
+  VISIT_PLANNING
+  FIELD_VISIT
+  TERM_SHEET
+}
+
+enum DealStageStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+  ON_HOLD
+}
+
+model DealStageRecord {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  stage  DealStage
+  status DealStageStatus @default(NOT_STARTED)
+
+  // Planned vs actual. scheduledAt is the intended date (NDA sent, visit
+  // booked, term sheet issued); completedAt is when it actually happened
+  // (signed, visited, accepted) — keeping both is what makes "overdue" and
+  // "how long did this take" answerable later.
+  scheduledAt DateTime?
+  completedAt DateTime?
+
+  // IOI / term sheet money. Free text rather than a numeric type: these
+  // arrive as "EUR 2–4M" or "TBC" as often as a single figure, and forcing
+  // a number would lose that.
+  amount    String?
+  valuation String?
+
+  // Visit stages.
+  location  String?
+  attendees String?
+
+  counterparty String?
+  notes        String?
+  owner        String?
+
+  // Optional supporting file, reusing the Data Room rather than a separate
+  // upload path — a signed NDA or term sheet belongs in both places.
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  documentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One record per lead per stage; re-running a stage updates it rather
+  // than silently creating a second row that queries would double-count.
+  @@unique([leadId, stage])
+  @@index([stage, status])
 }
 
 model PasswordResetToken {
@@ -289,6 +361,7 @@ model Lead {
   notes            String?
   rawPayload       Json?
   meetings         Meeting[]
+  dealStages       DealStageRecord[]
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 

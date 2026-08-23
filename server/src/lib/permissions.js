@@ -9,8 +9,13 @@ export const MODULES = [
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },
   { id: "cold-bulk-mailing", label: "Cold Bulk Mailing", group: "CRM & Outreach" },
   { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach" },
-  { id: "meetings", label: "Meetings", group: "Relationships" },
-  { id: "data-room", label: "Data Room", group: "Relationships" }
+  { id: "nda", label: "NDA", group: "Relationships" },
+  { id: "meetings", label: "Zoom Call", group: "Relationships" },
+  { id: "data-room", label: "Data Room", group: "Relationships" },
+  { id: "ioi", label: "IOI", group: "Relationships" },
+  { id: "visit-planning", label: "Visit Planning", group: "Relationships" },
+  { id: "field-visit", label: "Field Visit", group: "Relationships" },
+  { id: "term-sheet", label: "Term Sheet", group: "Relationships" }
 ];
 
 export const MODULE_IDS = MODULES.map((m) => m.id);

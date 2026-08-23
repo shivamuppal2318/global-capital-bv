@@ -20,6 +20,7 @@ import aiChatRouter from "./routes/aiChat.js";
 import zoomRouter from "./routes/zoom.js";
 import meetingsRouter from "./routes/meetings.js";
 import { documentsRouter } from "./routes/documents.js";
+import { dealStagesRouter } from "./routes/dealStages.js";
 // Email cold-outreach domain (merged from the `crm` branch) — kept as
 // separate routers/mount paths from the WhatsApp domain above, matching the
 // separate Email*-prefixed Prisma models (see schema.prisma).
@@ -99,6 +100,14 @@ app.use(
   leadsRouter
 );
 app.use("/api/documents", requireModule("data-room"), documentsRouter);
+// One router serves all seven stages (the stage is a filter, not a route),
+// so it unlocks for anyone holding any of the stage modules; the screens
+// themselves are still gated individually in the sidebar.
+app.use(
+  "/api/deal-stages",
+  requireModule("nda", "meetings", "data-room", "ioi", "visit-planning", "field-visit", "term-sheet"),
+  dealStagesRouter
+);
 app.use("/api/ai", aiChatRouter);
 app.use("/api/zoom", requireModule("meetings"), zoomRouter);
 app.use("/api/meetings", requireModule("meetings"), meetingsRouter);
