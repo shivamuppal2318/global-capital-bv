@@ -11,6 +11,7 @@ export const navSections = [
     title: "Intelligence",
     items: [
       { id: "command-center", label: "Executive Dashboard", icon: "grid" },
+      { id: "universal-filters", label: "Universal Filters", icon: "sliders" },
       { id: "market-intelligence", label: "Market Intelligence", icon: "radar", badge: "AI" },
       { id: "leads", label: "Leads", icon: "users" }
     ]

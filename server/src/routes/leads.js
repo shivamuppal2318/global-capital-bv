@@ -22,20 +22,29 @@ router.get("/:id", async (req, res, next) => {
   }
 });
 
+// Text fields that clear to null on an empty string rather than storing "" —
+// the Universal Filters screen treats an empty value as "not set", not as a
+// distinct value to filter on.
+const TEXT_FIELDS = ["owner", "territory", "leadSource", "industry", "channelPartner", "teamLeader", "manager", "capitalAsk"];
+
 router.patch("/:id", async (req, res, next) => {
   try {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
 
-    const { status, qualified, owner } = req.body;
-    const updated = await prisma.lead.update({
-      where: { id: lead.id },
-      data: {
-        status: status ?? lead.status,
-        qualified: qualified ?? lead.qualified,
-        owner: owner ?? lead.owner
-      }
-    });
+    const data = {};
+    if (req.body.status !== undefined) data.status = req.body.status;
+    if (req.body.qualified !== undefined) data.qualified = req.body.qualified;
+    if (req.body.temperature !== undefined) data.temperature = req.body.temperature || null;
+    if (req.body.doe !== undefined) data.doe = req.body.doe ? new Date(req.body.doe) : null;
+    for (const field of TEXT_FIELDS) {
+      if (req.body[field] !== undefined) data[field] = req.body[field]?.toString().trim() || null;
+    }
+    // capitalAsk is required (non-nullable) — an empty submission leaves it
+    // as-is rather than clearing a field the schema doesn't allow to be null.
+    if (data.capitalAsk === null) data.capitalAsk = lead.capitalAsk;
+
+    const updated = await prisma.lead.update({ where: { id: lead.id }, data });
     res.json(updated);
   } catch (err) {
     next(err);

@@ -25,6 +25,7 @@ import { ndaRecordsRouter } from "./routes/ndaRecords.js";
 import { visitPlansRouter } from "./routes/visitPlans.js";
 import { ioiRecordsRouter } from "./routes/ioiRecords.js";
 import { executiveDashboardRouter } from "./routes/executiveDashboard.js";
+import { universalFiltersRouter } from "./routes/universalFilters.js";
 // Email cold-outreach domain (merged from the `crm` branch) — kept as
 // separate routers/mount paths from the WhatsApp domain above, matching the
 // separate Email*-prefixed Prisma models (see schema.prisma).
@@ -119,6 +120,7 @@ app.use("/api/nda-records", requireModule("nda"), ndaRecordsRouter);
 app.use("/api/visit-plans", requireModule("visit-planning"), visitPlansRouter);
 app.use("/api/ioi-records", requireModule("ioi"), ioiRecordsRouter);
 app.use("/api/executive-dashboard", requireModule("command-center"), executiveDashboardRouter);
+app.use("/api/universal-filters", requireModule("universal-filters"), universalFiltersRouter);
 app.use("/api/ai", aiChatRouter);
 app.use("/api/zoom", requireModule("meetings"), zoomRouter);
 app.use("/api/meetings", requireModule("meetings"), meetingsRouter);

@@ -14,6 +14,7 @@ import {
   SearchIcon,
   SendIcon,
   ShieldIcon,
+  SlidersIcon,
   SparklesIcon,
   UserCheckIcon,
   UsersIcon
@@ -35,6 +36,7 @@ import { NdaModule } from "./components/relationships/NdaModule";
 import { VisitPlanningModule } from "./components/relationships/VisitPlanningModule";
 import { IoiModule } from "./components/relationships/IoiModule";
 import { ExecutiveDashboardModule } from "./components/executive/ExecutiveDashboardModule";
+import { UniversalFiltersModule } from "./components/universalFilters/UniversalFiltersModule";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./components/auth/LoginPage";
 import {
@@ -63,7 +65,8 @@ const iconMap = {
   shield: ShieldIcon,
   folder: FolderIcon,
   note: NoteIcon,
-  userCheck: UserCheckIcon
+  userCheck: UserCheckIcon,
+  sliders: SlidersIcon
 };
 
 const pageAccentClass = {
@@ -160,6 +163,8 @@ function AppShell() {
           <div className="space-y-6 p-6">
             {activePage === "command-center" ? (
               <ExecutiveDashboardModule />
+            ) : activePage === "universal-filters" ? (
+              <UniversalFiltersModule />
             ) : activePage === "whatsapp-business" ? (
               <WhatsappBusinessModule onNavigate={setActivePage} />
             ) : activePage === "crm-workspace" ? (

@@ -394,15 +394,36 @@ model Lead {
   consentGdpr      String?
   notes            String?
   rawPayload       Json?
-  meetings         Meeting[]
-  dealStages       DealStageRecord[]
-  ndaRecord        NdaRecord?
-  visitPlans       VisitPlan[]
-  ioiRecord        IoiRecord?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+
+  // --- Universal Filters fields --------------------------------------
+  // Everything below backs one of the 14 cross-report filter dimensions
+  // (see lib/universalFilters.js). All nullable and manually set — none
+  // of this arrives from the inbound webhook today, so a lead is filable
+  // and searchable from day one without any of it being filled in yet.
+  industry       String? // Industry filter
+  channelPartner String? // Channel Partner filter
+  temperature    LeadTemperature? // Hot/Warm/Cold filter — deliberately separate
+  // from the decorative `tone` field above, which only ever picks an
+  // avatar colour and has never meant anything about lead quality.
+  teamLeader String? // Team Leader filter
+  manager    String? // Manager filter
+  doe        DateTime? // Date of Engagement filter
+
+  meetings   Meeting[]
+  dealStages DealStageRecord[]
+  ndaRecord  NdaRecord?
+  visitPlans VisitPlan[]
+  ioiRecord  IoiRecord?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([status])
+}
+
+enum LeadTemperature {
+  HOT
+  WARM
+  COLD
 }
 
 model ZoomSettings {
