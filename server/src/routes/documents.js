@@ -6,8 +6,9 @@ import crypto from "node:crypto";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { extractText } from "../lib/documentText.js";
-import { REQUIRED_DOCUMENTS } from "../lib/requiredDocuments.js";
+import { REQUIRED_DOCUMENTS, REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
 import { classifyDocumentCategory, runGapCheck } from "../lib/documentClassifier.js";
+import { recordAudit } from "../lib/auditLog.js";
 
 export const documentsRouter = Router();
 
@@ -43,6 +44,9 @@ function publicDocument(doc) {
     searchable: Boolean(doc.extractedText),
     extractionNote: doc.extractionNote,
     uploadedBy: doc.uploadedBy ? { id: doc.uploadedBy.id, name: doc.uploadedBy.name } : null,
+    verified: doc.verified,
+    verifiedAt: doc.verifiedAt,
+    verifiedBy: doc.verifiedBy ? { id: doc.verifiedBy.id, name: doc.verifiedBy.name } : null,
     createdAt: doc.createdAt
   };
 }
@@ -62,7 +66,7 @@ documentsRouter.get("/", asyncHandler(async (req, res) => {
           }
         : {})
     },
-    include: { uploadedBy: { select: { id: true, name: true } } },
+    include: { uploadedBy: { select: { id: true, name: true } }, verifiedBy: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" }
   });
   res.json(docs.map(publicDocument));
@@ -76,6 +80,38 @@ documentsRouter.get("/categories", asyncHandler(async (_req, res) => {
 // Served from the backend so the checklist, the upload classifier, and the
 // AI gap check all read the exact same list — see lib/requiredDocuments.js.
 documentsRouter.get("/required-documents", (_req, res) => res.json(REQUIRED_DOCUMENTS));
+
+// Data Room KPI framework's completion formula: Verified Documents ÷
+// Required Documents × 100. "Received" is looser (uploaded but not yet
+// reviewed) — both are surfaced since the framework's own status flow
+// (Requested → Received → Verified) treats them as genuinely different
+// milestones, not just two names for the same thing.
+documentsRouter.get("/kpis", asyncHandler(async (_req, res) => {
+  const docs = await prisma.document.findMany({
+    where: { category: { in: REQUIRED_DOCUMENT_LABELS } },
+    select: { category: true, verified: true }
+  });
+
+  const byCategory = new Map();
+  for (const doc of docs) {
+    const entry = byCategory.get(doc.category) ?? { received: false, verified: false };
+    entry.received = true;
+    if (doc.verified) entry.verified = true;
+    byCategory.set(doc.category, entry);
+  }
+
+  const requested = REQUIRED_DOCUMENT_LABELS.length;
+  const received = [...byCategory.values()].filter((e) => e.received).length;
+  const verified = [...byCategory.values()].filter((e) => e.verified).length;
+
+  res.json({
+    requested,
+    received,
+    verified,
+    pending: requested - received,
+    completionPercent: requested > 0 ? Math.round((verified / requested) * 100) : 0
+  });
+}));
 
 documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) => {
   if (!req.file) {
@@ -109,8 +145,9 @@ documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) =
       extractionNote: note,
       uploadedById: req.user?.id ?? null
     },
-    include: { uploadedBy: { select: { id: true, name: true } } }
+    include: { uploadedBy: { select: { id: true, name: true } }, verifiedBy: { select: { id: true, name: true } } }
   });
+  await recordAudit({ req, action: "document.uploaded", entityType: "Document", entityId: doc.id, detail: `${doc.originalName} (${doc.category})` });
 
   res.status(201).json(publicDocument(doc));
 }));
@@ -153,6 +190,34 @@ documentsRouter.get("/:id/download", asyncHandler(async (req, res) => {
   res.sendFile(filePath);
 }));
 
+// Marks a document as reviewed/approved (or reverts that) — the human step
+// the KPI framework's completion % actually counts, distinct from just
+// having been uploaded. Toggled by any user who can reach the Data Room;
+// this app doesn't have a reviewer-vs-uploader role split yet.
+documentsRouter.post("/:id/verify", asyncHandler(async (req, res) => {
+  const verified = req.body?.verified !== false;
+  const doc = await prisma.document
+    .update({
+      where: { id: req.params.id },
+      data: verified
+        ? { verified: true, verifiedAt: new Date(), verifiedById: req.user?.id ?? null }
+        : { verified: false, verifiedAt: null, verifiedById: null },
+      include: { uploadedBy: { select: { id: true, name: true } }, verifiedBy: { select: { id: true, name: true } } }
+    })
+    .catch(() => null);
+  if (!doc) return res.status(404).json({ error: "Document not found" });
+
+  await recordAudit({
+    req,
+    action: verified ? "document.verified" : "document.unverified",
+    entityType: "Document",
+    entityId: doc.id,
+    detail: `${doc.originalName} (${doc.category})`
+  });
+
+  res.json(publicDocument(doc));
+}));
+
 documentsRouter.patch("/:id", asyncHandler(async (req, res) => {
   const { category, description } = req.body ?? {};
   const doc = await prisma.document
@@ -162,7 +227,7 @@ documentsRouter.patch("/:id", asyncHandler(async (req, res) => {
         ...(category !== undefined ? { category: String(category).trim() || "General" } : {}),
         ...(description !== undefined ? { description: String(description).trim() || null } : {})
       },
-      include: { uploadedBy: { select: { id: true, name: true } } }
+      include: { uploadedBy: { select: { id: true, name: true } }, verifiedBy: { select: { id: true, name: true } } }
     })
     .catch(() => null);
   if (!doc) return res.status(404).json({ error: "Document not found" });
@@ -178,6 +243,7 @@ documentsRouter.delete("/:id", asyncHandler(async (req, res) => {
   // of view; a leftover file on disk is untidy but harmless, so a failure
   // here shouldn't turn a successful delete into an error.
   await fs.unlink(path.join(UPLOAD_DIR, doc.storedName)).catch(() => {});
+  await recordAudit({ req, action: "document.deleted", entityType: "Document", entityId: doc.id, detail: `${doc.originalName} (${doc.category})` });
 
   res.status(204).end();
 }));

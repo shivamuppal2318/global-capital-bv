@@ -20,15 +20,16 @@ function publicRecord(r) {
     counterparty: r.counterparty,
     notes: r.notes,
     owner: r.owner,
+    clientRating: r.clientRating,
     document: r.document ? { id: r.document.id, originalName: r.document.originalName } : null,
-    lead: r.lead ? { id: r.lead.id, name: r.lead.name, company: r.lead.company, status: r.lead.status } : null,
+    lead: r.lead ? { id: r.lead.id, name: r.lead.name, company: r.lead.company, status: r.lead.status, leadSource: r.lead.leadSource } : null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt
   };
 }
 
 const include = {
-  lead: { select: { id: true, name: true, company: true, status: true } },
+  lead: { select: { id: true, name: true, company: true, status: true, leadSource: true } },
   document: { select: { id: true, originalName: true } }
 };
 
@@ -98,7 +99,8 @@ const upsertSchema = z.object({
   counterparty: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   owner: z.string().nullable().optional(),
-  documentId: z.string().nullable().optional()
+  documentId: z.string().nullable().optional(),
+  clientRating: z.number().min(0).max(5).nullable().optional()
 });
 
 const toDate = (v) => (v ? new Date(v) : null);
@@ -128,7 +130,8 @@ dealStagesRouter.post("/", asyncHandler(async (req, res) => {
     counterparty: toText(rest.counterparty),
     notes: toText(rest.notes),
     owner: toText(rest.owner),
-    ...(rest.documentId !== undefined ? { documentId: rest.documentId || null } : {})
+    ...(rest.documentId !== undefined ? { documentId: rest.documentId || null } : {}),
+    ...(rest.clientRating !== undefined ? { clientRating: rest.clientRating } : {})
   };
   // Strip keys explicitly set to undefined so they don't clear stored values.
   for (const k of Object.keys(data)) if (data[k] === undefined) delete data[k];
@@ -158,6 +161,7 @@ dealStagesRouter.patch("/:id", asyncHandler(async (req, res) => {
     if (rest[key] !== undefined) data[key] = toText(rest[key]);
   }
   if (rest.documentId !== undefined) data.documentId = rest.documentId || null;
+  if (rest.clientRating !== undefined) data.clientRating = rest.clientRating;
 
   const record = await prisma.dealStageRecord.update({ where: { id: req.params.id }, data, include }).catch(() => null);
   if (!record) return res.status(404).json({ error: "Stage record not found" });

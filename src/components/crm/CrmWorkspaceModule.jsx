@@ -14,7 +14,7 @@ import {
   UploadIcon,
   UserCheckIcon
 } from "../Icons";
-import { ActionButton, Card, noteToneClass, StatCard } from "../ui";
+import { ActionButton, Card, noteToneClass, ProgressBar, SectionTitle, StatCard } from "../ui";
 import { leadsApi } from "../../lib/leadsApi";
 
 const avatarToneClass = {
@@ -86,6 +86,16 @@ export function CrmWorkspaceModule() {
     { label: "Qualified", value: String(qualifiedCount), note: "Ready for outreach", noteTone: "cyan" }
   ];
 
+  // KPI Framework's lead-pipeline funnel — real counts per LeadStatus, not
+  // fabricated stage percentages. Kept in enum order so the funnel reads
+  // top-to-bottom the way a pipeline actually flows.
+  const pipelineByStage = Object.entries(STATUS_LABEL).map(([status, label]) => ({
+    status,
+    label,
+    count: leads.filter((l) => l.status === status).length
+  }));
+  const maxStageCount = Math.max(1, ...pipelineByStage.map((s) => s.count));
+
   const overview = selectedLead
     ? [
         ["Lead Owner", selectedLead.owner ?? "Unassigned"],
@@ -113,6 +123,25 @@ export function CrmWorkspaceModule() {
   return (
     <div className="space-y-6">
       <Header stats={stats} />
+
+      {leads.length > 0 ? (
+        <Card className="px-5 py-5">
+          <SectionTitle icon={FunnelIcon} iconClass="text-[#8b52d0]">
+            Lead pipeline by stage
+          </SectionTitle>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {pipelineByStage.map((stage) => (
+              <div key={stage.status}>
+                <div className="mb-2 flex items-center justify-between gap-4">
+                  <p className="text-[14px] font-semibold text-[#12213a]">{stage.label}</p>
+                  <p className="text-[14px] text-[#5f6f89]">{stage.count}</p>
+                </div>
+                <ProgressBar width={`${Math.round((stage.count / maxStageCount) * 100)}%`} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       <section className="grid gap-4 xl:grid-cols-[320px_1fr_260px]">
         <Card>
