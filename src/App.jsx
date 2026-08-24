@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarIcon,
+  ChartBarIcon,
   ChatBubbleIcon,
+  ClockIcon,
   FolderIcon,
   FunnelIcon,
   GridIcon,
@@ -31,6 +33,8 @@ import { AdminPanelModule } from "./components/admin/AdminPanelModule";
 import { DataRoomModule } from "./components/dataRoom/DataRoomModule";
 import { DealStageModule } from "./components/dealStages/DealStageModule";
 import { MODULE_TO_STAGE } from "./components/dealStages/stageConfig";
+import { DoePerformanceModule } from "./components/doePerformance/DoePerformanceModule";
+import { AgeingReportModule } from "./components/ageingReport/AgeingReportModule";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./components/auth/LoginPage";
 import {
@@ -60,7 +64,9 @@ const iconMap = {
   shield: ShieldIcon,
   folder: FolderIcon,
   note: NoteIcon,
-  userCheck: UserCheckIcon
+  userCheck: UserCheckIcon,
+  chart: ChartBarIcon,
+  clock: ClockIcon
 };
 
 const barToneClass = {
@@ -182,6 +188,10 @@ function AppShell() {
               <MarketIntelligenceModule />
             ) : activePage === "data-room" ? (
               <DataRoomModule />
+            ) : activePage === "doe-performance" ? (
+              <DoePerformanceModule />
+            ) : activePage === "ageing-report" ? (
+              <AgeingReportModule />
             ) : MODULE_TO_STAGE[activePage] ? (
               // NDA / IOI / Visit Planning / Field Visit / Term Sheet all
               // render the same component, keyed so switching between them

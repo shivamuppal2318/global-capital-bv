@@ -15,7 +15,9 @@ export const MODULES = [
   { id: "ioi", label: "IOI", group: "Relationships" },
   { id: "visit-planning", label: "Visit Planning", group: "Relationships" },
   { id: "field-visit", label: "Field Visit", group: "Relationships" },
-  { id: "term-sheet", label: "Term Sheet", group: "Relationships" }
+  { id: "term-sheet", label: "Term Sheet", group: "Relationships" },
+  { id: "doe-performance", label: "DOE Performance", group: "Relationships" },
+  { id: "ageing-report", label: "Ageing Report", group: "Relationships" }
 ];
 
 export const MODULE_IDS = MODULES.map((m) => m.id);

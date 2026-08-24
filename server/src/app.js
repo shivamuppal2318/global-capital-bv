@@ -21,6 +21,8 @@ import zoomRouter from "./routes/zoom.js";
 import meetingsRouter from "./routes/meetings.js";
 import { documentsRouter } from "./routes/documents.js";
 import { dealStagesRouter } from "./routes/dealStages.js";
+import { doePerformanceRouter } from "./routes/doePerformance.js";
+import { ageingReportRouter } from "./routes/ageingReport.js";
 // Email cold-outreach domain (merged from the `crm` branch) — kept as
 // separate routers/mount paths from the WhatsApp domain above, matching the
 // separate Email*-prefixed Prisma models (see schema.prisma).
@@ -108,6 +110,11 @@ app.use(
   requireModule("nda", "meetings", "data-room", "ioi", "visit-planning", "field-visit", "term-sheet"),
   dealStagesRouter
 );
+// Cross-cutting reports over the same deal-stage/outreach data — each
+// gated on its own module id since a report can be granted independently
+// of the stage screens it reports on.
+app.use("/api/doe-performance", requireModule("doe-performance"), doePerformanceRouter);
+app.use("/api/ageing-report", requireModule("ageing-report"), ageingReportRouter);
 app.use("/api/ai", aiChatRouter);
 app.use("/api/zoom", requireModule("meetings"), zoomRouter);
 app.use("/api/meetings", requireModule("meetings"), meetingsRouter);
