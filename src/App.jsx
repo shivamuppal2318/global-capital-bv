@@ -192,7 +192,7 @@ function AppShell() {
             ) : activePage === "data-room" ? (
               <DataRoomModule />
             ) : activePage === "ageing-report" ? (
-              <AgeingReportModule />
+              <AgeingReportModule onNavigate={setActivePage} />
             ) : activePage === "nda" ? (
               <NdaModule />
             ) : activePage === "visit-planning" ? (
