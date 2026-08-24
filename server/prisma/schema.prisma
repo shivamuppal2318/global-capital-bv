@@ -266,6 +266,9 @@ model Document {
   verifiedById String?
 
   dealStages   DealStageRecord[]
+  ndaDocuments NdaRecord[] @relation("NdaDocument")
+  visitReports VisitPlan[] @relation("VisitReport")
+  ioiDocuments IoiRecord[] @relation("IoiDocument")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -409,12 +412,39 @@ model Lead {
   consentGdpr      String?
   notes            String?
   rawPayload       Json?
-  meetings         Meeting[]
-  dealStages       DealStageRecord[]
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+
+  // --- Universal Filters fields --------------------------------------
+  // Everything below backs one of the 14 cross-report filter dimensions
+  // (see lib/universalFilters.js). All nullable and manually set — none
+  // of this arrives from the inbound webhook today, so a lead is filable
+  // and searchable from day one without any of it being filled in yet.
+  industry       String? // Industry filter
+  channelPartner String? // Channel Partner filter
+  temperature    LeadTemperature? // Hot/Warm/Cold filter — deliberately separate
+  // from the decorative `tone` field above, which only ever picks an
+  // avatar colour and has never meant anything about lead quality.
+  teamLeader String? // Team Leader filter
+  manager    String? // Manager filter
+  // Deal Originator Executive — the rep who first engaged this prospect.
+  // Free text, deliberately separate from `owner` (who currently holds the
+  // account, which can change hands after the deal originates).
+  doe String?
+
+  meetings   Meeting[]
+  dealStages DealStageRecord[]
+  ndaRecord  NdaRecord?
+  visitPlans VisitPlan[]
+  ioiRecord  IoiRecord?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([status])
+}
+
+enum LeadTemperature {
+  HOT
+  WARM
+  COLD
 }
 
 model ZoomSettings {
@@ -440,7 +470,129 @@ model Meeting {
   status          String    @default("Scheduled")
   createdAt       DateTime  @default(now())
 
+  // --- Qualitative capture (Zoom Call module) ---------------------------
+  // Everything below is filled in after the call, so all of it is optional:
+  // a meeting exists from the moment it's booked, long before there's
+  // anything to record about it.
+
+  // Who from the client side actually attended — often differs from who was
+  // invited, and that difference is itself worth knowing.
+  clientAttendees String?
+  // Our own attendees (date-of-engagement contact / deal owner side).
+  ourAttendees String?
+  // Actual minutes, as opposed to durationMinutes which is what was booked.
+  actualDurationMinutes Int?
+  notes                 String?
+  // Generated from notes by Claude on request (see POST /:id/summarise) —
+  // stored so it isn't regenerated (and re-billed) on every page load.
+  aiSummary          String?
+  aiSummaryUpdatedAt DateTime?
+  nextAction         String?
+  nextActionDueAt    DateTime?
+  // Whether a further meeting came out of this one — drives the
+  // "next meeting scheduled %" KPI.
+  nextMeetingScheduled Boolean @default(false)
+  recordingLink        String?
+  // 1-5, set by hand. Deliberately not inferred from the notes: a satisfaction
+  // score a model guessed would look like data while being opinion.
+  clientSatisfaction Int?
+
   @@index([startTime])
+}
+
+// NDA tracking. Split out of DealStageRecord because chasing signatures has
+// its own shape — two reminder timestamps, and the signing-time and
+// reminder-effectiveness metrics that depend on them — which the shared
+// stage table has no room for without becoming a wide grab-bag.
+model NdaRecord {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String @unique
+
+  // SENT -> REMINDER_1 -> REMINDER_2 -> SIGNED, or DECLINED/EXPIRED.
+  status NdaStatus @default(DRAFT)
+
+  sentAt       DateTime?
+  reminder1At  DateTime?
+  reminder2At  DateTime?
+  signedAt     DateTime?
+  expiresAt    DateTime?
+
+  signerName  String?
+  signerEmail String?
+  owner       String?
+  notes       String?
+
+  // The signed copy, kept in the Data Room rather than a second upload path.
+  document   Document? @relation("NdaDocument", fields: [documentId], references: [id], onDelete: SetNull)
+  documentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+enum NdaStatus {
+  DRAFT
+  SENT
+  REMINDER_1
+  REMINDER_2
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+// Site-visit planning. Separate from FIELD_VISIT (the visit itself) because
+// planning is about travel efficiency — cost, geography, clustering — and
+// several planned visits can share one trip.
+model VisitPlan {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  status VisitPlanStatus @default(PLANNED)
+
+  plannedFor  DateTime?
+  completedAt DateTime?
+
+  // Free text, plus a coarse region used to cluster visits. Region is what
+  // makes "how many trips could be combined" answerable without geocoding
+  // every address — see lib/visitMetrics.js.
+  location String?
+  region   String?
+  country  String?
+
+  attendees String?
+  purpose   String?
+  notes     String?
+  owner     String?
+
+  // Actual spend, in whole currency units. Numeric here (unlike IOI/term
+  // sheet amounts) because cost-per-visit has to be averaged.
+  costAmount   Float?
+  costCurrency String  @default("EUR")
+
+  travelMode String?
+
+  reportSubmitted Boolean   @default(false)
+  reportAt        DateTime?
+  report          Document? @relation("VisitReport", fields: [reportId], references: [id], onDelete: SetNull)
+  reportId        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([plannedFor])
+  @@index([region])
+}
+
+enum VisitPlanStatus {
+  PLANNED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
 }
 
 model Conversation {
@@ -927,4 +1079,57 @@ model MarketSignal {
 
   @@index([status])
   @@index([entityName])
+}
+
+// Indications of interest. Like the NDA, this outgrew DealStageRecord: the
+// spec wants an average IOI value in euros and distributions by industry
+// and geography, none of which the shared table can express (its `amount`
+// is free text, and it carries no industry or geography at all).
+model IoiRecord {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String @unique
+
+  status IoiStatus @default(DRAFT)
+
+  generatedAt DateTime?
+  sentAt      DateTime?
+  signedAt    DateTime?
+  expiresAt   DateTime?
+
+  // Numeric, deliberately unlike DealStageRecord.amount which is free text.
+  // "EUR 2-4M" cannot be averaged, and the spec asks for an average value.
+  // Where a range is genuinely all that is known, record the midpoint here
+  // and put the range itself in notes.
+  value         Float?
+  valueCurrency String @default("EUR")
+
+  // The spec asks for IOI-by-industry and IOI-by-geography distributions.
+  // Lead carries neither (it has `territory`, which is a sales region, not
+  // the counterparty's geography), so both live here.
+  industry  String?
+  geography String?
+
+  counterparty String?
+  owner        String?
+  notes        String?
+
+  document   Document? @relation("IoiDocument", fields: [documentId], references: [id], onDelete: SetNull)
+  documentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([industry])
+  @@index([geography])
+}
+
+enum IoiStatus {
+  DRAFT
+  GENERATED
+  SENT
+  SIGNED
+  DECLINED
+  EXPIRED
 }

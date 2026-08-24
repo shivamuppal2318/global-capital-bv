@@ -25,7 +25,25 @@ export const AI_DATA_SOURCES = [
   {
     id: "meetings",
     label: "Zoom calls & meetings",
-    description: "Scheduled and past meetings — topic, time, duration, status, and the lead each belongs to."
+    description:
+      "Scheduled and past calls \u2014 topic, time, duration, attendees, call notes, AI summaries, next actions and satisfaction ratings."
+  },
+  {
+    id: "nda",
+    label: "NDAs",
+    description: "NDA status per lead \u2014 sent, reminded, signed, declined or expired, with dates, signer and owner."
+  },
+  {
+    id: "ioi",
+    label: "Indications of interest",
+    description:
+      "IOIs per lead \u2014 status, value, industry, geography, and the dates each was generated, sent and signed."
+  },
+  {
+    id: "visits",
+    label: "Site visits",
+    description:
+      "Planned and completed counterparty visits \u2014 dates, location, region, purpose, cost and whether a report came back."
   },
   {
     id: "whatsapp",

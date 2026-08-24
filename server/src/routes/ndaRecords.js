@@ -1,0 +1,150 @@
+import { Router } from "express";
+import { z } from "zod";
+import { prisma } from "../db.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
+import { ndaMetrics } from "../lib/relationshipMetrics.js";
+
+export const ndaRecordsRouter = Router();
+
+const NDA_STATUSES = ["DRAFT", "SENT", "REMINDER_1", "REMINDER_2", "SIGNED", "DECLINED", "EXPIRED"];
+
+const include = {
+  lead: { select: { id: true, name: true, company: true, email: true } },
+  document: { select: { id: true, originalName: true } }
+};
+
+ndaRecordsRouter.get("/", asyncHandler(async (req, res) => {
+  const { status, q } = req.query;
+  const records = await prisma.ndaRecord.findMany({
+    where: {
+      ...(status && status !== "All" ? { status: String(status) } : {}),
+      ...(q
+        ? {
+            OR: [
+              { lead: { name: { contains: String(q), mode: "insensitive" } } },
+              { lead: { company: { contains: String(q), mode: "insensitive" } } },
+              { signerName: { contains: String(q), mode: "insensitive" } }
+            ]
+          }
+        : {})
+    },
+    include,
+    orderBy: { updatedAt: "desc" }
+  });
+  res.json(records);
+}));
+
+// Metrics come from every record, never the filtered view — a KPI that
+// changed when you typed in the search box would be misleading.
+ndaRecordsRouter.get("/metrics", asyncHandler(async (_req, res) => {
+  const all = await prisma.ndaRecord.findMany({ include: { lead: { select: { name: true, company: true } } } });
+  const metrics = ndaMetrics(all);
+  // Re-attach lead names to the chase list, which the pure metric function
+  // only knows by id.
+  const byId = Object.fromEntries(all.map((r) => [r.id, r]));
+  metrics.overdue = metrics.overdue.slice(0, 10).map((o) => ({
+    ...o,
+    lead: byId[o.id]?.lead ? `${byId[o.id].lead.name} (${byId[o.id].lead.company})` : null
+  }));
+  res.json(metrics);
+}));
+
+const upsertSchema = z.object({
+  leadId: z.string().min(1),
+  status: z.enum(NDA_STATUSES).optional(),
+  sentAt: z.string().nullable().optional(),
+  reminder1At: z.string().nullable().optional(),
+  reminder2At: z.string().nullable().optional(),
+  signedAt: z.string().nullable().optional(),
+  expiresAt: z.string().nullable().optional(),
+  signerName: z.string().nullable().optional(),
+  signerEmail: z.string().nullable().optional(),
+  owner: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  documentId: z.string().nullable().optional()
+});
+
+const toDate = (v) => (v ? new Date(v) : null);
+const toText = (v) => (v && String(v).trim() ? String(v).trim() : null);
+
+function buildData(input) {
+  const data = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (v === undefined) continue;
+    if (["sentAt", "reminder1At", "reminder2At", "signedAt", "expiresAt"].includes(k)) data[k] = toDate(v);
+    else if (k === "documentId") data[k] = v || null;
+    else if (k === "status") data[k] = v;
+    else data[k] = toText(v);
+  }
+  return data;
+}
+
+// One NDA per lead (leadId is unique), so this upserts — recording the same
+// lead's NDA twice updates it rather than failing on the constraint.
+ndaRecordsRouter.post("/", asyncHandler(async (req, res) => {
+  const parsed = upsertSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const { leadId, ...rest } = parsed.data;
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+  const data = buildData(rest);
+  const record = await prisma.ndaRecord.upsert({
+    where: { leadId },
+    create: { leadId, ...data },
+    update: data,
+    include
+  });
+  res.status(201).json(record);
+}));
+
+// Advancing the status flow (Sent -> Reminder 1 -> Reminder 2 -> Signed) as
+// a single action, so the UI doesn't have to know which timestamp field
+// each step writes — and so the timestamp can never be forgotten.
+const ACTION_FIELD = {
+  send: { field: "sentAt", status: "SENT" },
+  remind1: { field: "reminder1At", status: "REMINDER_1" },
+  remind2: { field: "reminder2At", status: "REMINDER_2" },
+  sign: { field: "signedAt", status: "SIGNED" }
+};
+
+ndaRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
+  const step = ACTION_FIELD[req.params.action];
+  if (!step) return res.status(400).json({ error: `Unknown action "${req.params.action}".` });
+
+  const existing = await prisma.ndaRecord.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: "NDA record not found" });
+
+  // Reminders only make sense once it's actually been sent; without this an
+  // NDA could show "reminded" with no send date, which then breaks the
+  // signing-time and effectiveness maths.
+  if (["remind1", "remind2"].includes(req.params.action) && !existing.sentAt) {
+    return res.status(400).json({ error: "Record the send date before logging a reminder." });
+  }
+
+  const record = await prisma.ndaRecord.update({
+    where: { id: existing.id },
+    data: { [step.field]: new Date(), status: step.status },
+    include
+  });
+  res.json(record);
+}));
+
+ndaRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
+  const parsed = upsertSchema.partial({ leadId: true }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const { leadId, ...rest } = parsed.data;
+  const record = await prisma.ndaRecord
+    .update({ where: { id: req.params.id }, data: buildData(rest), include })
+    .catch(() => null);
+  if (!record) return res.status(404).json({ error: "NDA record not found" });
+  res.json(record);
+}));
+
+ndaRecordsRouter.delete("/:id", asyncHandler(async (req, res) => {
+  const deleted = await prisma.ndaRecord.delete({ where: { id: req.params.id } }).catch(() => null);
+  if (!deleted) return res.status(404).json({ error: "NDA record not found" });
+  res.status(204).end();
+}));

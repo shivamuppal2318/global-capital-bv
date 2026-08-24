@@ -1,0 +1,614 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ioiApi } from "../../lib/relationshipsApi";
+import { leadsApi } from "../../lib/leadsApi";
+import { documentsApi } from "../../lib/documentsApi";
+import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
+import { CheckCircleIcon, PlusIcon, SearchIcon, XIcon } from "../Icons";
+
+const inputClass =
+  "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
+const labelClass = "mb-1.5 block text-[13px] font-semibold text-[#334463]";
+
+const STATUSES = ["DRAFT", "GENERATED", "SENT", "SIGNED", "DECLINED", "EXPIRED"];
+
+const STATUS_LABEL = {
+  DRAFT: "Draft",
+  GENERATED: "Generated",
+  SENT: "Sent",
+  SIGNED: "Signed",
+  DECLINED: "Declined",
+  EXPIRED: "Expired"
+};
+
+const STATUS_TONE = {
+  DRAFT: "slate",
+  GENERATED: "blue",
+  SENT: "amber",
+  SIGNED: "green",
+  DECLINED: "red",
+  EXPIRED: "red"
+};
+
+const FLOW = [
+  { label: "Generate", action: "generate", field: "generatedAt" },
+  { label: "Send", action: "send", field: "sentAt" },
+  { label: "Sign", action: "sign", field: "signedAt" }
+];
+
+const asDateInput = (v) => (v ? new Date(v).toISOString().slice(0, 10) : "");
+const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : "—");
+const has = (v) => v !== null && v !== undefined;
+
+// Money reads better abbreviated at these magnitudes: an average IOI is
+// millions, and "€3,000,000" in a KPI tile wraps and loses its shape.
+function fmtMoney(value, currency = "EUR") {
+  if (!has(value)) return "—";
+  const symbol = { EUR: "€", USD: "$", GBP: "£" }[currency] ?? `${currency} `;
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${symbol}${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 1_000) return `${symbol}${(value / 1_000).toFixed(0)}k`;
+  return `${symbol}${value.toLocaleString()}`;
+}
+
+export function IoiModule() {
+  const [records, setRecords] = useState([]);
+  const [metrics, setMetrics] = useState(null);
+  const [funnel, setFunnel] = useState([]);
+  const [leads, setLeads] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    Promise.all([ioiApi.list({ status: statusFilter, q: query }), ioiApi.metrics(), ioiApi.funnel()])
+      .then(([rows, m, f]) => {
+        setRecords(rows);
+        setMetrics(m);
+        setFunnel(f);
+        setError(null);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [statusFilter, query]);
+
+  useEffect(() => {
+    const t = setTimeout(load, query ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [load, query]);
+
+  useEffect(() => {
+    leadsApi.list().then(setLeads).catch(() => {});
+    documentsApi.list().then(setDocuments).catch(() => {});
+  }, []);
+
+  const startNew = () =>
+    setEditing({
+      leadId: "",
+      status: "DRAFT",
+      generatedAt: "",
+      sentAt: "",
+      signedAt: "",
+      expiresAt: "",
+      value: "",
+      valueCurrency: "EUR",
+      industry: "",
+      geography: "",
+      counterparty: "",
+      owner: "",
+      notes: "",
+      documentId: ""
+    });
+
+  const startEdit = (r) =>
+    setEditing({
+      id: r.id,
+      leadId: r.lead?.id ?? "",
+      status: r.status,
+      generatedAt: asDateInput(r.generatedAt),
+      sentAt: asDateInput(r.sentAt),
+      signedAt: asDateInput(r.signedAt),
+      expiresAt: asDateInput(r.expiresAt),
+      value: r.value ?? "",
+      valueCurrency: r.valueCurrency ?? "EUR",
+      industry: r.industry ?? "",
+      geography: r.geography ?? "",
+      counterparty: r.counterparty ?? "",
+      owner: r.owner ?? "",
+      notes: r.notes ?? "",
+      documentId: r.document?.id ?? ""
+    });
+
+  async function handleSave(e) {
+    e?.preventDefault?.();
+    if (!editing.leadId) return setFormError("Pick which lead this IOI is for.");
+    setSaving(true);
+    setFormError(null);
+    try {
+      const body = { ...editing };
+      for (const k of ["generatedAt", "sentAt", "signedAt", "expiresAt"]) body[k] = body[k] || null;
+      body.value = body.value === "" ? null : body.value;
+      body.documentId = body.documentId || null;
+      if (editing.id) await ioiApi.update(editing.id, body);
+      else await ioiApi.save(body);
+      setEditing(null);
+      load();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function advance(record, step) {
+    setBusyId(record.id);
+    setNotice(null);
+    try {
+      await ioiApi.advance(record.id, step.action);
+      setNotice(`${step.label} recorded for ${record.lead?.company ?? "this lead"}.`);
+      load();
+    } catch (err) {
+      setNotice(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(record) {
+    const who = record.lead?.company ?? "this lead";
+    if (!window.confirm(`Delete the IOI record for ${who}? This cannot be undone.`)) return;
+    setBusyId(record.id);
+    try {
+      await ioiApi.remove(record.id);
+      load();
+    } catch (err) {
+      setNotice(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const cards = useMemo(
+    () => [
+      {
+        label: "IOIs generated",
+        value: String(metrics?.generated ?? 0),
+        note: metrics?.pending ? `${metrics.pending} still open` : "None open",
+        noteTone: "blue"
+      },
+      {
+        label: "IOIs signed",
+        value: String(metrics?.signed ?? 0),
+        note: has(metrics?.signRate) ? `${metrics.signRate}% of generated` : "None generated yet",
+        noteTone: "green"
+      },
+      {
+        label: "Avg IOI value",
+        value: fmtMoney(metrics?.avgValue),
+        note: metrics?.pricedCount ? `${metrics.pricedCount} priced` : "No values recorded",
+        noteTone: "amber"
+      },
+      {
+        label: "Total IOI value",
+        value: fmtMoney(metrics?.totalValue),
+        note: "Across priced IOIs",
+        noteTone: "blue"
+      },
+      {
+        label: "Declined",
+        value: String(metrics?.declined ?? 0),
+        note: "Not proceeding",
+        noteTone: "red"
+      }
+    ],
+    [metrics]
+  );
+
+  const funnelTop = funnel[0]?.count ?? 0;
+
+  return (
+    <div className="space-y-5">
+      <section>
+        <span className="inline-flex items-center gap-2 rounded-full bg-[#eef2ff] px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#3046b2]">
+          Relationships
+        </span>
+        <h1 className="mt-4 text-[2.6rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">IOI</h1>
+        <p className="mt-3 max-w-2xl text-[16px] leading-7 text-[#4f6181]">
+          Investment readiness — the non-binding ranges put to each counterparty, what they are worth, and where that
+          interest is concentrated.
+        </p>
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {cards.map((c) => (
+            <StatCard key={c.label} card={c} />
+          ))}
+        </div>
+      </section>
+
+      {/* Deal funnel: NDA -> Zoom -> Data room -> IOI -> Term sheet. */}
+      <Card className="px-5 py-5">
+        <SectionTitle
+          icon={CheckCircleIcon}
+          iconClass="text-[#3046b2]"
+          subtitle="Distinct leads reaching each stage, newest data. Percentages are conversion from the stage above."
+        >
+          Deal funnel
+        </SectionTitle>
+
+        {funnelTop ? (
+          <div className="mt-5 space-y-2">
+            {funnel.map((s, i) => {
+              // Width tracks share of the top stage, floored so a stage with
+              // a real count never renders as an invisible sliver.
+              const width = funnelTop ? Math.max(18, (s.count / funnelTop) * 100) : 0;
+              return (
+                <div key={s.key} className="flex items-center gap-3">
+                  <span className="w-28 shrink-0 text-right text-[13px] font-semibold text-[#334463]">{s.label}</span>
+                  <div className="flex-1">
+                    <div
+                      className="flex h-11 items-center justify-center rounded-[10px] bg-[#3046b2] text-[15px] font-semibold text-white"
+                      style={{ width: `${width}%`, marginLeft: `${(100 - width) / 2}%`, opacity: 1 - i * 0.13 }}
+                    >
+                      {s.count}
+                    </div>
+                  </div>
+                  <span className="w-32 shrink-0 text-[12px] text-[#5c6b87]">
+                    {has(s.conversionFromPrevious) ? `${s.conversionFromPrevious}% of above` : "Top of funnel"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
+            The funnel fills in as leads move through NDA, Zoom calls, the Data Room, IOIs and term sheets.
+          </p>
+        )}
+      </Card>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Distribution title="IOI by industry" rows={metrics?.byIndustry} empty="No IOIs recorded yet." />
+        <Distribution title="IOI by geography" rows={metrics?.byGeography} empty="No IOIs recorded yet." />
+      </div>
+
+      <Card className="px-5 py-5">
+        <SectionTitle
+          icon={CheckCircleIcon}
+          iconClass="text-[#3046b2]"
+          subtitle="One IOI per lead - saving the same lead again updates it rather than adding a duplicate."
+          action={
+            <ActionButton
+              label={editing ? "Cancel" : "Add IOI"}
+              icon={editing ? XIcon : PlusIcon}
+              small
+              onClick={() => (editing ? setEditing(null) : startNew())}
+            />
+          }
+        >
+          IOI records
+        </SectionTitle>
+
+        {editing ? (
+          <form onSubmit={handleSave} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className={labelClass}>Lead</label>
+                <select
+                  className={inputClass}
+                  value={editing.leadId}
+                  onChange={(e) => setEditing({ ...editing, leadId: e.target.value })}
+                  disabled={Boolean(editing.id)}
+                >
+                  <option value="">Select a lead…</option>
+                  {leads.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} — {l.company}
+                    </option>
+                  ))}
+                </select>
+                {leads.length === 0 ? (
+                  <p className="mt-1 text-[12px] text-[#c47f1a]">No leads yet - add one in CRM Workspace first.</p>
+                ) : null}
+              </div>
+
+              <div>
+                <label className={labelClass}>Status</label>
+                <select
+                  className={inputClass}
+                  value={editing.status}
+                  onChange={(e) => setEditing({ ...editing, status: e.target.value })}
+                >
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>IOI value</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    className={inputClass}
+                    value={editing.value}
+                    onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                    placeholder="2000000"
+                  />
+                  <select
+                    className={`${inputClass} w-28`}
+                    value={editing.valueCurrency}
+                    onChange={(e) => setEditing({ ...editing, valueCurrency: e.target.value })}
+                  >
+                    {["EUR", "USD", "GBP", "AED", "INR"].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="mt-1 text-[12px] text-[#8592ab]">
+                  A single figure so it can be averaged. For a range, put the midpoint here and the range in notes.
+                </p>
+              </div>
+
+              <div>
+                <label className={labelClass}>Owner</label>
+                <input
+                  className={inputClass}
+                  value={editing.owner}
+                  onChange={(e) => setEditing({ ...editing, owner: e.target.value })}
+                  placeholder="Who owns this on our side"
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Industry</label>
+                <input
+                  className={inputClass}
+                  value={editing.industry}
+                  onChange={(e) => setEditing({ ...editing, industry: e.target.value })}
+                  placeholder="Renewables, Logistics, Healthcare…"
+                  list="ioi-industries"
+                />
+                <datalist id="ioi-industries">
+                  {(metrics?.byIndustry ?? [])
+                    .filter((r) => r.label !== "Unspecified")
+                    .map((r) => (
+                      <option key={r.label} value={r.label} />
+                    ))}
+                </datalist>
+                <p className="mt-1 text-[12px] text-[#8592ab]">Drives the distribution - keep the spelling consistent.</p>
+              </div>
+
+              <div>
+                <label className={labelClass}>Geography</label>
+                <input
+                  className={inputClass}
+                  value={editing.geography}
+                  onChange={(e) => setEditing({ ...editing, geography: e.target.value })}
+                  placeholder="Benelux, DACH, MENA…"
+                  list="ioi-geographies"
+                />
+                <datalist id="ioi-geographies">
+                  {(metrics?.byGeography ?? [])
+                    .filter((r) => r.label !== "Unspecified")
+                    .map((r) => (
+                      <option key={r.label} value={r.label} />
+                    ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label className={labelClass}>Generated</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={editing.generatedAt}
+                  onChange={(e) => setEditing({ ...editing, generatedAt: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Sent</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={editing.sentAt}
+                  onChange={(e) => setEditing({ ...editing, sentAt: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Signed</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={editing.signedAt}
+                  onChange={(e) => setEditing({ ...editing, signedAt: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Expires</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={editing.expiresAt}
+                  onChange={(e) => setEditing({ ...editing, expiresAt: e.target.value })}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className={labelClass}>Counterparty signatory</label>
+                <input
+                  className={inputClass}
+                  value={editing.counterparty}
+                  onChange={(e) => setEditing({ ...editing, counterparty: e.target.value })}
+                  placeholder="Who signs on their side"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className={labelClass}>Attach the IOI document (optional)</label>
+                <select
+                  className={inputClass}
+                  value={editing.documentId}
+                  onChange={(e) => setEditing({ ...editing, documentId: e.target.value })}
+                >
+                  <option value="">None</option>
+                  {documents.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.originalName}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[12px] text-[#8592ab]">Pulled from the Data Room - upload it there first.</p>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className={labelClass}>Notes</label>
+                <textarea
+                  rows={3}
+                  className={`${inputClass} resize-y`}
+                  value={editing.notes}
+                  onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
+                  placeholder="The range as quoted, conditions, anything worth remembering"
+                />
+              </div>
+            </div>
+
+            {formError ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{formError}</p> : null}
+            <div className="mt-4">
+              <ActionButton label={saving ? "Saving…" : "Save"} primary small onClick={handleSave} disabled={saving} />
+            </div>
+          </form>
+        ) : null}
+
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <div className="relative min-w-[240px] flex-1">
+            <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#9aa6bd]" />
+            <input
+              className={`${inputClass} pl-10`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search lead, company, signatory or notes"
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {["All", ...STATUSES].map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setStatusFilter(s)}
+              className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${
+                statusFilter === s ? "bg-[#21439b] text-white" : "border border-[#d6deea] bg-white text-[#4f6181]"
+              }`}
+            >
+              {s === "All" ? "All" : STATUS_LABEL[s]}
+            </button>
+          ))}
+        </div>
+
+        {notice ? <p className="mt-4 text-[13px] font-medium text-[#21439b]">{notice}</p> : null}
+        {error ? <p className="mt-4 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
+
+        <div className="mt-4 space-y-3">
+          {loading ? <p className="text-[14px] text-[#5c6b87]">Loading…</p> : null}
+          {!loading && records.length === 0 ? (
+            <p className="rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
+              No IOI records yet. Log one once you have put a range to a counterparty.
+            </p>
+          ) : null}
+
+          {records.map((r) => (
+            <div key={r.id} className="rounded-[16px] border border-[#e7edf5] bg-white px-4 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[15px] font-semibold text-[#102246]">
+                    {r.lead ? `${r.lead.name} — ${r.lead.company}` : "Unlinked lead"}
+                  </p>
+                  <p className="mt-1 text-[13px] text-[#5c6b87]">
+                    {has(r.value) ? `${fmtMoney(r.value, r.valueCurrency)} · ` : ""}
+                    Generated {fmtDate(r.generatedAt)} · Sent {fmtDate(r.sentAt)} · Signed {fmtDate(r.signedAt)}
+                    {r.owner ? ` · Owner ${r.owner}` : ""}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {r.industry ? <Badge tone="blue">{r.industry}</Badge> : null}
+                    {r.geography ? <Badge tone="slate">{r.geography}</Badge> : null}
+                  </div>
+                  {r.document ? (
+                    <p className="mt-1 text-[12px] text-[#3046b2]">Attached: {r.document.originalName}</p>
+                  ) : null}
+                  {r.notes ? <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[#4f6181]">{r.notes}</p> : null}
+                </div>
+                <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {FLOW.map((step) => (
+                  <ActionButton
+                    key={step.action}
+                    small
+                    label={r[step.field] ? `${step.label} ✓` : step.label}
+                    active={Boolean(r[step.field])}
+                    disabled={busyId === r.id || Boolean(r[step.field])}
+                    onClick={() => advance(r, step)}
+                  />
+                ))}
+                <ActionButton small label="Edit" onClick={() => startEdit(r)} disabled={busyId === r.id} />
+                <ActionButton small label="Delete" onClick={() => remove(r)} disabled={busyId === r.id} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function Distribution({ title, rows, empty }) {
+  const max = (rows ?? []).reduce((m, r) => Math.max(m, r.count), 0);
+  return (
+    <Card className="px-5 py-5">
+      <SectionTitle icon={CheckCircleIcon} iconClass="text-[#3046b2]">
+        {title}
+      </SectionTitle>
+      {rows?.length ? (
+        <div className="mt-5 space-y-2">
+          {rows.map((r) => (
+            <div key={r.label} className="flex items-center gap-3">
+              <span className="w-36 shrink-0 truncate text-[13px] font-semibold text-[#334463]" title={r.label}>
+                {r.label}
+              </span>
+              <div className="h-6 flex-1 overflow-hidden rounded-[8px] bg-[#f1f4f9]">
+                <div
+                  // Blanks are shown in grey: they are a gap in the data, not
+                  // a category worth the same visual weight as a real one.
+                  className={`h-full rounded-[8px] ${r.label === "Unspecified" ? "bg-[#c0cade]" : "bg-[#3046b2]"}`}
+                  style={{ width: `${max ? (r.count / max) * 100 : 0}%` }}
+                />
+              </div>
+              <span className="w-20 shrink-0 text-right text-[12px] text-[#5c6b87]">
+                {r.count} · {r.share}%
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
+          {empty}
+        </p>
+      )}
+    </Card>
+  );
+}

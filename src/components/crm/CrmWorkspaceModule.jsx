@@ -36,12 +36,18 @@ const relatedIcons = {
   Cadences: SendIcon
 };
 
+const TEMPERATURE_OPTIONS = ["HOT", "WARM", "COLD"];
+
 export function CrmWorkspaceModule() {
   const [leads, setLeads] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [activeTab, setActiveTab] = useState("Overview");
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   useEffect(() => {
     leadsApi
@@ -75,6 +81,42 @@ export function CrmWorkspaceModule() {
   }
 
   const selectedLead = leads.find((l) => l.id === selectedId) ?? leads[0];
+
+  const startEdit = () => {
+    if (!selectedLead) return;
+    setSaveError(null);
+    setEditForm({
+      owner: selectedLead.owner ?? "",
+      status: selectedLead.status,
+      territory: selectedLead.territory ?? "",
+      leadSource: selectedLead.leadSource ?? "",
+      capitalAsk: selectedLead.capitalAsk ?? "",
+      industry: selectedLead.industry ?? "",
+      channelPartner: selectedLead.channelPartner ?? "",
+      teamLeader: selectedLead.teamLeader ?? "",
+      manager: selectedLead.manager ?? "",
+      temperature: selectedLead.temperature ?? "",
+      doe: selectedLead.doe ?? ""
+    });
+    setEditing(true);
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const updated = await leadsApi.patch(selectedLead.id, {
+        ...editForm,
+        doe: editForm.doe
+      });
+      setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+      setEditing(false);
+    } catch (err) {
+      setSaveError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
   const unassigned = leads.filter((l) => !l.owner).length;
   const convertedPct = leads.length ? ((leads.filter((l) => l.status === "CONVERTED").length / leads.length) * 100).toFixed(1) : "0.0";
   const qualifiedCount = leads.filter((l) => l.qualified).length;
@@ -105,8 +147,14 @@ export function CrmWorkspaceModule() {
         ["Lead Source", selectedLead.leadSource ?? "—"],
         ["Lead Status", STATUS_LABEL[selectedLead.status]],
         ["Capital Ask", selectedLead.capitalAsk],
-        ["Territory", selectedLead.territory ?? "—"],
+        ["Territory / Geography", selectedLead.territory ?? "—"],
         ["Engagement Stage", selectedLead.engagementStage ?? "—"],
+        ["Industry", selectedLead.industry ?? "—"],
+        ["Channel Partner", selectedLead.channelPartner ?? "—"],
+        ["Hot / Warm / Cold", selectedLead.temperature ?? "Not rated"],
+        ["Team Leader", selectedLead.teamLeader ?? "—"],
+        ["Manager", selectedLead.manager ?? "—"],
+        ["DOE (Deal Originator Executive)", selectedLead.doe ?? "—"],
         ["Consent (GDPR)", selectedLead.consentGdpr ?? "—"]
       ]
     : [];
@@ -204,7 +252,7 @@ export function CrmWorkspaceModule() {
                   <ActionButton label="WhatsApp" icon={SendIcon} />
                   <ActionButton label="Call" icon={PhoneIcon} />
                   <ActionButton label="Convert" icon={UserCheckIcon} />
-                  <ActionButton label="Edit" icon={PencilIcon} />
+                  <ActionButton label={editing ? "Editing…" : "Edit"} icon={PencilIcon} onClick={startEdit} disabled={editing} />
                   <ActionButton label="Tags" icon={TagIcon} />
                 </div>
               </div>
@@ -226,7 +274,62 @@ export function CrmWorkspaceModule() {
                 ))}
               </div>
 
-              {activeTab === "Overview" ? (
+              {activeTab === "Overview" && editing ? (
+                <div className="mt-6">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.2em] text-[#53627d]">Edit lead</p>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <EditField label="Owner" value={editForm.owner} onChange={(v) => setEditForm({ ...editForm, owner: v })} />
+                    <div>
+                      <label className="mb-1.5 block text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Status</label>
+                      <select
+                        className="w-full rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+                        value={editForm.status}
+                        onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                      >
+                        {Object.keys(STATUS_LABEL).map((s) => (
+                          <option key={s} value={s}>
+                            {STATUS_LABEL[s]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <EditField label="Capital Ask" value={editForm.capitalAsk} onChange={(v) => setEditForm({ ...editForm, capitalAsk: v })} placeholder="EUR 3M" />
+                    <EditField label="Territory / Geography" value={editForm.territory} onChange={(v) => setEditForm({ ...editForm, territory: v })} />
+                    <EditField label="Lead Source" value={editForm.leadSource} onChange={(v) => setEditForm({ ...editForm, leadSource: v })} />
+                    <EditField label="Industry" value={editForm.industry} onChange={(v) => setEditForm({ ...editForm, industry: v })} />
+                    <EditField label="Channel Partner" value={editForm.channelPartner} onChange={(v) => setEditForm({ ...editForm, channelPartner: v })} />
+                    <EditField label="Team Leader" value={editForm.teamLeader} onChange={(v) => setEditForm({ ...editForm, teamLeader: v })} />
+                    <EditField label="Manager" value={editForm.manager} onChange={(v) => setEditForm({ ...editForm, manager: v })} />
+                    <div>
+                      <label className="mb-1.5 block text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Hot / Warm / Cold</label>
+                      <select
+                        className="w-full rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+                        value={editForm.temperature}
+                        onChange={(e) => setEditForm({ ...editForm, temperature: e.target.value })}
+                      >
+                        <option value="">Not rated</option>
+                        {TEMPERATURE_OPTIONS.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <EditField
+                      label="DOE (Deal Originator Executive)"
+                      value={editForm.doe}
+                      onChange={(v) => setEditForm({ ...editForm, doe: v })}
+                      placeholder="Who first engaged this prospect"
+                    />
+                  </div>
+
+                  {saveError ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{saveError}</p> : null}
+                  <div className="mt-4 flex gap-2">
+                    <ActionButton label={saving ? "Saving…" : "Save"} primary small onClick={saveEdit} disabled={saving} />
+                    <ActionButton label="Cancel" small onClick={() => setEditing(false)} disabled={saving} />
+                  </div>
+                </div>
+              ) : activeTab === "Overview" ? (
                 <div className="mt-6">
                   <p className="text-[12px] font-semibold uppercase tracking-[0.2em] text-[#53627d]">Lead Information</p>
                   <div className="mt-4 grid gap-x-6 gap-y-0 md:grid-cols-2">
@@ -271,6 +374,20 @@ export function CrmWorkspaceModule() {
           </div>
         </Card>
       </section>
+    </div>
+  );
+}
+
+function EditField({ label, value, onChange, placeholder }) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">{label}</label>
+      <input
+        className="w-full rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
     </div>
   );
 }
