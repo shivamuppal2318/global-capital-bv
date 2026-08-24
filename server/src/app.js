@@ -26,6 +26,7 @@ import { visitPlansRouter } from "./routes/visitPlans.js";
 import { ioiRecordsRouter } from "./routes/ioiRecords.js";
 import { executiveDashboardRouter } from "./routes/executiveDashboard.js";
 import { universalFiltersRouter } from "./routes/universalFilters.js";
+import { outreachDoeRouter } from "./routes/outreachDoe.js";
 // Email cold-outreach domain (merged from the `crm` branch) — kept as
 // separate routers/mount paths from the WhatsApp domain above, matching the
 // separate Email*-prefixed Prisma models (see schema.prisma).
@@ -131,6 +132,7 @@ app.use("/api/meetings", requireModule("meetings"), meetingsRouter);
 // signing, tracking) — those are hit directly by external senders/leads,
 // never through the logged-in app UI.
 const outreach = requireModule("cold-bulk-mailing", "leads");
+app.use("/api/outreach-doe", outreach, outreachDoeRouter);
 app.use("/api/email/campaigns", outreach, emailCampaignsRouter);
 app.use(
   "/api/email/leads",

@@ -37,6 +37,7 @@ import { VisitPlanningModule } from "./components/relationships/VisitPlanningMod
 import { IoiModule } from "./components/relationships/IoiModule";
 import { ExecutiveDashboardModule } from "./components/executive/ExecutiveDashboardModule";
 import { UniversalFiltersModule } from "./components/universalFilters/UniversalFiltersModule";
+import { OutreachDoeModule } from "./components/outreachDoe/OutreachDoeModule";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./components/auth/LoginPage";
 import {
@@ -171,8 +172,10 @@ function AppShell() {
               <CrmWorkspaceModule />
             ) : activePage === "meetings" ? (
               <MeetingsModule />
-            ) : activePage === "cold-bulk-mailing" || activePage === "leads" ? (
-              <EmailOutreachModule initialTab={activePage === "leads" ? "leads" : "dashboard"} />
+            ) : activePage === "cold-bulk-mailing" ? (
+              <EmailOutreachModule initialTab="dashboard" />
+            ) : activePage === "leads" ? (
+              <OutreachDoeModule />
             ) : activePage === "market-intelligence" ? (
               <MarketIntelligenceModule />
             ) : activePage === "data-room" ? (

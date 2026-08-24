@@ -37,7 +37,6 @@ const relatedIcons = {
 };
 
 const TEMPERATURE_OPTIONS = ["HOT", "WARM", "COLD"];
-const asDateInput = (v) => (v ? new Date(v).toISOString().slice(0, 10) : "");
 
 export function CrmWorkspaceModule() {
   const [leads, setLeads] = useState([]);
@@ -97,7 +96,7 @@ export function CrmWorkspaceModule() {
       teamLeader: selectedLead.teamLeader ?? "",
       manager: selectedLead.manager ?? "",
       temperature: selectedLead.temperature ?? "",
-      doe: asDateInput(selectedLead.doe)
+      doe: selectedLead.doe ?? ""
     });
     setEditing(true);
   };
@@ -108,7 +107,7 @@ export function CrmWorkspaceModule() {
     try {
       const updated = await leadsApi.patch(selectedLead.id, {
         ...editForm,
-        doe: editForm.doe || null
+        doe: editForm.doe
       });
       setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
       setEditing(false);
@@ -145,7 +144,7 @@ export function CrmWorkspaceModule() {
         ["Hot / Warm / Cold", selectedLead.temperature ?? "Not rated"],
         ["Team Leader", selectedLead.teamLeader ?? "—"],
         ["Manager", selectedLead.manager ?? "—"],
-        ["DOE (Date of Engagement)", selectedLead.doe ? new Date(selectedLead.doe).toLocaleDateString() : "—"],
+        ["DOE (Deal Originator Executive)", selectedLead.doe ?? "—"],
         ["Consent (GDPR)", selectedLead.consentGdpr ?? "—"]
       ]
     : [];
@@ -287,15 +286,12 @@ export function CrmWorkspaceModule() {
                         ))}
                       </select>
                     </div>
-                    <div>
-                      <label className="mb-1.5 block text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">DOE (Date of Engagement)</label>
-                      <input
-                        type="date"
-                        className="w-full rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
-                        value={editForm.doe}
-                        onChange={(e) => setEditForm({ ...editForm, doe: e.target.value })}
-                      />
-                    </div>
+                    <EditField
+                      label="DOE (Deal Originator Executive)"
+                      value={editForm.doe}
+                      onChange={(v) => setEditForm({ ...editForm, doe: v })}
+                      placeholder="Who first engaged this prospect"
+                    />
                   </div>
 
                   {saveError ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{saveError}</p> : null}

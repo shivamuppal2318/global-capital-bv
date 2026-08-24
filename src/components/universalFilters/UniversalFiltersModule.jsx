@@ -9,6 +9,7 @@ import {
   SearchIcon,
   SlidersIcon,
   TagIcon,
+  UserCheckIcon,
   UsersIcon,
   WorkflowIcon,
   XIcon
@@ -74,8 +75,7 @@ const asOptions = (list) => list.map((v) => ({ key: v, label: v }));
 const EMPTY_FILTERS = {
   q: "",
   channelPartner: "",
-  doeFrom: "",
-  doeTo: "",
+  doe: "",
   timeFrom: "",
   timeTo: "",
   lifecyclePhase: "",
@@ -158,6 +158,7 @@ export function UniversalFiltersModule() {
   const activeCount = Object.values(filters).filter(Boolean).length;
   const reset = () => setFilters(EMPTY_FILTERS);
 
+  const doeOptions = useMemo(() => asOptions(facets?.does ?? []), [facets]);
   const channelPartnerOptions = useMemo(() => asOptions(facets?.channelPartners ?? []), [facets]);
   const industryOptions = useMemo(() => asOptions(facets?.industries ?? []), [facets]);
   const geographyOptions = useMemo(() => asOptions(facets?.geographies ?? []), [facets]);
@@ -195,11 +196,8 @@ export function UniversalFiltersModule() {
         </SectionTitle>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <FilterCard icon={CalendarIcon} label="DOE">
-            <div className="grid grid-cols-2 gap-2">
-              <input type="date" className={inputClass} value={filters.doeFrom} onChange={(e) => set("doeFrom")(e.target.value)} />
-              <input type="date" className={inputClass} value={filters.doeTo} onChange={(e) => set("doeTo")(e.target.value)} />
-            </div>
+          <FilterCard icon={UserCheckIcon} label="DOE (Deal Originator Executive)">
+            <Select label="" value={filters.doe} onChange={set("doe")} options={doeOptions} />
           </FilterCard>
 
           <FilterCard icon={UsersIcon} label="Client">

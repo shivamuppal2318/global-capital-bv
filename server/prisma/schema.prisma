@@ -407,7 +407,10 @@ model Lead {
   // avatar colour and has never meant anything about lead quality.
   teamLeader String? // Team Leader filter
   manager    String? // Manager filter
-  doe        DateTime? // Date of Engagement filter
+  // Deal Originator Executive — the rep who first engaged this prospect.
+  // Free text, deliberately separate from `owner` (who currently holds the
+  // account, which can change hands after the deal originates).
+  doe String?
 
   meetings   Meeting[]
   dealStages DealStageRecord[]

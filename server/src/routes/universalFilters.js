@@ -15,12 +15,13 @@ export const universalFiltersRouter = Router();
 // hardcodes an option list that drifts from what leads actually have.
 universalFiltersRouter.get("/facets", asyncHandler(async (_req, res) => {
   const leads = await prisma.lead.findMany({
-    select: { channelPartner: true, industry: true, territory: true, teamLeader: true, manager: true, leadSource: true }
+    select: { doe: true, channelPartner: true, industry: true, territory: true, teamLeader: true, manager: true, leadSource: true }
   });
 
   const distinct = (field) => [...new Set(leads.map((l) => l[field]).filter(Boolean))].sort();
 
   res.json({
+    does: distinct("doe"),
     channelPartners: distinct("channelPartner"),
     industries: distinct("industry"),
     geographies: distinct("territory"),

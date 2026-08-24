@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Lead" ALTER COLUMN "doe" SET DATA TYPE TEXT;

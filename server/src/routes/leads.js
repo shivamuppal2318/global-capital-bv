@@ -25,7 +25,7 @@ router.get("/:id", async (req, res, next) => {
 // Text fields that clear to null on an empty string rather than storing "" —
 // the Universal Filters screen treats an empty value as "not set", not as a
 // distinct value to filter on.
-const TEXT_FIELDS = ["owner", "territory", "leadSource", "industry", "channelPartner", "teamLeader", "manager", "capitalAsk"];
+const TEXT_FIELDS = ["owner", "territory", "leadSource", "industry", "channelPartner", "teamLeader", "manager", "doe", "capitalAsk"];
 
 router.patch("/:id", async (req, res, next) => {
   try {
@@ -36,7 +36,6 @@ router.patch("/:id", async (req, res, next) => {
     if (req.body.status !== undefined) data.status = req.body.status;
     if (req.body.qualified !== undefined) data.qualified = req.body.qualified;
     if (req.body.temperature !== undefined) data.temperature = req.body.temperature || null;
-    if (req.body.doe !== undefined) data.doe = req.body.doe ? new Date(req.body.doe) : null;
     for (const field of TEXT_FIELDS) {
       if (req.body[field] !== undefined) data[field] = req.body[field]?.toString().trim() || null;
     }

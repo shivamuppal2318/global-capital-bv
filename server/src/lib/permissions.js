@@ -6,7 +6,7 @@ export const MODULES = [
   { id: "command-center", label: "Executive Dashboard", group: "Intelligence" },
   { id: "universal-filters", label: "Universal Filters", group: "Intelligence" },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence" },
-  { id: "leads", label: "Leads", group: "Intelligence" },
+  { id: "leads", label: "Outreach / DOE", group: "Intelligence" },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },
   { id: "cold-bulk-mailing", label: "MailX", group: "CRM & Outreach" },
   { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach" },

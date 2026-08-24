@@ -102,7 +102,7 @@ const baseRow = {
   lifecyclePhase: "nda",
   ticketSizeBand: "1m_5m",
   dueWindow: "due_7d",
-  doe: new Date("2026-01-01"),
+  doe: "Rahul R",
   createdAt: new Date("2026-01-01")
 };
 
@@ -121,9 +121,14 @@ test("matchesFilters: text search matches name or company, case-insensitively", 
   assert.equal(matchesFilters(baseRow, { q: "unrelated" }), false);
 });
 
-test("matchesFilters: a lead with no DOE fails a DOE range filter rather than passing by default", () => {
+test("matchesFilters: DOE filters by exact rep name", () => {
+  assert.equal(matchesFilters(baseRow, { doe: "Rahul R" }), true);
+  assert.equal(matchesFilters(baseRow, { doe: "Meera S" }), false);
+});
+
+test("matchesFilters: a lead with no DOE set fails a DOE filter rather than passing by default", () => {
   const noDoe = { ...baseRow, doe: null };
-  assert.equal(matchesFilters(noDoe, { doeFrom: "2026-01-01" }), false);
+  assert.equal(matchesFilters(noDoe, { doe: "Rahul R" }), false);
 });
 
 test("matchesFilters: time window filters on createdAt inclusively", () => {

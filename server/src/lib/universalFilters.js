@@ -116,8 +116,7 @@ export function matchesFilters(row, filters = {}) {
   if (f.ticketSizeBand && row.ticketSizeBand !== f.ticketSizeBand) return false;
   if (f.dueWindow && row.dueWindow !== f.dueWindow) return false;
 
-  if (f.doeFrom && (!row.doe || row.doe < new Date(f.doeFrom))) return false;
-  if (f.doeTo && (!row.doe || row.doe > new Date(f.doeTo))) return false;
+  if (f.doe && row.doe !== f.doe) return false;
   if (f.timeFrom && row.createdAt < new Date(f.timeFrom)) return false;
   if (f.timeTo && row.createdAt > new Date(f.timeTo)) return false;
 
