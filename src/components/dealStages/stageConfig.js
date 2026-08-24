@@ -55,11 +55,10 @@ export const STAGE_CONFIG = {
 
 // Which sidebar id opens which stage. Zoom Call and Data Room deliberately
 // aren't here — they keep their existing purpose-built screens.
-// NDA and Visit Planning are deliberately absent: they have their own
+// NDA, IOI and Visit Planning are deliberately absent: they have their own
 // tables and their own screens (src/components/relationships/). Leaving them
 // here would route them back to the generic stage view.
 export const MODULE_TO_STAGE = {
-  ioi: "IOI",
   "field-visit": "FIELD_VISIT",
   "term-sheet": "TERM_SHEET"
 };

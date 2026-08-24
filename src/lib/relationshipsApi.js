@@ -37,6 +37,19 @@ export const visitPlansApi = {
   remove: (id) => apiFetch(`${visitBase}/${id}`, { method: "DELETE" })
 };
 
+const ioiBase = `${API_ROOT}/api/ioi-records`;
+
+export const ioiApi = {
+  list: (filters) => apiFetch(`${ioiBase}${qs(filters)}`),
+  metrics: () => apiFetch(`${ioiBase}/metrics`),
+  // NDA -> Zoom -> Data room -> IOI -> Term sheet, counted across modules.
+  funnel: () => apiFetch(`${ioiBase}/funnel`),
+  save: (body) => apiFetch(ioiBase, { method: "POST", body }),
+  advance: (id, action) => apiFetch(`${ioiBase}/${id}/${action}`, { method: "POST" }),
+  update: (id, body) => apiFetch(`${ioiBase}/${id}`, { method: "PATCH", body }),
+  remove: (id) => apiFetch(`${ioiBase}/${id}`, { method: "DELETE" })
+};
+
 const meetingsBase = `${API_ROOT}/api/meetings`;
 
 export const callsApi = {

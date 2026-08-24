@@ -34,6 +34,12 @@ export const AI_DATA_SOURCES = [
     description: "NDA status per lead \u2014 sent, reminded, signed, declined or expired, with dates, signer and owner."
   },
   {
+    id: "ioi",
+    label: "Indications of interest",
+    description:
+      "IOIs per lead \u2014 status, value, industry, geography, and the dates each was generated, sent and signed."
+  },
+  {
     id: "visits",
     label: "Site visits",
     description:

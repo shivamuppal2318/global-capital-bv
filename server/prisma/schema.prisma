@@ -256,6 +256,7 @@ model Document {
   dealStages   DealStageRecord[]
   ndaDocuments NdaRecord[] @relation("NdaDocument")
   visitReports VisitPlan[] @relation("VisitReport")
+  ioiDocuments IoiRecord[] @relation("IoiDocument")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -397,6 +398,7 @@ model Lead {
   dealStages       DealStageRecord[]
   ndaRecord        NdaRecord?
   visitPlans       VisitPlan[]
+  ioiRecord        IoiRecord?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
@@ -1035,4 +1037,57 @@ model MarketSignal {
 
   @@index([status])
   @@index([entityName])
+}
+
+// Indications of interest. Like the NDA, this outgrew DealStageRecord: the
+// spec wants an average IOI value in euros and distributions by industry
+// and geography, none of which the shared table can express (its `amount`
+// is free text, and it carries no industry or geography at all).
+model IoiRecord {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String @unique
+
+  status IoiStatus @default(DRAFT)
+
+  generatedAt DateTime?
+  sentAt      DateTime?
+  signedAt    DateTime?
+  expiresAt   DateTime?
+
+  // Numeric, deliberately unlike DealStageRecord.amount which is free text.
+  // "EUR 2-4M" cannot be averaged, and the spec asks for an average value.
+  // Where a range is genuinely all that is known, record the midpoint here
+  // and put the range itself in notes.
+  value         Float?
+  valueCurrency String @default("EUR")
+
+  // The spec asks for IOI-by-industry and IOI-by-geography distributions.
+  // Lead carries neither (it has `territory`, which is a sales region, not
+  // the counterparty's geography), so both live here.
+  industry  String?
+  geography String?
+
+  counterparty String?
+  owner        String?
+  notes        String?
+
+  document   Document? @relation("IoiDocument", fields: [documentId], references: [id], onDelete: SetNull)
+  documentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([industry])
+  @@index([geography])
+}
+
+enum IoiStatus {
+  DRAFT
+  GENERATED
+  SENT
+  SIGNED
+  DECLINED
+  EXPIRED
 }

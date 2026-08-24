@@ -1,6 +1,6 @@
 import { prisma } from "../db.js";
 import { isSourceEnabled } from "./aiDataSources.js";
-import { ndaMetrics, callMetrics, visitMetrics } from "./relationshipMetrics.js";
+import { ndaMetrics, callMetrics, visitMetrics, ioiMetrics } from "./relationshipMetrics.js";
 
 const LEAD_STATUS_LABEL = {
   NEW: "New",
@@ -47,7 +47,8 @@ export async function buildBusinessContext(enabledSources = null) {
     marketSignals,
     dealStages,
     ndaRecords,
-    visitPlans
+    visitPlans,
+    ioiRecords
   ] = await Promise.all([
     on("leads") ? prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: MAX_ROWS }) : [],
     on("whatsapp") ? prisma.contact.findMany({ take: MAX_ROWS }) : [],
@@ -98,6 +99,13 @@ export async function buildBusinessContext(enabledSources = null) {
       ? prisma.visitPlan.findMany({
           include: { lead: { select: { name: true, company: true } } },
           orderBy: { plannedFor: "desc" },
+          take: MAX_ROWS
+        })
+      : [],
+    on("ioi")
+      ? prisma.ioiRecord.findMany({
+          include: { lead: { select: { name: true, company: true } } },
+          orderBy: { updatedAt: "desc" },
           take: MAX_ROWS
         })
       : []
@@ -180,6 +188,27 @@ export async function buildBusinessContext(enabledSources = null) {
         signedAt: r.signedAt,
         expiresAt: r.expiresAt,
         signerName: r.signerName,
+        owner: r.owner,
+        notes: r.notes
+      }))
+    };
+  }
+
+  if (on("ioi")) {
+    context.iois = {
+      total: ioiRecords.length,
+      kpis: ioiMetrics(ioiRecords),
+      records: ioiRecords.map((r) => ({
+        lead: r.lead ? `${r.lead.name} (${r.lead.company})` : null,
+        status: r.status,
+        generatedAt: r.generatedAt,
+        sentAt: r.sentAt,
+        signedAt: r.signedAt,
+        expiresAt: r.expiresAt,
+        value: r.value === null ? null : `${r.valueCurrency} ${r.value}`,
+        industry: r.industry,
+        geography: r.geography,
+        counterparty: r.counterparty,
         owner: r.owner,
         notes: r.notes
       }))
