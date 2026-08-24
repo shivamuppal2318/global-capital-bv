@@ -10,5 +10,8 @@ function request(path, options = {}) {
 export const leadsApi = {
   list: () => request(""),
   get: (id) => request(`/${id}`),
-  patch: (id, body) => request(`/${id}`, { method: "PATCH", body })
+  patch: (id, body) => request(`/${id}`, { method: "PATCH", body }),
+  // This one lead's real progress across the full deal lifecycle — see
+  // server/src/lib/leadPipeline.js.
+  pipeline: (id) => request(`/${id}/pipeline`)
 };

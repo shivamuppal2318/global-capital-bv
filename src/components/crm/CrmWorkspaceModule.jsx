@@ -9,6 +9,7 @@ import {
   PencilIcon,
   PhoneIcon,
   PlusIcon,
+  RadarIcon,
   SendIcon,
   TagIcon,
   UploadIcon,
@@ -38,6 +39,17 @@ const relatedIcons = {
 
 const TEMPERATURE_OPTIONS = ["HOT", "WARM", "COLD"];
 
+// Per-lead "Deal Journey" tracker styling — deliberately distinct from the
+// pipeline-by-stage bar chart above and from Executive Dashboard's
+// company-wide Funnel Health chart: this is one lead's real stage-by-stage
+// status, sourced from server/src/lib/leadPipeline.js.
+const PIPELINE_STATUS_STYLE = {
+  done: { dot: "bg-[#2a9c60] text-white", line: "bg-[#2a9c60]", label: "text-[#2a9c60]" },
+  in_progress: { dot: "bg-[#f29b3a] text-white", line: "bg-[#e7edf5]", label: "text-[#f29b3a]" },
+  blocked: { dot: "bg-[#e0483f] text-white", line: "bg-[#e7edf5]", label: "text-[#e0483f]" },
+  not_started: { dot: "border-2 border-[#d6deea] bg-white text-[#aab4c6]", line: "bg-[#e7edf5]", label: "text-[#8592ab]" }
+};
+
 export function CrmWorkspaceModule() {
   const [leads, setLeads] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -48,6 +60,8 @@ export function CrmWorkspaceModule() {
   const [editForm, setEditForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [pipeline, setPipeline] = useState(null);
+  const [pipelineLoading, setPipelineLoading] = useState(false);
 
   useEffect(() => {
     leadsApi
@@ -59,6 +73,19 @@ export function CrmWorkspaceModule() {
       .catch((err) => setLoadError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setPipeline(null);
+      return;
+    }
+    setPipelineLoading(true);
+    leadsApi
+      .pipeline(selectedId)
+      .then(setPipeline)
+      .catch(() => setPipeline(null))
+      .finally(() => setPipelineLoading(false));
+  }, [selectedId]);
 
   if (loading) {
     return (
@@ -232,16 +259,16 @@ export function CrmWorkspaceModule() {
         </Card>
 
         {selectedLead ? (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <Card className="px-5 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className={`grid size-12 place-items-center rounded-full text-[15px] font-semibold ${avatarToneClass[selectedLead.tone]}`}>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-4">
+                  <div className={`grid size-12 shrink-0 place-items-center rounded-full text-[15px] font-semibold ${avatarToneClass[selectedLead.tone]}`}>
                     {selectedLead.initials}
                   </div>
-                  <div>
-                    <p className="text-[18px] font-semibold text-[#102246]">{selectedLead.name}</p>
-                    <p className="mt-1 text-[14px] text-[#5f6f89]">
+                  <div className="min-w-0">
+                    <p className="truncate text-[18px] font-semibold text-[#102246]">{selectedLead.name}</p>
+                    <p className="mt-1 truncate text-[14px] text-[#5f6f89]">
                       {selectedLead.company} · Owner {selectedLead.owner ?? "Unassigned"}
                     </p>
                   </div>
@@ -255,6 +282,40 @@ export function CrmWorkspaceModule() {
                   <ActionButton label={editing ? "Editing…" : "Edit"} icon={PencilIcon} onClick={startEdit} disabled={editing} />
                   <ActionButton label="Tags" icon={TagIcon} />
                 </div>
+              </div>
+            </Card>
+
+            <Card className="px-5 py-5">
+              <SectionTitle icon={RadarIcon} iconClass="text-[#2f96da]">
+                Deal Journey
+              </SectionTitle>
+              <p className="mt-1 text-[13px] text-[#8592ab]">
+                Where this lead stands right now, stage by stage — not the company-wide funnel above.
+              </p>
+              <div className="mt-6 min-w-0">
+                {pipelineLoading ? (
+                  <p className="text-[14px] text-[#8592ab]">Loading…</p>
+                ) : pipeline ? (
+                  <div className="flex w-full min-w-0 items-start overflow-x-auto pb-2">
+                    {pipeline.map((stage, idx) => {
+                      const style = PIPELINE_STATUS_STYLE[stage.status];
+                      return (
+                        <div key={stage.id} className="flex flex-1 items-start last:flex-none">
+                          <div className="flex min-w-[112px] flex-col items-center text-center">
+                            <div className={`grid size-9 shrink-0 place-items-center rounded-full text-[13px] font-bold ${style.dot}`}>
+                              {stage.status === "done" ? "✓" : stage.status === "blocked" ? "✕" : idx + 1}
+                            </div>
+                            <p className={`mt-2 text-[13px] font-semibold ${style.label}`}>{stage.label}</p>
+                            <p className="mt-1 text-[12px] leading-4 text-[#8592ab]">{stage.detail}</p>
+                          </div>
+                          {idx < pipeline.length - 1 ? <div className={`mt-[18px] h-[3px] flex-1 ${style.line}`} /> : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[14px] text-[#8592ab]">No pipeline data available for this lead.</p>
+                )}
               </div>
             </Card>
 
