@@ -68,9 +68,19 @@ app.use("/api/auth", authRouter);
 // real pass instead of piecemeal.
 const PUBLIC_PREFIXES = ["/api/webhooks", "/api/unsubscribe", "/api/nda", "/api/track"];
 const INBOUND_WEBHOOK_PATHS = ["/api/leads/inbound", "/api/email/leads/inbound"];
+// Matches the prefix itself or the prefix followed by "/" — a plain
+// startsWith would also match "/api/nda-records" against "/api/nda" (no
+// separator boundary), silently skipping requireAuth for it. That's not
+// hypothetical: it's exactly what happened here, and it meant req.user was
+// never populated for any /api/nda-records request, which requireModule
+// downstream then rejected with a 403 for every user including admins —
+// looked like a permissions bug, was actually skipped auth.
+function matchesPublicPrefix(path, prefix) {
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
 app.use((req, res, next) => {
   if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
-  if (PUBLIC_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
+  if (PUBLIC_PREFIXES.some((prefix) => matchesPublicPrefix(req.path, prefix))) return next();
   return requireAuth(req, res, next);
 });
 
