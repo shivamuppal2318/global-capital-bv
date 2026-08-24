@@ -21,7 +21,6 @@ import zoomRouter from "./routes/zoom.js";
 import meetingsRouter from "./routes/meetings.js";
 import { documentsRouter } from "./routes/documents.js";
 import { dealStagesRouter } from "./routes/dealStages.js";
-import { doePerformanceRouter } from "./routes/doePerformance.js";
 import { ageingReportRouter } from "./routes/ageingReport.js";
 import { ndaRecordsRouter } from "./routes/ndaRecords.js";
 import { visitPlansRouter } from "./routes/visitPlans.js";
@@ -116,10 +115,10 @@ app.use(
   requireModule("nda", "meetings", "data-room", "ioi", "visit-planning", "field-visit", "term-sheet"),
   dealStagesRouter
 );
-// Cross-cutting reports over the same deal-stage/outreach data — each
-// gated on its own module id since a report can be granted independently
-// of the stage screens it reports on.
-app.use("/api/doe-performance", requireModule("doe-performance"), doePerformanceRouter);
+// A cross-cutting report over the same deal-stage data — gated on its own
+// module id since it can be granted independently of the stage screens it
+// reports on. Per-DOE activity itself lives in outreachDoeRouter below, not
+// duplicated here.
 app.use("/api/ageing-report", requireModule("ageing-report"), ageingReportRouter);
 // NDA tracking and visit planning outgrew the shared deal-stage table, so
 // they have dedicated routers. Note this is not "/api/nda" — that path is
