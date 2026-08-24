@@ -3,7 +3,7 @@
 // Panel checkbox list, the nav filtering, and the API guards below can't
 // drift apart.
 export const MODULES = [
-  { id: "command-center", label: "Command Center", group: "Intelligence" },
+  { id: "command-center", label: "Executive Dashboard", group: "Intelligence" },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence" },
   { id: "leads", label: "Leads", group: "Intelligence" },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },

@@ -10,7 +10,7 @@ export const navSections = [
   {
     title: "Intelligence",
     items: [
-      { id: "command-center", label: "Command Center", icon: "grid" },
+      { id: "command-center", label: "Executive Dashboard", icon: "grid" },
       { id: "market-intelligence", label: "Market Intelligence", icon: "radar", badge: "AI" },
       { id: "leads", label: "Leads", icon: "users" }
     ]
@@ -52,32 +52,6 @@ export const topBarMeta = {
   location: "Amsterdam",
   cycle: "FY26",
   initials: "GC"
-};
-
-export const commandCenterData = {
-  badge: "AI-POWERED FUNDING & INVESTMENT OS",
-  title: "Command Center",
-  description:
-    "From opportunity discovery to funding and portfolio monitoring — the system manages the process so the team can manage the deal.",
-  stats: [
-    { label: "Pipeline Value", value: "€2.35B", note: "+8.4% QoQ", noteTone: "blue" },
-    { label: "Live Opportunities", value: "250", note: "24 in diligence", noteTone: "cyan" },
-    { label: "Capital Deployed", value: "€412M", note: "34 companies", noteTone: "green" },
-    { label: "Portfolio MOIC", value: "2.1x", note: "+0.2x YoY", noteTone: "amber" }
-  ],
-  stages: [
-    { stage: "Discovery", count: "148", value: "€980M", width: "100%", tone: "cyan" },
-    { stage: "Qualification", count: "62", value: "€610M", width: "42%", tone: "violet" },
-    { stage: "Due Diligence", count: "24", value: "€410M", width: "16%", tone: "amber" },
-    { stage: "Term Sheet", count: "11", value: "€230M", width: "8%", tone: "teal" },
-    { stage: "Funding", count: "5", value: "€118M", width: "8%", tone: "green" }
-  ],
-  priorities: [
-    { title: "Investment Committee pack — Helios Grid", due: "Due today", tone: "pink" },
-    { title: "Site visit report — Meridian Logistics", due: "Due in 2 days", tone: "amber" },
-    { title: "Valuation refresh — Kestrel Bio", due: "Due in 4 days", tone: "blue" },
-    { title: "Quarterly covenant review — 6 companies", due: "Due in 6 days", tone: "teal" }
-  ]
 };
 
 export const coldBulkMailingData = {

@@ -18,7 +18,7 @@ import {
   UserCheckIcon,
   UsersIcon
 } from "./components/Icons";
-import { ActionButton, noteToneClass, StatCard } from "./components/ui";
+import { ActionButton, StatCard } from "./components/ui";
 import { WhatsappBusinessModule } from "./components/whatsapp/WhatsappBusinessModule";
 import { AiChatPanel } from "./components/ai/AiChatPanel";
 import { CrmWorkspaceModule } from "./components/crm/CrmWorkspaceModule";
@@ -34,11 +34,11 @@ import { MODULE_TO_STAGE } from "./components/dealStages/stageConfig";
 import { NdaModule } from "./components/relationships/NdaModule";
 import { VisitPlanningModule } from "./components/relationships/VisitPlanningModule";
 import { IoiModule } from "./components/relationships/IoiModule";
+import { ExecutiveDashboardModule } from "./components/executive/ExecutiveDashboardModule";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./components/auth/LoginPage";
 import {
   coldBulkMailingData,
-  commandCenterData,
   navSections,
   templatesCadencesData,
   topBarMeta
@@ -66,14 +66,6 @@ const iconMap = {
   userCheck: UserCheckIcon
 };
 
-const barToneClass = {
-  cyan: "bg-[#1b97d2]",
-  violet: "bg-[#8b52d0]",
-  amber: "bg-[#ff9f35]",
-  teal: "bg-[#1da5a0]",
-  green: "bg-[#2ba84a]"
-};
-
 const pageAccentClass = {
   "command-center": "bg-[#5b6fcf] text-white",
   "cold-bulk-mailing": "bg-[#ffe2ea] text-[#ff4b7d]",
@@ -95,10 +87,6 @@ const channelToneClass = {
 };
 
 const pageActions = {
-  "command-center": [
-    { label: "Open pipeline", icon: null, primary: true, external: true },
-    { label: "Ask the assistant", icon: PlusIcon, primary: false }
-  ],
   "cold-bulk-mailing": [
     { label: "New campaign", icon: PlusIcon, primary: true },
     { label: "A/B test", icon: SparklesIcon },
@@ -111,7 +99,6 @@ const pageActions = {
 };
 
 const pageMeta = {
-  "command-center": commandCenterData,
   "cold-bulk-mailing": coldBulkMailingData,
   "templates-cadences": templatesCadencesData
 };
@@ -150,7 +137,7 @@ function AppShell() {
     }
   }, [allowedIds, activePage]);
 
-  const currentPage = pageMeta[activePage] ?? commandCenterData;
+  const currentPage = pageMeta[activePage] ?? { badge: "Module", title: activePage, description: "" };
   const actions = pageActions[activePage] ?? [];
 
   const navWithActive = useMemo(
@@ -172,7 +159,7 @@ function AppShell() {
 
           <div className="space-y-6 p-6">
             {activePage === "command-center" ? (
-              <CommandCenterPage />
+              <ExecutiveDashboardModule />
             ) : activePage === "whatsapp-business" ? (
               <WhatsappBusinessModule onNavigate={setActivePage} />
             ) : activePage === "crm-workspace" ? (
@@ -372,75 +359,6 @@ function PageHeader({ pageId, page, actions }) {
         </div>
       ) : null}
     </section>
-  );
-}
-
-function CommandCenterPage() {
-  const page = commandCenterData;
-  return (
-    <>
-      <section className="overflow-hidden rounded-[24px] bg-[linear-gradient(90deg,#243d97_0%,#0f6eb3_54%,#1db164_100%)] px-8 py-9 text-white shadow-[0_10px_30px_rgba(28,52,120,0.16)]">
-        <span className="inline-flex items-center gap-2 rounded-full bg-white/14 px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-white/95">
-          <SparklesIcon className="size-4" />
-          {page.badge}
-        </span>
-        <h1 className="mt-5 text-[3.2rem] font-semibold leading-none tracking-[-0.04em]">{page.title}</h1>
-        <p className="mt-4 max-w-3xl text-[18px] leading-8 text-white/92">{page.description}</p>
-
-        <div className="mt-7 flex flex-wrap gap-3">
-          {pageActions["command-center"].map((action) => (
-            <ActionButton key={action.label} {...action} hero />
-          ))}
-        </div>
-      </section>
-
-      <div className="grid gap-4 xl:grid-cols-4">
-        {page.stats.map((card) => (
-          <StatCard key={card.label} card={card} />
-        ))}
-      </div>
-
-      <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-        <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-[16px] font-semibold text-[#102246]">Deal flow by stage</h2>
-            <button type="button" className="text-[14px] font-medium text-[#21439b]">
-              View pipeline
-            </button>
-          </div>
-
-          <div className="mt-6 space-y-6">
-            {page.stages.map((row) => (
-              <div key={row.stage}>
-                <div className="mb-2 flex items-center justify-between gap-4">
-                  <p className="text-[14px] font-semibold text-[#12213a]">{row.stage}</p>
-                  <p className="text-[14px] text-[#5f6f89]">
-                    {row.count} · {row.value}
-                  </p>
-                </div>
-                <div className="h-2.5 rounded-full bg-[#e8edf5]">
-                  <div className={`h-2.5 rounded-full ${barToneClass[row.tone]}`} style={{ width: row.width }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-          <h2 className="text-[16px] font-semibold text-[#102246]">Priorities</h2>
-          <div className="mt-5 space-y-3">
-            {page.priorities.map((item) => (
-              <div key={item.title} className="rounded-[18px] border border-[#d6deea] bg-white px-4 py-4">
-                <p className="text-[14px] font-semibold text-[#132342]">{item.title}</p>
-                <span className={`mt-4 inline-flex rounded-full px-3 py-1 text-[12px] font-semibold ${noteToneClass[item.tone]}`}>
-                  {item.due}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    </>
   );
 }
 
