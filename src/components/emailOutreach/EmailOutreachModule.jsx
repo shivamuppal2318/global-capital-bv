@@ -68,11 +68,24 @@ export function EmailOutreachModule({ initialTab = "dashboard" }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {moduleStats.map((card) => (
-          <StatCard key={card.label} card={card} />
-        ))}
-      </div>
+      <section>
+        <div className="max-w-3xl">
+          <span className="inline-flex items-center gap-2 rounded-full bg-[#def4e6] px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#179150]">
+            <span className="size-2 rounded-full bg-[#2b9b60]" />
+            Module · Cold Email Outreach
+          </span>
+          <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">MailX</h1>
+          <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
+            Cold email outreach across connected mailboxes — campaigns, leads, reply-driven follow-ups, automation and templates in one workspace.
+          </p>
+        </div>
+
+        <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {moduleStats.map((card) => (
+            <StatCard key={card.label} card={card} />
+          ))}
+        </div>
+      </section>
 
       <nav className="flex flex-wrap gap-2 rounded-[18px] border border-[#d6deea] bg-white p-2 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         {tabs.map((tab) => {

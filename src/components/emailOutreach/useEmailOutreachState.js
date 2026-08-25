@@ -345,7 +345,6 @@ export function useEmailOutreachState() {
         }));
         setCampaigns(mapped);
         setSelectedCampaignId(mapped[0].id);
-        setAutomationNotice(`Loaded ${mapped.length} campaign(s) from the backend.`);
       })
       .catch(() => {
         // Backend unreachable or no DB migrated yet — keep the local seed
@@ -386,6 +385,8 @@ export function useEmailOutreachState() {
             id: lead.id,
             name: lead.name,
             company: lead.company,
+            email: lead.email,
+            country: lead.country,
             campaign: lead.campaign?.name ?? "",
             replyType: localReplyType,
             replyPreview: "Reply received — see activity timeline for the full message.",
@@ -418,7 +419,6 @@ export function useEmailOutreachState() {
           replyType: mapped[0].replyType,
           preferredPath: mapped[0].replyType === "zoom-request" ? "zoom-first" : "nda-first"
         }));
-        setAutomationNotice(`Loaded ${mapped.length} replied lead(s) from the backend.`);
       })
       .catch(() => {
         // Backend unreachable — repliedLeads stays empty rather than

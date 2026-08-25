@@ -10,6 +10,7 @@
 import EmbeddedPostgres from "embedded-postgres";
 import pg from "pg";
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,7 +27,13 @@ const pgServer = new EmbeddedPostgres({
 const action = process.argv[2] ?? "start";
 
 if (action === "start") {
-  await pgServer.initialise();
+  // .initialise() always runs initdb, which refuses to touch a non-empty
+  // directory — fine the very first time (.pgdata doesn't exist yet), but
+  // every later `db:start` against the same real data needs this skipped.
+  // PG_VERSION only exists once initdb has actually completed.
+  if (!existsSync(path.join(dataDir, "PG_VERSION"))) {
+    await pgServer.initialise();
+  }
   await pgServer.start();
 
   // initdb inherits the OS locale for the cluster's default encoding,

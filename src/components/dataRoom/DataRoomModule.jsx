@@ -54,6 +54,14 @@ export function DataRoomModule() {
   const [notice, setNotice] = useState(null);
   const fileInputRef = useRef(null);
 
+  // Per-checklist-item "Insert doc" button — one shared hidden input rather
+  // than one per row, since only ever one row's button is clicked at a time.
+  // pendingItem records which row's category the next chosen file(s) should
+  // be tagged with; insertingFor drives that row's own "Uploading…" state.
+  const insertFileInputRef = useRef(null);
+  const [pendingItem, setPendingItem] = useState(null);
+  const [insertingFor, setInsertingFor] = useState(null);
+
   // AI gap check: null until run, then either a results array or a
   // "not configured" message — kept separate from the plain category-count
   // check below so a stale AI verdict is never shown for a checklist that's
@@ -142,6 +150,31 @@ export function DataRoomModule() {
       );
       // A previous gap check no longer reflects what's actually uploaded —
       // cleared rather than left stale until someone re-runs it.
+      setGapResults(null);
+      load();
+      loadKpis();
+    }
+  };
+
+  const handleInsertForItem = async (item, files) => {
+    if (!files?.length) return;
+    setInsertingFor(item.label);
+    setUploadError(null);
+    setNotice(null);
+
+    const results = [];
+    for (const file of files) {
+      try {
+        const doc = await documentsApi.upload(file, { category: item.label, description: "" });
+        results.push(doc);
+      } catch (err) {
+        setUploadError(`${file.name}: ${err.message}`);
+      }
+    }
+
+    setInsertingFor(null);
+    if (results.length) {
+      setNotice(`Uploaded ${results.length} file(s) for "${item.label}".`);
       setGapResults(null);
       load();
       loadKpis();
@@ -259,23 +292,51 @@ export function DataRoomModule() {
             const matchCount = categories.find((c) => c.category === item.label)?.count ?? 0;
 
             return (
-              <div key={item.label} className={`flex items-start gap-3 rounded-[14px] border px-4 py-3 ${style.badge}`} title={item.description}>
-                <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full text-[12px] font-bold ${style.pill}`}>
-                  {style.icon}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[14px] font-medium text-[#102246]">{item.label}</p>
-                  <p className="mt-0.5 text-[12px] text-[#8592ab]">
-                    {gapVerdict ? gapVerdict.reason : matchCount ? `${matchCount} file(s) uploaded` : "Not yet uploaded"}
-                  </p>
-                  {gapVerdict?.matchedFilenames?.length ? (
-                    <p className="mt-1 text-[11px] text-[#5f6f89]">From: {gapVerdict.matchedFilenames.join(", ")}</p>
-                  ) : null}
+              <div
+                key={item.label}
+                className={`flex items-start justify-between gap-3 rounded-[14px] border px-4 py-3 ${style.badge}`}
+                title={item.description}
+              >
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                  <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full text-[12px] font-bold ${style.pill}`}>
+                    {style.icon}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[14px] font-medium text-[#102246]">{item.label}</p>
+                    <p className="mt-0.5 text-[12px] text-[#8592ab]">
+                      {gapVerdict ? gapVerdict.reason : matchCount ? `${matchCount} file(s) uploaded` : "Not yet uploaded"}
+                    </p>
+                    {gapVerdict?.matchedFilenames?.length ? (
+                      <p className="mt-1 text-[11px] text-[#5f6f89]">From: {gapVerdict.matchedFilenames.join(", ")}</p>
+                    ) : null}
+                  </div>
                 </div>
+                <ActionButton
+                  label={insertingFor === item.label ? "Uploading…" : "Insert doc"}
+                  icon={UploadIcon}
+                  small
+                  disabled={insertingFor !== null}
+                  onClick={() => {
+                    setPendingItem(item);
+                    insertFileInputRef.current?.click();
+                  }}
+                />
               </div>
             );
           })}
         </div>
+
+        <input
+          ref={insertFileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const files = [...e.target.files];
+            e.target.value = "";
+            if (pendingItem) handleInsertForItem(pendingItem, files);
+          }}
+        />
       </Card>
 
       <Card className="px-5 py-5">
