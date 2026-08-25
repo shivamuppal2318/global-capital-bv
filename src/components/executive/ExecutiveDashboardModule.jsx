@@ -108,16 +108,16 @@ export function ExecutiveDashboardModule() {
       </div>
 
       <Card className="px-5 py-5">
-        <SectionTitle icon={GridIcon} iconClass="text-[#3046b2]" subtitle="One row per stage the business tracks, with the formula behind each number.">
-          Executive KPIs
+        <SectionTitle icon={GridIcon} iconClass="text-[#3046b2]" subtitle="One row per stage the business tracks, with how each number is worked out.">
+          Executive Metrics
         </SectionTitle>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[560px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
-                <th className="py-2.5 pr-4 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5c6b87]">KPI</th>
-                <th className="py-2.5 pr-4 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5c6b87]">Formula</th>
-                <th className="py-2.5 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5c6b87]">Value</th>
+                <th className="py-2.5 pr-4 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5c6b87]">Metric</th>
+                <th className="py-2.5 pr-4 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5c6b87]">How it&apos;s calculated</th>
+                <th className="py-2.5 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5c6b87]">Result</th>
               </tr>
             </thead>
             <tbody>
