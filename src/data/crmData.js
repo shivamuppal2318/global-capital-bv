@@ -40,7 +40,12 @@ export const navSections = [
       { id: "ioi", label: "IOI", icon: "note" },
       { id: "visit-planning", label: "Visit Planning", icon: "radar" },
       { id: "field-visit", label: "Field Visit", icon: "userCheck" },
-      { id: "term-sheet", label: "Term Sheet", icon: "send" }
+      { id: "term-sheet", label: "Term Sheet", icon: "send" },
+      // A cross-cutting report over the same deal-stage data above, rather
+      // than another stage of the pipeline — kept in this section since
+      // that's what it reports on. Per-DOE activity itself lives in
+      // Outreach/DOE (Intelligence section) — not duplicated here.
+      { id: "ageing-report", label: "Ageing Report", icon: "clock" }
     ]
   },
   {

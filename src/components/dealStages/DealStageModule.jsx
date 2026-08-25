@@ -61,6 +61,30 @@ export function DealStageModule({ stage }) {
     }
   }, [config]);
 
+  // Field Visit's "Conversion to TS %" KPI needs to know, of the leads
+  // visited, how many also have a Term Sheet record — a cross-stage
+  // question the shared /summary endpoint (aggregate counts only) can't
+  // answer, so it's fetched directly here rather than added as generic
+  // plumbing every other stage would carry for nothing.
+  const [termSheetLeadIds, setTermSheetLeadIds] = useState(new Set());
+  useEffect(() => {
+    if (stage !== "FIELD_VISIT") return;
+    dealStagesApi
+      .list({ stage: "TERM_SHEET" })
+      .then((rows) => setTermSheetLeadIds(new Set(rows.map((r) => r.lead?.id).filter(Boolean))))
+      .catch(() => {});
+  }, [stage]);
+
+  // Mirror image for Term Sheet's own "IOI → TS conversion" KPI.
+  const [ioiLeadIds, setIoiLeadIds] = useState(new Set());
+  useEffect(() => {
+    if (stage !== "TERM_SHEET") return;
+    dealStagesApi
+      .list({ stage: "IOI" })
+      .then((rows) => setIoiLeadIds(new Set(rows.map((r) => r.lead?.id).filter(Boolean))))
+      .catch(() => {});
+  }, [stage]);
+
   const startNew = () =>
     setEditing({
       leadId: "",
@@ -73,6 +97,7 @@ export function DealStageModule({ stage }) {
       attendees: "",
       counterparty: "",
       owner: "",
+      clientRating: "",
       notes: "",
       documentId: ""
     });
@@ -90,6 +115,7 @@ export function DealStageModule({ stage }) {
       attendees: r.attendees ?? "",
       counterparty: r.counterparty ?? "",
       owner: r.owner ?? "",
+      clientRating: r.clientRating ?? "",
       notes: r.notes ?? "",
       documentId: r.document?.id ?? ""
     });
@@ -103,7 +129,11 @@ export function DealStageModule({ stage }) {
     setSaving(true);
     setFormError(null);
     try {
-      await dealStagesApi.save({ ...editing, stage });
+      await dealStagesApi.save({
+        ...editing,
+        stage,
+        clientRating: editing.clientRating === "" ? null : Number(editing.clientRating)
+      });
       setEditing(null);
       setNotice(`${config.label} saved.`);
       load();
@@ -127,6 +157,58 @@ export function DealStageModule({ stage }) {
   const stageSummary = summary?.byStage?.[stage];
   const uses = (f) => config.fields.includes(f);
 
+  // Field Visit KPI Framework numbers — all real, computed from the records
+  // already loaded for this stage (scheduledAt = visit date, completedAt =
+  // report filed, per STAGE_CONFIG.FIELD_VISIT's labels).
+  let fieldVisitKpis = null;
+  if (stage === "FIELD_VISIT") {
+    const now = Date.now();
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const visitsThisWeek = records.filter((r) => r.scheduledAt && now - new Date(r.scheduledAt).getTime() <= weekMs).length;
+
+    const reported = records.filter((r) => r.completedAt);
+    const reportsSubmittedPct = records.length > 0 ? Math.round((reported.length / records.length) * 100) : 0;
+
+    const reportTimes = records
+      .filter((r) => r.scheduledAt && r.completedAt)
+      .map((r) => (new Date(r.completedAt).getTime() - new Date(r.scheduledAt).getTime()) / (1000 * 60 * 60));
+    const avgReportHours = reportTimes.length > 0 ? Math.round(reportTimes.reduce((a, b) => a + b, 0) / reportTimes.length) : null;
+
+    const rated = records.filter((r) => r.clientRating != null);
+    const avgRating = rated.length > 0 ? (rated.reduce((sum, r) => sum + r.clientRating, 0) / rated.length).toFixed(1) : null;
+
+    const visitedLeadIds = new Set(records.map((r) => r.lead?.id).filter(Boolean));
+    const convertedCount = [...visitedLeadIds].filter((id) => termSheetLeadIds.has(id)).length;
+    const conversionPct = visitedLeadIds.size > 0 ? Math.round((convertedCount / visitedLeadIds.size) * 100) : 0;
+
+    fieldVisitKpis = { visitsThisWeek, reportsSubmittedPct, avgReportHours, avgRating, conversionPct };
+  }
+
+  // Term Sheet KPI Framework: signed count + total value are already real
+  // via the generic "Completed" stat tile and each record's own amount —
+  // amount is deliberately free text ("EUR 2-4M", "TBC"), so it isn't
+  // summed into a fabricated total here. IOI → TS conversion and the top
+  // performer (by owner/DOE, matching "Originating DOE" traceability) are
+  // real aggregates over what's actually on these records.
+  let termSheetKpis = null;
+  if (stage === "TERM_SHEET") {
+    const tsLeadIds = new Set(records.map((r) => r.lead?.id).filter(Boolean));
+    const convertedFromIoi = [...tsLeadIds].filter((id) => ioiLeadIds.has(id)).length;
+    const ioiConversionPct = ioiLeadIds.size > 0 ? Math.round((convertedFromIoi / ioiLeadIds.size) * 100) : 0;
+
+    const signedByOwner = new Map();
+    for (const r of records) {
+      if (r.status !== "COMPLETED" || !r.owner) continue;
+      signedByOwner.set(r.owner, (signedByOwner.get(r.owner) ?? 0) + 1);
+    }
+    let topPerformer = null;
+    for (const [owner, count] of signedByOwner) {
+      if (!topPerformer || count > topPerformer.count) topPerformer = { owner, count };
+    }
+
+    termSheetKpis = { ioiConversionPct, topPerformer };
+  }
+
   return (
     <div className="space-y-5">
       <section>
@@ -142,6 +224,53 @@ export function DealStageModule({ stage }) {
           <StatCard card={{ label: "Completed", value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
           <StatCard card={{ label: "Declined", value: String(stageSummary?.DECLINED ?? 0), note: "Not proceeding", noteTone: "red" }} />
         </div>
+
+        {fieldVisitKpis ? (
+          <div className="mt-4 grid gap-4 sm:grid-cols-3 xl:grid-cols-5">
+            <StatCard
+              card={{ label: "Visits this week", value: String(fieldVisitKpis.visitsThisWeek), note: "Target: 8/week", noteTone: fieldVisitKpis.visitsThisWeek >= 8 ? "green" : "amber" }}
+            />
+            <StatCard
+              card={{
+                label: "Reports submitted",
+                value: `${fieldVisitKpis.reportsSubmittedPct}%`,
+                note: "Target: 100%",
+                noteTone: fieldVisitKpis.reportsSubmittedPct === 100 ? "green" : "amber"
+              }}
+            />
+            <StatCard
+              card={{
+                label: "Avg report time",
+                value: fieldVisitKpis.avgReportHours != null ? `${fieldVisitKpis.avgReportHours}h` : "—",
+                note: "Target: <24h",
+                noteTone: fieldVisitKpis.avgReportHours != null && fieldVisitKpis.avgReportHours < 24 ? "green" : "amber"
+              }}
+            />
+            <StatCard
+              card={{
+                label: "Client rating",
+                value: fieldVisitKpis.avgRating ?? "—",
+                note: "Target: 4.5+",
+                noteTone: fieldVisitKpis.avgRating != null && Number(fieldVisitKpis.avgRating) >= 4.5 ? "green" : "amber"
+              }}
+            />
+            <StatCard card={{ label: "Conversion to TS", value: `${fieldVisitKpis.conversionPct}%`, note: "Visited → term sheet", noteTone: "violet" }} />
+          </div>
+        ) : null}
+
+        {termSheetKpis ? (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <StatCard card={{ label: "IOI → Term Sheet", value: `${termSheetKpis.ioiConversionPct}%`, note: "Of leads with an IOI", noteTone: "violet" }} />
+            <StatCard
+              card={{
+                label: "Top performer",
+                value: termSheetKpis.topPerformer ? termSheetKpis.topPerformer.owner : "—",
+                note: termSheetKpis.topPerformer ? `${termSheetKpis.topPerformer.count} signed` : "No signed term sheets yet",
+                noteTone: "green"
+              }}
+            />
+          </div>
+        ) : null}
       </section>
 
       <Card className="px-5 py-5">
@@ -199,6 +328,22 @@ export function DealStageModule({ stage }) {
                   <input className={inputClass} value={editing[f]} onChange={(e) => setEditing({ ...editing, [f]: e.target.value })} placeholder={FIELD_PLACEHOLDER[f]} />
                 </div>
               ))}
+
+              {uses("clientRating") ? (
+                <div>
+                  <label className={labelClass}>{FIELD_LABEL.clientRating}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="5"
+                    step="0.1"
+                    className={inputClass}
+                    value={editing.clientRating}
+                    onChange={(e) => setEditing({ ...editing, clientRating: e.target.value })}
+                    placeholder={FIELD_PLACEHOLDER.clientRating}
+                  />
+                </div>
+              ) : null}
 
               {uses("document") ? (
                 <div className="md:col-span-2">
@@ -284,6 +429,8 @@ export function DealStageModule({ stage }) {
                       {r.valuation ? ` @ ${r.valuation}` : ""}
                       {r.location ? ` · ${r.location}` : ""}
                       {r.owner ? ` · ${r.owner}` : ""}
+                      {r.clientRating != null ? ` · Rated ${r.clientRating}/5` : ""}
+                      {r.lead?.leadSource ? ` · Source: ${r.lead.leadSource}` : ""}
                     </p>
                     {r.notes ? <p className="mt-1 max-w-3xl text-[13px] leading-6 text-[#5f6f89]">{r.notes}</p> : null}
                   </div>

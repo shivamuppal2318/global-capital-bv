@@ -39,7 +39,7 @@ export const STAGE_CONFIG = {
     blurb: "The visits themselves and what came out of them.",
     scheduledLabel: "Visit date",
     completedLabel: "Report filed",
-    fields: ["location", "attendees", "scheduledAt", "completedAt", "owner", "document", "notes"],
+    fields: ["location", "attendees", "scheduledAt", "completedAt", "owner", "document", "clientRating", "notes"],
     emptyHint: "Record a visit once it's happened, with findings in the notes."
   },
   TERM_SHEET: {
@@ -86,6 +86,7 @@ export const FIELD_LABEL = {
   attendees: "Attendees",
   counterparty: "Counterparty contact",
   owner: "Owner",
+  clientRating: "Client rating (0–5)",
   notes: "Notes"
 };
 
@@ -96,5 +97,6 @@ export const FIELD_PLACEHOLDER = {
   attendees: "Rahul R, Meera S",
   counterparty: "Name of who signed / negotiated",
   owner: "Who owns this stage",
+  clientRating: "e.g. 4.5",
   notes: "Anything worth remembering"
 };

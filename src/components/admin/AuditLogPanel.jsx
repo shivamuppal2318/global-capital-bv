@@ -14,7 +14,8 @@ const namespaceTone = {
   lead: "red",
   ai_settings: "indigo",
   market_intel_settings: "cyan",
-  system_email: "sky"
+  system_email: "sky",
+  document: "violet"
 };
 
 function toneFor(action) {

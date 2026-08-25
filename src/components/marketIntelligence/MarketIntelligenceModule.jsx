@@ -153,6 +153,22 @@ export function MarketIntelligenceModule() {
     failed: signals.filter((s) => s.status === "FAILED").length
   };
 
+  // KPI Framework's Hot/Warm/Cold bands (80-100 / 50-79 / below 50), applied
+  // to the real relevanceScore the AI processor already assigns each signal
+  // — no new field or computation needed, just aggregated. Signals not yet
+  // AI-scored (PENDING/FAILED) are excluded rather than counted as Cold, so
+  // an unconfigured AI processor doesn't silently show every signal as
+  // low-quality.
+  const scoredSignals = signals.filter((s) => s.relevanceScore != null);
+  const hotSignals = scoredSignals.filter((s) => s.relevanceScore >= 80);
+  const warmSignals = scoredSignals.filter((s) => s.relevanceScore >= 50 && s.relevanceScore < 80);
+  const coldSignals = scoredSignals.filter((s) => s.relevanceScore < 50);
+  const avgIntentScore =
+    scoredSignals.length > 0 ? Math.round(scoredSignals.reduce((sum, s) => sum + s.relevanceScore, 0) / scoredSignals.length) : null;
+  // "High confidence companies" per the KPI Framework — Hot-tier signals
+  // that haven't already been routed to a lead, i.e. still actionable.
+  const aiRecommendedCount = hotSignals.filter((s) => !s.matchedLeadId && !s.createdLeadId).length;
+
   const filteredSignals = searchText.trim()
     ? signals.filter((s) => `${s.entityName ?? ""} ${s.rawTitle}`.toLowerCase().includes(searchText.trim().toLowerCase()))
     : signals;
@@ -200,20 +216,50 @@ export function MarketIntelligenceModule() {
       </section>
 
       {signals.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {[
-            { label: "Captured", value: signalStats.total },
-            { label: "Processed", value: signalStats.processed },
-            { label: "Matched to lead", value: signalStats.matched },
-            { label: "New leads created", value: signalStats.created },
-            { label: "Failed (AI not configured)", value: signalStats.failed }
-          ].map((stat) => (
-            <div key={stat.label} className="rounded-[16px] border border-[#d6deea] bg-white px-4 py-3 shadow-[0_2px_8px_rgba(30,48,87,0.04)]">
-              <p className="text-[1.6rem] font-semibold leading-none text-[#102246]">{stat.value}</p>
-              <p className="mt-1.5 text-[12px] text-[#8593ac]">{stat.label}</p>
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {[
+              { label: "Companies scanned", value: signalStats.total },
+              { label: "Processed", value: signalStats.processed },
+              { label: "Matched to lead", value: signalStats.matched },
+              { label: "New leads created", value: signalStats.created },
+              { label: "Failed (AI not configured)", value: signalStats.failed }
+            ].map((stat) => (
+              <div key={stat.label} className="rounded-[16px] border border-[#d6deea] bg-white px-4 py-3 shadow-[0_2px_8px_rgba(30,48,87,0.04)]">
+                <p className="text-[1.6rem] font-semibold leading-none text-[#102246]">{stat.value}</p>
+                <p className="mt-1.5 text-[12px] text-[#8593ac]">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {scoredSignals.length > 0 ? (
+            <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+              <h2 className="text-[13px] font-semibold uppercase tracking-[0.1em] text-[#5f6f89]">Hot • Warm • Cold intelligence</h2>
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-[16px] border border-[#e7edf5] bg-[#f8faff] px-4 py-3">
+                  <p className="text-[1.6rem] font-semibold leading-none text-[#102246]">{avgIntentScore}</p>
+                  <p className="mt-1.5 text-[12px] text-[#8593ac]">Avg intent score (0–100)</p>
+                </div>
+                <div className="rounded-[16px] border border-[#cce7d6] bg-[#f1fbf5] px-4 py-3">
+                  <p className="text-[1.6rem] font-semibold leading-none text-[#2b9b60]">{hotSignals.length}</p>
+                  <p className="mt-1.5 text-[12px] text-[#5c8a72]">Hot — 80–100</p>
+                </div>
+                <div className="rounded-[16px] border border-[#ffe9d0] bg-[#fff8ee] px-4 py-3">
+                  <p className="text-[1.6rem] font-semibold leading-none text-[#c07c1f]">{warmSignals.length}</p>
+                  <p className="mt-1.5 text-[12px] text-[#a1885f]">Warm — 50–79</p>
+                </div>
+                <div className="rounded-[16px] border border-[#e7edf5] bg-[#f8faff] px-4 py-3">
+                  <p className="text-[1.6rem] font-semibold leading-none text-[#748096]">{coldSignals.length}</p>
+                  <p className="mt-1.5 text-[12px] text-[#8593ac]">Cold — below 50</p>
+                </div>
+              </div>
+              <p className="mt-4 rounded-[12px] bg-[#eef1ff] px-4 py-2.5 text-[13px] font-medium text-[#3046b2]">
+                {aiRecommendedCount} AI-recommended lead{aiRecommendedCount === 1 ? "" : "s"} — Hot-tier signal
+                {aiRecommendedCount === 1 ? "" : "s"} not yet matched or converted to a lead.
+              </p>
             </div>
-          ))}
-        </div>
+          ) : null}
+        </>
       ) : null}
 
       <div className="overflow-hidden rounded-[22px] border border-[#d6deea] bg-white shadow-[0_4px_16px_rgba(30,48,87,0.06)]">

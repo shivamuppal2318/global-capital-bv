@@ -130,6 +130,7 @@ model User {
   emailAccounts EmailAccount[]
   passwordResets PasswordResetToken[]
   documents      Document[]
+  verifiedDocuments Document[] @relation("DocumentVerifiedBy")
   auditLogs      AuditLog[]
 }
 
@@ -253,6 +254,17 @@ model Document {
 
   uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   uploadedById String?
+
+  // Data Room KPI framework's status flow is Requested → Received →
+  // Verified (see KPI Framework doc) — a document is "Received" the moment
+  // it's uploaded, but only counts toward the completion % once someone
+  // has actually reviewed and verified it. Separate from pinnedToAi: a
+  // document can be AI-searchable and unverified at the same time.
+  verified     Boolean   @default(false)
+  verifiedAt   DateTime?
+  verifiedBy   User?     @relation("DocumentVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifiedById String?
+
   dealStages   DealStageRecord[]
   ndaDocuments NdaRecord[] @relation("NdaDocument")
   visitReports VisitPlan[] @relation("VisitReport")
@@ -321,6 +333,12 @@ model DealStageRecord {
   counterparty String?
   notes        String?
   owner        String?
+
+  // Field Visit KPI framework's "Client Rating" target (4.5+) — out of 5,
+  // decimals allowed (4.5). Only meaningful once a visit is actually
+  // reported back, but stored generically since a future stage could
+  // reasonably want it too.
+  clientRating Float?
 
   // Optional supporting file, reusing the Data Room rather than a separate
   // upload path — a signed NDA or term sheet belongs in both places.

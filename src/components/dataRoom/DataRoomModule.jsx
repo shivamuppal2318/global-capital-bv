@@ -63,6 +63,15 @@ export function DataRoomModule() {
   const [gapLoading, setGapLoading] = useState(false);
   const [gapMessage, setGapMessage] = useState(null);
 
+  // Real numbers for the Data Room KPI framework's completion formula
+  // (Verified ÷ Requested × 100) — refetched after anything that could
+  // change them (upload, delete, verify toggle).
+  const [kpis, setKpis] = useState(null);
+  const loadKpis = useCallback(() => {
+    documentsApi.kpis().then(setKpis).catch(() => {});
+  }, []);
+  useEffect(loadKpis, [loadKpis]);
+
   const load = useCallback(() => {
     setLoading(true);
     Promise.all([documentsApi.list({ category: activeCategory, q: query }), documentsApi.categories()])
@@ -135,6 +144,7 @@ export function DataRoomModule() {
       // cleared rather than left stale until someone re-runs it.
       setGapResults(null);
       load();
+      loadKpis();
     }
   };
 
@@ -144,6 +154,7 @@ export function DataRoomModule() {
       setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
       setNotice(`Deleted ${doc.originalName}.`);
       setGapResults(null);
+      loadKpis();
     } catch (err) {
       setError(err.message);
     }
@@ -152,6 +163,16 @@ export function DataRoomModule() {
   const handleOpen = async (doc, download) => {
     try {
       await documentsApi.open(doc, { download });
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleVerify = async (doc) => {
+    try {
+      const updated = await documentsApi.verify(doc.id, !doc.verified);
+      setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)));
+      loadKpis();
     } catch (err) {
       setError(err.message);
     }
@@ -210,6 +231,22 @@ export function DataRoomModule() {
         </SectionTitle>
 
         {gapMessage ? <p className="mt-3 text-[13px] font-medium text-[#c47f1a]">{gapMessage}</p> : null}
+
+        {kpis ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-4">
+            <StatCard card={{ label: "Requested", value: String(kpis.requested), note: "Checklist items", noteTone: "blue" }} />
+            <StatCard card={{ label: "Received", value: String(kpis.received), note: "At least 1 upload", noteTone: "amber" }} />
+            <StatCard card={{ label: "Verified", value: String(kpis.verified), note: "Reviewed & approved", noteTone: "green" }} />
+            <StatCard
+              card={{
+                label: "Completion",
+                value: `${kpis.completionPercent}%`,
+                note: "Verified ÷ Requested",
+                noteTone: kpis.completionPercent === 100 ? "green" : "violet"
+              }}
+            />
+          </div>
+        ) : null}
 
         <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
           {requiredDocuments.map((item) => {
@@ -393,12 +430,14 @@ export function DataRoomModule() {
                       ) : (
                         <Badge tone="amber">Not searchable</Badge>
                       )}
+                      {doc.verified ? <Badge tone="green">Verified</Badge> : null}
                     </div>
                     <p className="mt-0.5 truncate text-[12px] text-[#8592ab]">
                       {formatSize(doc.sizeBytes)}
                       {doc.uploadedBy ? ` · ${doc.uploadedBy.name}` : ""}
                       {` · ${new Date(doc.createdAt).toLocaleDateString()}`}
                       {doc.description ? ` · ${doc.description}` : ""}
+                      {doc.verified && doc.verifiedBy ? ` · Verified by ${doc.verifiedBy.name}` : ""}
                     </p>
                     {!doc.searchable && doc.extractionNote ? (
                       <p className="mt-1 text-[12px] text-[#c47f1a]">{doc.extractionNote}</p>
@@ -408,6 +447,13 @@ export function DataRoomModule() {
                   <div className="flex shrink-0 items-center gap-2">
                     <ActionButton label="Open" small onClick={() => handleOpen(doc, false)} />
                     <ActionButton label="Download" small onClick={() => handleOpen(doc, true)} />
+                    <ActionButton
+                      label={doc.verified ? "Unverify" : "Verify"}
+                      icon={CheckCircleIcon}
+                      small
+                      active={doc.verified}
+                      onClick={() => handleVerify(doc)}
+                    />
                     <ActionButton label="Delete" icon={XIcon} small onClick={() => handleDelete(doc)} />
                   </div>
                 </div>

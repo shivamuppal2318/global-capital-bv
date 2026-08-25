@@ -23,6 +23,10 @@ export const documentsApi = {
   // Reads real document content (not just category tags) against the
   // checklist — returns { configured: false, message } if no AI key is set.
   gapCheck: () => request("/gap-check", { method: "POST" }),
+  // Data Room KPI framework's real numbers: requested/received/verified
+  // counts and the completion % (Verified ÷ Requested × 100).
+  kpis: () => request("/kpis"),
+  verify: (id, verified) => request(`/${id}/verify`, { method: "POST", body: { verified } }),
   update: (id, body) => request(`/${id}`, { method: "PATCH", body }),
   remove: (id) => request(`/${id}`, { method: "DELETE" }),
 

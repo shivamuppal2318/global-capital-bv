@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CalendarIcon,
   ChatBubbleIcon,
+  ClockIcon,
   FolderIcon,
   FunnelIcon,
   GridIcon,
@@ -32,6 +33,7 @@ import { AdminPanelModule } from "./components/admin/AdminPanelModule";
 import { DataRoomModule } from "./components/dataRoom/DataRoomModule";
 import { DealStageModule } from "./components/dealStages/DealStageModule";
 import { MODULE_TO_STAGE } from "./components/dealStages/stageConfig";
+import { AgeingReportModule } from "./components/ageingReport/AgeingReportModule";
 import { NdaModule } from "./components/relationships/NdaModule";
 import { VisitPlanningModule } from "./components/relationships/VisitPlanningModule";
 import { IoiModule } from "./components/relationships/IoiModule";
@@ -67,7 +69,16 @@ const iconMap = {
   folder: FolderIcon,
   note: NoteIcon,
   userCheck: UserCheckIcon,
+  clock: ClockIcon,
   sliders: SlidersIcon
+};
+
+const barToneClass = {
+  cyan: "bg-[#1b97d2]",
+  violet: "bg-[#8b52d0]",
+  amber: "bg-[#ff9f35]",
+  teal: "bg-[#1da5a0]",
+  green: "bg-[#2ba84a]"
 };
 
 const pageAccentClass = {
@@ -180,6 +191,8 @@ function AppShell() {
               <MarketIntelligenceModule />
             ) : activePage === "data-room" ? (
               <DataRoomModule />
+            ) : activePage === "ageing-report" ? (
+              <AgeingReportModule onNavigate={setActivePage} />
             ) : activePage === "nda" ? (
               <NdaModule />
             ) : activePage === "visit-planning" ? (
