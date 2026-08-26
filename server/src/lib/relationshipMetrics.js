@@ -69,7 +69,12 @@ export function ndaMetrics(records) {
 
 export function callMetrics(meetings) {
   const now = Date.now();
-  const completed = meetings.filter((m) => m.status === "Completed" || new Date(m.startTime) < now);
+  // A cancelled meeting whose scheduled time has passed is still cancelled,
+  // not completed — without this exclusion it fell through the OR below and
+  // got counted (and averaged into duration/satisfaction) as if it happened.
+  const live = meetings.filter((m) => m.status !== "Cancelled");
+  const cancelled = meetings.length - live.length;
+  const completed = live.filter((m) => m.status === "Completed" || new Date(m.startTime) < now);
 
   // Prefer the recorded actual duration; fall back to what was booked.
   const withDuration = completed.filter((m) => m.actualDurationMinutes || m.durationMinutes);
@@ -85,7 +90,8 @@ export function callMetrics(meetings) {
 
   return {
     completed: completed.length,
-    upcoming: meetings.length - completed.length,
+    upcoming: live.length - completed.length,
+    cancelled,
     avgDurationMinutes,
     withNotes: completed.filter((m) => m.notes && m.notes.trim()).length,
     withRecording: completed.filter((m) => m.recordingLink).length,

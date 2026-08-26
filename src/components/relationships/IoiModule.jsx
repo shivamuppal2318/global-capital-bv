@@ -260,7 +260,11 @@ export function IoiModule() {
                     </div>
                   </div>
                   <span className="w-32 shrink-0 text-[12px] text-[#5c6b87]">
-                    {has(s.conversionFromPrevious) ? `${s.conversionFromPrevious}% of above` : "Top of funnel"}
+                    {has(s.conversionFromPrevious)
+                      ? `${s.conversionFromPrevious}% of above`
+                      : i === 0
+                        ? "Top of funnel"
+                        : "No leads at prior stage"}
                   </span>
                 </div>
               );
