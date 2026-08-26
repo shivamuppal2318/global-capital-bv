@@ -17,6 +17,7 @@ export const MODULES = [
   { id: "visit-planning", label: "Visit Planning", group: "Relationships" },
   { id: "field-visit", label: "Field Visit", group: "Relationships" },
   { id: "term-sheet", label: "Term Sheet", group: "Relationships" },
+  { id: "channel-partner", label: "Channel Partner", group: "Relationships" },
   { id: "ageing-report", label: "Ageing Report", group: "Relationships" }
 ];
 

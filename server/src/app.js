@@ -24,6 +24,7 @@ import { dealStagesRouter } from "./routes/dealStages.js";
 import { ageingReportRouter } from "./routes/ageingReport.js";
 import { ndaRecordsRouter } from "./routes/ndaRecords.js";
 import { visitPlansRouter } from "./routes/visitPlans.js";
+import { channelPartnersRouter } from "./routes/channelPartners.js";
 import { ioiRecordsRouter } from "./routes/ioiRecords.js";
 import { executiveDashboardRouter } from "./routes/executiveDashboard.js";
 import { universalFiltersRouter } from "./routes/universalFilters.js";
@@ -135,6 +136,7 @@ app.use("/api/ageing-report", requireModule("ageing-report"), ageingReportRouter
 // the public token-based signing page and must stay unauthenticated.
 app.use("/api/nda-records", requireModule("nda"), ndaRecordsRouter);
 app.use("/api/visit-plans", requireModule("visit-planning"), visitPlansRouter);
+app.use("/api/channel-partners", requireModule("channel-partner"), channelPartnersRouter);
 app.use("/api/ioi-records", requireModule("ioi"), ioiRecordsRouter);
 app.use("/api/executive-dashboard", requireModule("command-center"), executiveDashboardRouter);
 app.use("/api/universal-filters", requireModule("universal-filters"), universalFiltersRouter);

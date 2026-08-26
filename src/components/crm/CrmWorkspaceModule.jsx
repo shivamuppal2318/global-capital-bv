@@ -17,6 +17,7 @@ import {
 } from "../Icons";
 import { ActionButton, Card, noteToneClass, ProgressBar, SectionTitle, StatCard } from "../ui";
 import { leadsApi } from "../../lib/leadsApi";
+import { universalFiltersApi } from "../../lib/universalFiltersApi";
 
 const avatarToneClass = {
   blue: "bg-[#dff1ff] text-[#2f96da]",
@@ -59,7 +60,7 @@ const PIPELINE_STATUS_STYLE = {
 function LeadDetailModal({
   lead, overview, pipeline, pipelineLoading, onClose,
   editing, editForm, setEditForm, saving, saveError, startEdit, setEditing, saveEdit,
-  activeTab, setActiveTab
+  activeTab, setActiveTab, facets
 }) {
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -187,10 +188,10 @@ function LeadDetailModal({
                   <EditField label="Capital Ask" value={editForm.capitalAsk} onChange={(v) => setEditForm({ ...editForm, capitalAsk: v })} placeholder="EUR 3M" />
                   <EditField label="Territory / Geography" value={editForm.territory} onChange={(v) => setEditForm({ ...editForm, territory: v })} />
                   <EditField label="Lead Source" value={editForm.leadSource} onChange={(v) => setEditForm({ ...editForm, leadSource: v })} />
-                  <EditField label="Industry" value={editForm.industry} onChange={(v) => setEditForm({ ...editForm, industry: v })} />
-                  <EditField label="Channel Partner" value={editForm.channelPartner} onChange={(v) => setEditForm({ ...editForm, channelPartner: v })} />
-                  <EditField label="Team Leader" value={editForm.teamLeader} onChange={(v) => setEditForm({ ...editForm, teamLeader: v })} />
-                  <EditField label="Manager" value={editForm.manager} onChange={(v) => setEditForm({ ...editForm, manager: v })} />
+                  <EditField label="Industry" value={editForm.industry} onChange={(v) => setEditForm({ ...editForm, industry: v })} list={facets?.industries} />
+                  <EditField label="Channel Partner" value={editForm.channelPartner} onChange={(v) => setEditForm({ ...editForm, channelPartner: v })} list={facets?.channelPartners} />
+                  <EditField label="Team Leader" value={editForm.teamLeader} onChange={(v) => setEditForm({ ...editForm, teamLeader: v })} list={facets?.teamLeaders} />
+                  <EditField label="Manager" value={editForm.manager} onChange={(v) => setEditForm({ ...editForm, manager: v })} list={facets?.managers} />
                   <div>
                     <label className="mb-1.5 block text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Hot / Warm / Cold</label>
                     <select
@@ -211,6 +212,7 @@ function LeadDetailModal({
                     value={editForm.doe}
                     onChange={(v) => setEditForm({ ...editForm, doe: v })}
                     placeholder="Who first engaged this prospect"
+                    list={facets?.does}
                   />
                 </div>
 
@@ -261,6 +263,16 @@ export function CrmWorkspaceModule() {
   const [pipeline, setPipeline] = useState(null);
   const [pipelineLoading, setPipelineLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  // Existing values already in use across other leads (real, not a fixed
+  // enum) — offered as autocomplete suggestions in the edit form so picking
+  // "Iberia Solar Partners" again doesn't mean retyping it (or drifting into
+  // a near-duplicate like "Iberia solar partners"). A genuinely new value
+  // can still just be typed; this never restricts input like a <select> would.
+  const [facets, setFacets] = useState(null);
+
+  useEffect(() => {
+    universalFiltersApi.facets().then(setFacets).catch(() => {});
+  }, []);
 
   useEffect(() => {
     leadsApi
@@ -510,13 +522,21 @@ export function CrmWorkspaceModule() {
           saveEdit={saveEdit}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
+          facets={facets}
         />
       ) : null}
     </div>
   );
 }
 
-function EditField({ label, value, onChange, placeholder }) {
+// `list` is optional — when given (real values already in use across other
+// leads, e.g. Channel Partner), the field offers them as autocomplete
+// suggestions via a native <datalist> rather than forcing a rigid dropdown:
+// picking an existing partner is one click, but a genuinely new one can
+// still just be typed. Matches the same pattern Data Room's upload
+// Category field already uses.
+function EditField({ label, value, onChange, placeholder, list }) {
+  const listId = list ? `editfield-list-${label.replace(/\s+/g, "-").toLowerCase()}` : undefined;
   return (
     <div>
       <label className="mb-1.5 block text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">{label}</label>
@@ -525,7 +545,15 @@ function EditField({ label, value, onChange, placeholder }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        list={listId}
       />
+      {list ? (
+        <datalist id={listId}>
+          {list.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+      ) : null}
     </div>
   );
 }
