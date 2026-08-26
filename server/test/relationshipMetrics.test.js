@@ -109,6 +109,17 @@ test("callMetrics: a future meeting counts as upcoming, not completed", () => {
   assert.equal(m.avgDurationMinutes, null);
 });
 
+test("callMetrics: a cancelled meeting whose time has passed is neither completed nor upcoming", () => {
+  const m = callMetrics([
+    { status: "Cancelled", startTime: daysAgo(5), durationMinutes: 30, actualDurationMinutes: 999 },
+    { status: "Completed", startTime: daysAgo(1), durationMinutes: 30, actualDurationMinutes: 20 }
+  ]);
+  assert.equal(m.completed, 1, "the cancelled meeting must not be counted as completed just because its time passed");
+  assert.equal(m.cancelled, 1);
+  assert.equal(m.upcoming, 0);
+  assert.equal(m.avgDurationMinutes, 20, "the cancelled meeting's duration must not be averaged in");
+});
+
 // --- Visit planning ------------------------------------------------------
 
 test("visitMetrics: cost per visit averages only visits that recorded a cost", () => {
