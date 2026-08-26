@@ -242,10 +242,10 @@ export function VisitPlanningModule() {
         <span className="inline-flex items-center gap-2 rounded-full bg-[#eef2ff] px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#3046b2]">
           Relationships
         </span>
-        <h1 className="mt-4 text-[2.6rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">
+        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">
           Visit Planning
         </h1>
-        <p className="mt-3 max-w-2xl text-[16px] leading-7 text-[#4f6181]">
+        <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
           Plan counterparty visits, keep travel clustered by geography, track what each trip costs and make sure every
           completed visit comes back with a report.
         </p>

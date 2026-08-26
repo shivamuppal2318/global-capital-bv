@@ -221,8 +221,8 @@ export function DataRoomModule() {
           <AttachmentIcon className="size-4" />
           Data Room
         </span>
-        <h1 className="mt-4 text-[2.6rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Company documents</h1>
-        <p className="mt-3 max-w-2xl text-[16px] leading-7 text-[#4f6181]">
+        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Company documents</h1>
+        <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
           Contracts, reports, decks and images in one place. Text-based files are read on upload so the AI Assistant can
           answer questions from them and cite the file it used.
         </p>

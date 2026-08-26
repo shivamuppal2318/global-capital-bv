@@ -37,10 +37,10 @@ export function AdminPanelModule() {
           <ShieldIcon className="size-4" />
           Admin Panel
         </span>
-        <h1 className="mt-4 text-[2.4rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">
+        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">
           {isAdmin ? "Company administration" : "My account"}
         </h1>
-        <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[#4f6181]">
+        <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
           {isAdmin
             ? "Manage employee logins, WhatsApp Cloud API credentials, and every SMTP mailbox in the company."
             : "Manage your own login and personal email mailbox."}
