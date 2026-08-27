@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { universalFiltersApi } from "../../lib/universalFiltersApi";
-import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
+import { ActionButton, Badge, Card, SectionTitle } from "../ui";
 import {
   CalendarIcon,
   GridIcon,
@@ -259,26 +259,6 @@ export function UniversalFiltersModule() {
           </div>
         ) : null}
       </Card>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard card={{ label: "Matching Leads", value: String(results?.total ?? 0), note: loading ? "Updating…" : "Live from Postgres", noteTone: "blue" }} />
-        <StatCard
-          card={{
-            label: "Overdue Actions",
-            value: String(results?.leads.filter((l) => l.dueWindow === "overdue").length ?? 0),
-            note: "Among matching leads",
-            noteTone: "red"
-          }}
-        />
-        <StatCard
-          card={{
-            label: "Hot Leads",
-            value: String(results?.leads.filter((l) => l.temperature === "HOT").length ?? 0),
-            note: "Among matching leads",
-            noteTone: "amber"
-          }}
-        />
-      </div>
 
       <Card className="px-5 py-5">
         <SectionTitle icon={GridIcon} iconClass="text-[#3046b2]" subtitle="Up to 500 matching leads, most recent first.">
