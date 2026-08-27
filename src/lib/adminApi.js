@@ -40,6 +40,10 @@ export const adminApi = {
   saveMarketIntelProviderKey: (provider, apiKey) => request(`/market-intelligence-settings/${provider}`, { method: "PUT", body: { apiKey } }),
   testMarketIntelProvider: (provider) => request(`/market-intelligence-settings/${provider}/test`, { method: "POST" }),
   removeMarketIntelProviderKey: (provider) => request(`/market-intelligence-settings/${provider}`, { method: "DELETE" }),
+  // Admin-editable points behind a market signal's relevanceScore — see
+  // server/src/lib/scoringCriteria.js.
+  getScoringCriteria: () => request("/scoring-criteria"),
+  updateScoringCriterionPoints: (key, points) => request(`/scoring-criteria/${key}`, { method: "PATCH", body: { points } }),
   // Who did what, when — see server/src/lib/auditLog.js. `action` filters by
   // prefix (e.g. "employee." matches every employee.* row).
   auditLogs: ({ page = 1, pageSize = 25, action } = {}) => {

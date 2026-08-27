@@ -1065,6 +1065,21 @@ enum SignalType {
   OTHER
 }
 
+// Admin-editable point values behind Market Signal's relevanceScore (see
+// lib/scoringCriteria.js) — "how many points for X" made literal rather
+// than buried in a prompt string. The AI only ever extracts facts (which
+// signal type, whether concrete detail/a named entity is present); this
+// table is what turns those facts into the actual 0-100 number, so an
+// admin can retune scoring without a code change or redeploy.
+model ScoringCriterion {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  points    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 enum SignalStatus {
   PENDING // fetched, not yet AI-processed
   PROCESSED // AI-processed, routed (matched existing lead or created new one)

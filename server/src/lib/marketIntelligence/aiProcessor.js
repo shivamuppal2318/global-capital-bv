@@ -4,6 +4,7 @@
 // The prompt format and response-parsing below are fully tested against
 // realistic mock model output.
 import { getAiConfig, isAiConfigured, extractResponseText } from "../aiSettings.js";
+import { getScoringCriteria, computeRelevanceScore } from "../scoringCriteria.js";
 
 const VALID_SIGNAL_TYPES = ["FUNDING", "ACQUISITION", "EXPANSION", "LEADERSHIP_CHANGE", "DISTRESS", "OTHER"];
 
@@ -11,24 +12,36 @@ export function isAiProcessorConfigured() {
   return isAiConfigured();
 }
 
-// Pure — testable without any network access or API key.
-//
-// Google News RSS (the always-on, no-key source) only ever supplies a
-// headline, never real article body text — "Content" below is frequently
-// identical to "Title". The instruction against inventing specifics exists
-// because of that: without it, a model asked for financial/deal detail it
-// doesn't actually have tends to fill the gap with a plausible-sounding
-// guess rather than admitting the headline is all there is.
-export function buildProcessingPrompt(rawSignal) {
+// The AI only ever extracts facts — which signal type, and three yes/no
+// flags — never a raw 0-100 number itself. relevanceScore is computed
+// afterwards, deterministically, from admin-editable points (Admin Panel →
+// Market Intelligence → Signal scoring, see lib/scoringCriteria.js). That
+// split is what makes "why did this score 82" answerable, and what lets an
+// admin retune scoring without touching this prompt or redeploying.
+function buildFlagQuestions(criteria) {
+  const label = (key) => criteria.find((c) => c.key === key)?.label ?? key;
+  return `Also determine these three yes/no facts:
+- hasConcreteDetail: ${label("HAS_CONCRETE_DETAIL")}?
+- hasRealContent: ${label("HAS_REAL_CONTENT")}?
+- entityClearlyNamed: ${label("ENTITY_CLEARLY_NAMED")}?`;
+}
+
+// Pure — testable without any network access or API key. `criteria` is
+// optional (defaults used when omitted) purely so the existing tests below
+// don't all need to construct a criteria list just to check title/content
+// interpolation.
+export function buildProcessingPrompt(rawSignal, criteria = []) {
   return `You are analyzing a news/web signal for a private equity deal-sourcing CRM. Extract the following from the article below.
 
 Title: ${rawSignal.rawTitle}
 Content: ${rawSignal.rawContent.slice(0, 4000)}
 
-If Content adds nothing beyond Title (they're the same or nearly so), base your answer on the headline alone — do not invent a deal size, valuation, investor names, or other specifics that aren't actually stated.
+If Content adds nothing beyond Title (they're the same or nearly so), base your answer on the headline alone — do not invent a deal size, valuation, investor names, or other specifics that aren't actually stated. That also means hasConcreteDetail and hasRealContent should both be false in that case.
+
+${buildFlagQuestions(criteria)}
 
 Return ONLY valid JSON, no other text, in exactly this shape:
-{"entityName": "the primary company this signal is about", "signalType": one of ${JSON.stringify(VALID_SIGNAL_TYPES)}, "relevanceScore": integer 0-100 (how relevant this is to a PE firm sourcing deals), "summary": "one sentence summary, stating only what the headline/content actually says"}`;
+{"entityName": "the primary company this signal is about", "signalType": one of ${JSON.stringify(VALID_SIGNAL_TYPES)}, "hasConcreteDetail": boolean, "hasRealContent": boolean, "entityClearlyNamed": boolean, "summary": "one sentence summary, stating only what the headline/content actually says"}`;
 }
 
 // Pure — testable with any mock LLM response string, real or fabricated.
@@ -50,14 +63,18 @@ export function parseProcessingResponse(rawResponseText) {
   if (!VALID_SIGNAL_TYPES.includes(parsed.signalType)) {
     throw new Error(`AI response has an invalid signalType: ${parsed.signalType}`);
   }
-  if (typeof parsed.relevanceScore !== "number" || parsed.relevanceScore < 0 || parsed.relevanceScore > 100) {
-    throw new Error(`AI response has an invalid relevanceScore: ${parsed.relevanceScore}`);
+  for (const flag of ["hasConcreteDetail", "hasRealContent", "entityClearlyNamed"]) {
+    if (typeof parsed[flag] !== "boolean") {
+      throw new Error(`AI response has an invalid ${flag}: ${parsed[flag]}`);
+    }
   }
 
   return {
     entityName: parsed.entityName.trim(),
     signalType: parsed.signalType,
-    relevanceScore: Math.round(parsed.relevanceScore),
+    hasConcreteDetail: parsed.hasConcreteDetail,
+    hasRealContent: parsed.hasRealContent,
+    entityClearlyNamed: parsed.entityClearlyNamed,
     summary: typeof parsed.summary === "string" ? parsed.summary : ""
   };
 }
@@ -67,6 +84,8 @@ export async function processSignalWithAi(rawSignal) {
   if (!apiKey) {
     throw new Error("AI processor is not configured — add a Claude API key under Admin Panel → AI Assistant.");
   }
+
+  const criteria = await getScoringCriteria();
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -78,7 +97,7 @@ export async function processSignalWithAi(rawSignal) {
     body: JSON.stringify({
       model,
       max_tokens: 500,
-      messages: [{ role: "user", content: buildProcessingPrompt(rawSignal) }]
+      messages: [{ role: "user", content: buildProcessingPrompt(rawSignal, criteria) }]
     })
   });
 
@@ -87,5 +106,12 @@ export async function processSignalWithAi(rawSignal) {
   }
 
   const data = await response.json();
-  return parseProcessingResponse(extractResponseText(data));
+  const extracted = parseProcessingResponse(extractResponseText(data));
+
+  return {
+    entityName: extracted.entityName,
+    signalType: extracted.signalType,
+    relevanceScore: computeRelevanceScore(criteria, extracted),
+    summary: extracted.summary
+  };
 }
