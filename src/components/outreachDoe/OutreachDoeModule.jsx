@@ -209,7 +209,7 @@ export function OutreachDoeModule() {
 
       <Card className="px-5 py-5">
         <SectionTitle icon={RadarIcon} iconClass="text-[#3046b2]" subtitle="Compare reps on the three metrics cold outreach can actually attribute to a person.">
-          By DOE
+          DOE Performance Compression
         </SectionTitle>
 
         <div className="mt-4 overflow-x-auto">
