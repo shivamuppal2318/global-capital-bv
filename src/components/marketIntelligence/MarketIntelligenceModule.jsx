@@ -207,7 +207,11 @@ export function MarketIntelligenceModule() {
     <div className="space-y-6">
       <section>
         <div className="max-w-3xl">
-          <h1 className="text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Market Intelligence</h1>
+          <span className="inline-flex items-center gap-2 rounded-full bg-[#eef2ff] px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#3046b2]">
+            <RadarIcon className="size-4" />
+            Intelligence
+          </span>
+          <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Market Intelligence</h1>
           <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
             Scans news, the open web, and press pages for funding/acquisition/expansion signals, then matches them to existing
             deals or sources a new one via Apollo.

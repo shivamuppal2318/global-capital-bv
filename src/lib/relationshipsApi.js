@@ -50,6 +50,16 @@ export const ioiApi = {
   remove: (id) => apiFetch(`${ioiBase}/${id}`, { method: "DELETE" })
 };
 
+const channelPartnersBase = `${API_ROOT}/api/channel-partners`;
+
+export const channelPartnersApi = {
+  list: (filters) => apiFetch(`${channelPartnersBase}${qs(filters)}`),
+  metrics: () => apiFetch(`${channelPartnersBase}/metrics`),
+  create: (body) => apiFetch(channelPartnersBase, { method: "POST", body }),
+  update: (id, body) => apiFetch(`${channelPartnersBase}/${id}`, { method: "PATCH", body }),
+  remove: (id) => apiFetch(`${channelPartnersBase}/${id}`, { method: "DELETE" })
+};
+
 const meetingsBase = `${API_ROOT}/api/meetings`;
 
 export const callsApi = {

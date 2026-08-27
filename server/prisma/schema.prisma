@@ -471,6 +471,36 @@ enum LeadTemperature {
   COLD
 }
 
+// A directory of referring/introducing partner organisations — distinct
+// from Lead.channelPartner (a plain string filter tag on the lead itself).
+// This is the partner as its own entity: who to contact there, what they're
+// owed, whether the relationship is still active. Matched to leads by name
+// rather than a foreign key, since Lead.channelPartner predates this model
+// and stays free text everywhere else (Universal Filters, the CRM edit
+// form) — adding a hard relation there would mean migrating every existing
+// value and would block a lead from citing a partner not yet in this list.
+model ChannelPartner {
+  id            String               @id @default(cuid())
+  name          String               @unique
+  contactName   String?
+  contactEmail  String?
+  contactPhone  String?
+  region        String?
+  commissionPct Float?
+  status        ChannelPartnerStatus @default(ACTIVE)
+  notes         String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([status])
+}
+
+enum ChannelPartnerStatus {
+  ACTIVE
+  INACTIVE
+  PROSPECTIVE
+}
+
 model ZoomSettings {
   id           String    @id @default(cuid())
   accountId    String?

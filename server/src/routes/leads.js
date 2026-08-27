@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
 import { sendSystemEmail, clientPortalInviteEmail } from "../lib/systemMailer.js";
+import { computeLeadPipeline } from "../lib/leadPipeline.js";
 
 const router = Router();
 
@@ -32,6 +33,21 @@ router.get("/:id", async (req, res, next) => {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: clientUserSelect } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
     res.json(lead);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// This one lead's real progress across the full deal lifecycle — see
+// lib/leadPipeline.js. A per-record complement to Executive Dashboard's
+// company-wide Funnel Health chart, not the same thing: that one counts
+// leads per stage across the whole pipeline, this shows where ONE lead
+// stands right now.
+router.get("/:id/pipeline", async (req, res, next) => {
+  try {
+    const pipeline = await computeLeadPipeline(req.params.id);
+    if (!pipeline) return res.status(404).json({ error: "Lead not found" });
+    res.json(pipeline);
   } catch (err) {
     next(err);
   }

@@ -31,8 +31,8 @@ export function AgeingReportModule({ onNavigate }) {
           <ClockIcon className="size-4" />
           Relationships
         </span>
-        <h1 className="mt-4 text-[2.6rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Ageing Report</h1>
-        <p className="mt-3 max-w-2xl text-[16px] leading-7 text-[#4f6181]">
+        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Ageing Report</h1>
+        <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
           How long deals have sat, still open, in each phase — a deal automatically turns Red once it exceeds that phase's SLA.
           Click a phase to see every deal in it, not just the overdue ones.
         </p>

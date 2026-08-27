@@ -11,5 +11,8 @@ export const leadsApi = {
   list: () => request(""),
   get: (id) => request(`/${id}`),
   patch: (id, body) => request(`/${id}`, { method: "PATCH", body }),
-  sendPortalInvite: (id) => request(`/${id}/portal-invite`, { method: "POST" })
+  sendPortalInvite: (id) => request(`/${id}/portal-invite`, { method: "POST" }),
+  // This one lead's real progress across the full deal lifecycle — see
+  // server/src/lib/leadPipeline.js.
+  pipeline: (id) => request(`/${id}/pipeline`)
 };

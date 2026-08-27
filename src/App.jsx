@@ -6,6 +6,7 @@ import {
   FolderIcon,
   FunnelIcon,
   GridIcon,
+  LinkIcon,
   LogOutIcon,
   MailIcon,
   NoteIcon,
@@ -37,6 +38,7 @@ import { AgeingReportModule } from "./components/ageingReport/AgeingReportModule
 import { NdaModule } from "./components/relationships/NdaModule";
 import { VisitPlanningModule } from "./components/relationships/VisitPlanningModule";
 import { IoiModule } from "./components/relationships/IoiModule";
+import { ChannelPartnerModule } from "./components/relationships/ChannelPartnerModule";
 import { ExecutiveDashboardModule } from "./components/executive/ExecutiveDashboardModule";
 import { UniversalFiltersModule } from "./components/universalFilters/UniversalFiltersModule";
 import { OutreachDoeModule } from "./components/outreachDoe/OutreachDoeModule";
@@ -70,7 +72,8 @@ const iconMap = {
   note: NoteIcon,
   userCheck: UserCheckIcon,
   clock: ClockIcon,
-  sliders: SlidersIcon
+  sliders: SlidersIcon,
+  link: LinkIcon
 };
 
 const barToneClass = {
@@ -199,6 +202,8 @@ function AppShell() {
               <VisitPlanningModule />
             ) : activePage === "ioi" ? (
               <IoiModule />
+            ) : activePage === "channel-partner" ? (
+              <ChannelPartnerModule />
             ) : MODULE_TO_STAGE[activePage] ? (
               // Field Visit and Term Sheet still share one component, keyed
               // so switching between them remounts rather than reusing the
