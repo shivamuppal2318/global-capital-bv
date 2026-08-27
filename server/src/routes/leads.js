@@ -1,11 +1,26 @@
 import { Router } from "express";
 import { prisma } from "../db.js";
+import { signClientInviteToken } from "../lib/clientPortalToken.js";
+import { sendSystemEmail, clientPortalInviteEmail } from "../lib/systemMailer.js";
 
 const router = Router();
 
+// The client portal is server-rendered by THIS API (see routes/clientPortal.js),
+// not the React SPA — so its links point at the API's own base URL, the
+// same pattern trackingPixelUrl()/leadSender.js already use, not
+// lib/appUrl.js's appBaseUrl() (that one is the frontend's CORS_ORIGIN,
+// used for links that open the SPA's sign-in page).
+function apiBaseUrl() {
+  return process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
+}
+
+// clientUser select is deliberately id/email only — never the password
+// hash, which has no reason to leave this route at all.
+const clientUserSelect = { select: { id: true, email: true } };
+
 router.get("/", async (req, res, next) => {
   try {
-    const leads = await prisma.lead.findMany({ orderBy: { createdAt: "desc" } });
+    const leads = await prisma.lead.findMany({ orderBy: { createdAt: "desc" }, include: { clientUser: clientUserSelect } });
     res.json(leads);
   } catch (err) {
     next(err);
@@ -14,7 +29,7 @@ router.get("/", async (req, res, next) => {
 
 router.get("/:id", async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: clientUserSelect } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
     res.json(lead);
   } catch (err) {
@@ -123,6 +138,37 @@ router.post("/inbound", async (req, res, next) => {
     });
 
     res.status(201).json(lead);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Deliberately triggered per-lead by a rep, not auto-sent to every cold
+// contact: the client portal only means something once there's a real
+// deal underway to show progress on, and most cold-email recipients never
+// reach that point (EmailLead has no link to a CRM Lead at all — see
+// businessContext.js's earlier note on the same gap). "Sent" here means
+// the invite email actually went out via the configured system SMTP; if
+// none is configured, the link is still generated and returned so a rep
+// can copy/paste it by hand instead of the whole action failing.
+router.post("/:id/portal-invite", async (req, res, next) => {
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: true } });
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+    if (lead.clientUser) {
+      return res.status(400).json({ error: `${lead.company} already has a portal account (${lead.clientUser.email}).` });
+    }
+    if (!lead.email) {
+      return res.status(400).json({ error: "This lead has no email address on file — add one before inviting them." });
+    }
+
+    const token = signClientInviteToken(lead.id);
+    const inviteUrl = `${apiBaseUrl()}/api/client-portal/register/${token}`;
+
+    const { subject, html, text } = clientPortalInviteEmail({ contactName: lead.name, company: lead.company, registerUrl: inviteUrl });
+    const result = await sendSystemEmail({ to: lead.email, subject, html, text });
+
+    res.json({ inviteUrl, sent: result.sent, reason: result.sent ? undefined : result.reason });
   } catch (err) {
     next(err);
   }

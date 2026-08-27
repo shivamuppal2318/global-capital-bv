@@ -95,3 +95,17 @@ export function welcomeEmail({ name, email, temporaryPassword, appUrl }) {
     )
   };
 }
+
+export function clientPortalInviteEmail({ contactName, company, registerUrl }) {
+  return {
+    subject: `${company} — set up your Global Capital BV client portal`,
+    text: `Hi ${contactName},\n\nYou can track the status of this deal — NDA, IOI and every other step — from your own portal.\n\nSet up your account: ${registerUrl}\n\nThis link is valid for 30 days.`,
+    html: shell(
+      "Track your deal, step by step",
+      `<p style="font-size:15px;color:#334463;line-height:1.6">Hi ${contactName},</p>
+       <p style="font-size:15px;color:#334463;line-height:1.6">You can follow ${company}'s progress with us directly — NDA, calls, the data room, IOI and every step after it — from your own client portal.</p>
+       <p style="margin:24px 0"><a href="${registerUrl}" style="background:#3046b2;color:#fff;text-decoration:none;padding:12px 22px;border-radius:12px;font-weight:600;display:inline-block">Set up your account</a></p>
+       <p style="font-size:13px;color:#8592ab;line-height:1.6">This link is valid for 30 days. If the button doesn't work, paste this into your browser:<br><span style="word-break:break-all">${registerUrl}</span></p>`
+    )
+  };
+}

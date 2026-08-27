@@ -435,10 +435,34 @@ model Lead {
   ndaRecord  NdaRecord?
   visitPlans VisitPlan[]
   ioiRecord  IoiRecord?
+  clientUser ClientUser?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@index([status])
+}
+
+// A login for the counterparty themselves — separate identity system from
+// User (staff). One per lead: registering claims that specific deal's
+// portal, so the dashboard has exactly one lead's progression to show,
+// never a menu of deals to pick from.
+model ClientUser {
+  id           String           @id @default(cuid())
+  lead         Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId       String           @unique
+  name         String
+  email        String           @unique
+  phone        String?
+  passwordHash String
+  status       ClientUserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+enum ClientUserStatus {
+  ACTIVE
+  SUSPENDED
 }
 
 enum LeadTemperature {

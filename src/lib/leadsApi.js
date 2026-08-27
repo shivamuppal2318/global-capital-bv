@@ -10,5 +10,6 @@ function request(path, options = {}) {
 export const leadsApi = {
   list: () => request(""),
   get: (id) => request(`/${id}`),
-  patch: (id, body) => request(`/${id}`, { method: "PATCH", body })
+  patch: (id, body) => request(`/${id}`, { method: "PATCH", body }),
+  sendPortalInvite: (id) => request(`/${id}/portal-invite`, { method: "POST" })
 };
