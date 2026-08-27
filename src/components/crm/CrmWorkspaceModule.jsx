@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  AttachmentIcon,
-  CalendarIcon,
   FunnelIcon,
-  GridIcon,
   MailIcon,
-  NoteIcon,
   PencilIcon,
   PhoneIcon,
   PlusIcon,
@@ -28,15 +24,6 @@ const avatarToneClass = {
 };
 
 const STATUS_LABEL = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified", NEGOTIATION: "Negotiation", CONVERTED: "Converted", LOST: "Lost" };
-
-const relatedIcons = {
-  Notes: NoteIcon,
-  Attachments: AttachmentIcon,
-  Emails: MailIcon,
-  Calls: PhoneIcon,
-  Meetings: CalendarIcon,
-  Cadences: SendIcon
-};
 
 const TEMPERATURE_OPTIONS = ["HOT", "WARM", "COLD"];
 
@@ -269,9 +256,18 @@ export function CrmWorkspaceModule() {
   // a near-duplicate like "Iberia solar partners"). A genuinely new value
   // can still just be typed; this never restricts input like a <select> would.
   const [facets, setFacets] = useState(null);
+  // Company-wide: how many of ALL leads have reached each pipeline stage —
+  // distinct from `pipeline` above (one lead's own stage-by-stage detail,
+  // shown in the popup) and from Executive Dashboard's fuller Funnel Health
+  // chart (which also shows conversion rates between stages).
+  const [pipelineSummary, setPipelineSummary] = useState(null);
 
   useEffect(() => {
     universalFiltersApi.facets().then(setFacets).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    leadsApi.pipelineSummary().then(setPipelineSummary).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -349,6 +345,10 @@ export function CrmWorkspaceModule() {
       });
       setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
       setEditing(false);
+      // Status changed could move this lead into/out of "reached Outreach" —
+      // keep the company-wide summary in sync rather than leaving it stale
+      // until the next full page load.
+      leadsApi.pipelineSummary().then(setPipelineSummary).catch(() => {});
     } catch (err) {
       setSaveError(err.message);
     } finally {
@@ -397,18 +397,34 @@ export function CrmWorkspaceModule() {
       ]
     : [];
 
-  const related = [
-    ["Notes", 0],
-    ["Attachments", 0],
-    ["Emails", 0],
-    ["Calls", 0],
-    ["Meetings", 0],
-    ["Cadences", 0]
-  ];
-
   return (
     <div className="space-y-6">
       <Header stats={stats} />
+
+      {pipelineSummary ? (
+        <Card className="px-5 py-5">
+          <SectionTitle
+            icon={RadarIcon}
+            iconClass="text-[#2f96da]"
+            subtitle="How many of all leads have reached each stage at least once — not one lead's own journey (see a lead's popup for that), and not conversion rates between stages (see Executive Dashboard's Funnel Health for that)."
+          >
+            Deal pipeline reach
+          </SectionTitle>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {pipelineSummary.map((stage) => (
+              <div key={stage.id}>
+                <div className="mb-2 flex items-center justify-between gap-4">
+                  <p className="text-[14px] font-semibold text-[#12213a]">{stage.label}</p>
+                  <p className="text-[14px] text-[#5f6f89]">
+                    {stage.reached} of {stage.total}
+                  </p>
+                </div>
+                <ProgressBar width={`${stage.total ? Math.round((stage.reached / stage.total) * 100) : 0}%`} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       {leads.length > 0 ? (
         <Card className="px-5 py-5">
@@ -480,24 +496,6 @@ export function CrmWorkspaceModule() {
                 ) : null}
               </tbody>
             </table>
-          </div>
-        </Card>
-
-        <Card className="w-full px-5 py-5 sm:w-[280px]">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.2em] text-[#53627d]">Related Lists</p>
-          <div className="mt-6 space-y-5">
-            {related.map(([label, count]) => {
-              const Icon = relatedIcons[label] ?? GridIcon;
-              return (
-                <div key={label} className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 text-[#102246]">
-                    <Icon className="size-4 text-[#5f6f89]" />
-                    <span className="text-[15px] font-medium">{label}</span>
-                  </div>
-                  <span className="rounded-full bg-[#edf2f7] px-2.5 py-1 text-[12px] font-semibold text-[#5f6f89]">{count}</span>
-                </div>
-              );
-            })}
           </div>
         </Card>
       </section>

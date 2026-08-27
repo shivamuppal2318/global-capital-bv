@@ -13,5 +13,7 @@ export const leadsApi = {
   patch: (id, body) => request(`/${id}`, { method: "PATCH", body }),
   // This one lead's real progress across the full deal lifecycle — see
   // server/src/lib/leadPipeline.js.
-  pipeline: (id) => request(`/${id}/pipeline`)
+  pipeline: (id) => request(`/${id}/pipeline`),
+  // How many of ALL leads have reached each stage — see the same file.
+  pipelineSummary: () => request("/pipeline-summary")
 };

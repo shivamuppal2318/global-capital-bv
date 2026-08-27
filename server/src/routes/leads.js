@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../db.js";
-import { computeLeadPipeline } from "../lib/leadPipeline.js";
+import { computeLeadPipeline, computePipelineSummary } from "../lib/leadPipeline.js";
 
 const router = Router();
 
@@ -8,6 +8,19 @@ router.get("/", async (req, res, next) => {
   try {
     const leads = await prisma.lead.findMany({ orderBy: { createdAt: "desc" } });
     res.json(leads);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// How many of ALL leads have reached each stage — CRM Workspace's own
+// company-wide summary, distinct from Executive Dashboard's fuller Funnel
+// Health chart (which also shows conversion rates between stages). Must be
+// registered before "/:id" below, or Express would match "pipeline-summary"
+// itself as an :id.
+router.get("/pipeline-summary", async (req, res, next) => {
+  try {
+    res.json(await computePipelineSummary());
   } catch (err) {
     next(err);
   }
