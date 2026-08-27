@@ -451,7 +451,7 @@ export function NdaModule() {
             <div className="mt-4 flex flex-wrap gap-2">
               <ActionButton label={saving ? "Saving…" : "Save"} small onClick={handleSave} disabled={saving} />
               <ActionButton
-                label={saving ? "Saving…" : "Save & Send"}
+                label={saving ? "Sending…" : "Send"}
                 primary
                 small
                 onClick={handleSaveAndSend}
