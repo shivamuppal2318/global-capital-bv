@@ -47,7 +47,7 @@ const PIPELINE_STATUS_STYLE = {
 function LeadDetailModal({
   lead, overview, pipeline, pipelineLoading, onClose,
   editing, editForm, setEditForm, saving, saveError, startEdit, setEditing, saveEdit,
-  activeTab, setActiveTab, facets
+  activeTab, setActiveTab, facets, inviting, inviteResult, onSendInvite
 }) {
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -101,7 +101,36 @@ function LeadDetailModal({
             <ActionButton label="Convert" icon={UserCheckIcon} />
             <ActionButton label={editing ? "Editing…" : "Edit"} icon={PencilIcon} onClick={startEdit} disabled={editing} />
             <ActionButton label="Tags" icon={TagIcon} />
+            <ActionButton
+              label={inviting ? "Inviting…" : "Send Portal Invite"}
+              icon={SendIcon}
+              onClick={onSendInvite}
+              disabled={inviting || Boolean(lead.clientUser)}
+            />
           </div>
+
+          {lead.clientUser ? (
+            <p className="mt-2 text-[12px] text-[#8592ab]">Portal account already active — {lead.clientUser.email}</p>
+          ) : null}
+
+          {inviteResult ? (
+            <div className="mt-3 rounded-[12px] border border-[#e7edf5] bg-[#f7f9fc] px-4 py-3 text-[13px]">
+              {inviteResult.ok ? (
+                inviteResult.sent ? (
+                  <p className="text-[#2a9c60]">Invite emailed to {lead.email}.</p>
+                ) : (
+                  <div>
+                    <p className="text-[#c47f1a]">Not emailed — {inviteResult.reason} Copy the link below and send it manually:</p>
+                    <p className="mt-1.5 break-all rounded-[8px] bg-white px-3 py-2 font-mono text-[12px] text-[#3046b2]">
+                      {inviteResult.inviteUrl}
+                    </p>
+                  </div>
+                )
+              ) : (
+                <p className="text-[#e0483f]">{inviteResult.error}</p>
+              )}
+            </div>
+          ) : null}
 
           <div className="mt-6 border-t border-[#e7edf5] pt-6">
             <SectionTitle icon={RadarIcon} iconClass="text-[#2f96da]">
@@ -247,6 +276,8 @@ export function CrmWorkspaceModule() {
   const [editForm, setEditForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [inviting, setInviting] = useState(false);
+  const [inviteResult, setInviteResult] = useState(null);
   const [pipeline, setPipeline] = useState(null);
   const [pipelineLoading, setPipelineLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -355,6 +386,20 @@ export function CrmWorkspaceModule() {
       setSaving(false);
     }
   };
+
+  const sendPortalInvite = async () => {
+    setInviting(true);
+    setInviteResult(null);
+    try {
+      const result = await leadsApi.sendPortalInvite(selectedLead.id);
+      setInviteResult({ ok: true, ...result });
+    } catch (err) {
+      setInviteResult({ ok: false, error: err.message });
+    } finally {
+      setInviting(false);
+    }
+  };
+
   const unassigned = leads.filter((l) => !l.owner).length;
   const convertedPct = leads.length ? ((leads.filter((l) => l.status === "CONVERTED").length / leads.length) * 100).toFixed(1) : "0.0";
   const qualifiedCount = leads.filter((l) => l.qualified).length;
@@ -464,6 +509,7 @@ export function CrmWorkspaceModule() {
                     onClick={() => {
                       setSelectedId(lead.id);
                       setDetailOpen(true);
+                      setInviteResult(null);
                     }}
                     className={`cursor-pointer bg-white transition hover:bg-[#f8faff] ${lead.id === selectedId ? "bg-[#f5f8fd]" : ""}`}
                   >
@@ -521,6 +567,9 @@ export function CrmWorkspaceModule() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           facets={facets}
+          inviting={inviting}
+          inviteResult={inviteResult}
+          onSendInvite={sendPortalInvite}
         />
       ) : null}
     </div>

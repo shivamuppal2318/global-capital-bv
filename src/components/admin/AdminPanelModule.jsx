@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { LinkIcon, LockIcon, MailIcon, RadarIcon, ShieldIcon, SparklesIcon, UsersIcon } from "../Icons";
+import { LinkIcon, LockIcon, MailIcon, RadarIcon, ShieldIcon, SparklesIcon, UsersIcon, VideoIcon } from "../Icons";
 import { EmployeesPanel } from "./EmployeesPanel";
 import { WhatsappApiPanel } from "./WhatsappApiPanel";
 import { MailboxManager } from "./MailboxManager";
@@ -9,12 +9,14 @@ import { SystemEmailPanel } from "./SystemEmailPanel";
 import { AiSettingsPanel } from "./AiSettingsPanel";
 import { MarketIntelSettingsPanel } from "./MarketIntelSettingsPanel";
 import { AuditLogPanel } from "./AuditLogPanel";
+import { ZoomConnectionPanel } from "../meetings/ZoomConnectionPanel";
 
 const ADMIN_TABS = [
   { id: "employees", label: "Employees", icon: UsersIcon },
   { id: "ai-assistant", label: "AI Assistant", icon: SparklesIcon },
   { id: "market-intelligence-api", label: "Market Intelligence", icon: RadarIcon },
   { id: "whatsapp-api", label: "WhatsApp API", icon: LinkIcon },
+  { id: "zoom-api", label: "Zoom API", icon: VideoIcon },
   { id: "system-email", label: "System Email", icon: MailIcon },
   { id: "email-accounts", label: "Email Accounts", icon: MailIcon },
   { id: "audit-log", label: "Audit Log", icon: ShieldIcon }
@@ -71,6 +73,7 @@ export function AdminPanelModule() {
       {currentTab.id === "ai-assistant" ? <AiSettingsPanel /> : null}
       {currentTab.id === "market-intelligence-api" ? <MarketIntelSettingsPanel /> : null}
       {currentTab.id === "whatsapp-api" ? <WhatsappApiPanel /> : null}
+      {currentTab.id === "zoom-api" ? <ZoomConnectionPanel /> : null}
       {currentTab.id === "system-email" ? <SystemEmailPanel /> : null}
       {currentTab.id === "email-accounts" ? <MailboxManager scope="all" /> : null}
       {currentTab.id === "audit-log" ? <AuditLogPanel /> : null}

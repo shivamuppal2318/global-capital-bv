@@ -131,14 +131,54 @@ export function NdaModule() {
     }
   }
 
+  // Saves the form, then immediately fires the same "send" action the flow
+  // button below does — one click for "this is ready, get it in front of
+  // the client" instead of save-then-hunt-for-the-right-button.
+  async function handleSaveAndSend(e) {
+    e?.preventDefault?.();
+    if (!editing.leadId) return setFormError("Pick which lead this NDA is with.");
+    setSaving(true);
+    setFormError(null);
+    try {
+      const body = { ...editing };
+      for (const k of ["sentAt", "signedAt", "expiresAt"]) body[k] = body[k] || null;
+      body.documentId = body.documentId || null;
+      const record = editing.id ? await ndaApi.update(editing.id, body) : await ndaApi.save(body);
+      const sent = await ndaApi.advance(record.id, "send");
+      setEditing(null);
+      const who = record.lead?.company ?? "the client";
+      if (sent.emailResult?.emailed) {
+        setNotice(`Saved and emailed to ${who}.`);
+      } else if (sent.emailResult) {
+        setNotice(`Saved — not emailed (${sent.emailResult.reason}). Portal link: ${sent.emailResult.portalUrl}`);
+      } else {
+        setNotice(`Saved for ${who}.`);
+      }
+      load();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // One click per step: the server stamps today onto the right field and
   // moves the status, so a reminder can never be logged without a date.
+  // "Send" is also the one step that emails the client — see the
+  // emailResult branch below.
   async function advance(record, step) {
     setBusyId(record.id);
     setNotice(null);
     try {
-      await ndaApi.advance(record.id, step.action);
-      setNotice(`${step.label} recorded for ${record.lead?.company ?? "this lead"}.`);
+      const updated = await ndaApi.advance(record.id, step.action);
+      const who = record.lead?.company ?? "this lead";
+      if (updated.emailResult?.emailed) {
+        setNotice(`Emailed to ${who}.`);
+      } else if (updated.emailResult) {
+        setNotice(`${step.label} recorded, but not emailed (${updated.emailResult.reason}). Portal link: ${updated.emailResult.portalUrl}`);
+      } else {
+        setNotice(`${step.label} recorded for ${who}.`);
+      }
       load();
     } catch (err) {
       setNotice(err.message);
@@ -408,8 +448,15 @@ export function NdaModule() {
             </div>
 
             {formError ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{formError}</p> : null}
-            <div className="mt-4">
-              <ActionButton label={saving ? "Saving…" : "Save"} primary small onClick={handleSave} disabled={saving} />
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ActionButton label={saving ? "Saving…" : "Save"} small onClick={handleSave} disabled={saving} />
+              <ActionButton
+                label={saving ? "Sending…" : "Send"}
+                primary
+                small
+                onClick={handleSaveAndSend}
+                disabled={saving}
+              />
             </div>
           </form>
         ) : null}

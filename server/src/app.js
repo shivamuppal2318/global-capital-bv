@@ -38,6 +38,7 @@ import { webhooksRouter } from "./routes/webhooks.js";
 import { bouncesRouter } from "./routes/bounces.js";
 import { unsubscribeRouter } from "./routes/unsubscribe.js";
 import { ndaRouter } from "./routes/nda.js";
+import { clientPortalRouter } from "./routes/clientPortal.js";
 import { calendlyWebhookRouter } from "./routes/calendlyWebhook.js";
 import { marketIntelligenceRouter } from "./routes/marketIntelligence.js";
 import { emailLeadsRouter } from "./routes/emailLeads.js";
@@ -67,7 +68,7 @@ app.use("/api/auth", authRouter);
 // Calendly/other external senders). Matches the app.js comment this
 // replaces — auth was deliberately deferred until it could be done as one
 // real pass instead of piecemeal.
-const PUBLIC_PREFIXES = ["/api/webhooks", "/api/unsubscribe", "/api/nda", "/api/track"];
+const PUBLIC_PREFIXES = ["/api/webhooks", "/api/unsubscribe", "/api/nda", "/api/track", "/api/client-portal"];
 const INBOUND_WEBHOOK_PATHS = ["/api/leads/inbound", "/api/email/leads/inbound"];
 // Matches the prefix itself or the prefix followed by "/" — a plain
 // startsWith would also match "/api/nda-records" against "/api/nda" (no
@@ -178,6 +179,9 @@ app.use("/api/webhooks/calendly", calendlyWebhookRouter);
 app.use("/api/webhooks", webhooksRouter);
 app.use("/api/unsubscribe", unsubscribeRouter);
 app.use("/api/nda", ndaRouter);
+// Its own auth (a per-lead invite token, then a session cookie) rather
+// than the staff JWT gate above — see requireClientAuth.
+app.use("/api/client-portal", clientPortalRouter);
 app.use("/api/track", trackingRouter);
 
 app.use((req, res) => {

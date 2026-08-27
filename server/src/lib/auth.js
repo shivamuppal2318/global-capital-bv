@@ -67,3 +67,23 @@ export function signToken(user) {
 export function verifyToken(token) {
   return jwt.verify(token, jwtSecret());
 }
+
+// Client-portal sessions (see routes/clientPortal.js) — same signing key
+// as staff tokens, but a `type: "client"` claim staff tokens never carry
+// and requireClientAuth explicitly checks for. A client token's `sub` is a
+// ClientUser id, which doesn't exist in the User table at all, so even
+// without that check a client token could never resolve to a staff
+// account — this is defense in depth, not the only thing stopping it.
+const CLIENT_TOKEN_TTL = "30d";
+
+export function signClientToken(clientUser) {
+  return jwt.sign({ sub: clientUser.id, email: clientUser.email, type: "client" }, jwtSecret(), {
+    expiresIn: CLIENT_TOKEN_TTL
+  });
+}
+
+export function verifyClientToken(token) {
+  const payload = jwt.verify(token, jwtSecret());
+  if (payload.type !== "client") throw new Error("Not a client-portal token.");
+  return payload;
+}
