@@ -39,10 +39,31 @@ function pageStyles() {
     .gc-note a:hover { text-decoration: underline; }
     .gc-error { margin: 0 0 16px; padding: 10px 14px; background: #fdecea; color: #e0483f; border-radius: 12px; font-size: 13px; font-weight: 500; line-height: 1.5; }
 
-    /* Dashboard shell — mirrors App.jsx's TopBar + PageHeader */
+    /* Dashboard shell — mirrors App.jsx's AppShell: a dark Sidebar next to
+       a TopBar + PageHeader column. A client only ever has this one page,
+       so the sidebar carries branding and a single "you are here" nav
+       item rather than pretending there's somewhere else to click. */
     .gc-dashboard-body { background: #f4f7fb; color: #12213a; }
+    .gc-shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+    .gc-shell main { min-width: 0; }
+
+    .gc-sidebar { background: #1b295f; color: #fff; padding: 16px; display: flex; flex-direction: column; }
+    .gc-sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .gc-sidebar-logo { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 16px; background: #fff; overflow: hidden; flex-shrink: 0; }
+    .gc-sidebar-logo-inner { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: #ebf6ef; color: #2b9b60; font-size: 12px; font-weight: 700; }
+    .gc-sidebar-name { margin: 0; font-size: 15px; font-weight: 600; }
+    .gc-sidebar-tagline { margin: 0; font-size: 13px; color: rgba(255,255,255,0.65); }
+    .gc-sidebar-section-label { margin: 0 0 12px; padding: 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.22em; color: rgba(255,255,255,0.36); }
+    .gc-sidebar-item { display: flex; width: 100%; align-items: center; gap: 12px; border-radius: 14px; padding: 12px; background: #2a3c82; color: #fff; text-decoration: none; font-size: 14px; }
+    .gc-sidebar-item-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 12px; background: #2fa84f; flex-shrink: 0; }
+    .gc-sidebar-spacer { flex: 1; }
+    .gc-sidebar-tag { margin-top: 16px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.06); padding: 12px 16px; }
+    .gc-sidebar-tag p { margin: 0; font-size: 13px; }
+    .gc-sidebar-tag p:first-child { font-weight: 500; }
+    .gc-sidebar-tag p:last-child { color: rgba(255,255,255,0.7); }
+
     .gc-topbar { border-bottom: 1px solid #d9e2ef; background: #f7f9fc; padding: 16px 20px; }
-    .gc-topbar-inner { max-width: 880px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .gc-topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
     .gc-brand { display: flex; align-items: center; gap: 10px; }
     .gc-brand-logo { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 12px; background: #fff; border: 1px solid #e7edf5; }
     .gc-brand-logo-inner { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; background: #ebf6ef; color: #2b9b60; font-size: 10px; font-weight: 700; }
@@ -55,7 +76,7 @@ function pageStyles() {
     .gc-signout { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #d6deea; background: #fff; color: #5f6f89; border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 500; text-decoration: none; transition: background .15s; white-space: nowrap; }
     .gc-signout:hover { background: #f4f7fb; }
 
-    .gc-main { max-width: 880px; margin: 0 auto; padding: 32px 20px 56px; }
+    .gc-main { padding: 24px; }
     .gc-badge-pill { display: inline-flex; border-radius: 999px; background: #eef1ff; color: #3046b2; padding: 6px 16px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; }
     .gc-heading { margin: 16px 0 0; font-size: 2.4rem; font-weight: 600; line-height: 1.05; letter-spacing: -0.03em; color: #0f2042; }
     .gc-subheading { margin: 12px 0 0; font-size: 15px; line-height: 1.7; color: #4f6181; max-width: 620px; }
@@ -79,6 +100,13 @@ function pageStyles() {
     .gc-badge { display: inline-flex; border-radius: 999px; padding: 4px 12px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 
     .gc-sign-box { margin-top: 14px; padding: 18px; background: #fbfcfe; border: 1px solid #e7edf5; border-radius: 16px; }
+
+    /* Placed last so it wins over the unconditional .gc-shell/.gc-sidebar
+       rules above at equal specificity. */
+    @media (max-width: 767px) {
+      .gc-shell { grid-template-columns: 1fr; }
+      .gc-sidebar { display: none; }
+    }
   `;
 }
 
@@ -131,32 +159,61 @@ export function dashboardShell({ title, clientName, companyName, bodyHtml }) {
     <style>${pageStyles()}</style>
   </head>
   <body class="gc-dashboard-body">
-    <div class="gc-topbar">
-      <div class="gc-topbar-inner">
-        <div class="gc-brand">
-          <div class="gc-brand-logo"><div class="gc-brand-logo-inner">GC</div></div>
-          <span class="gc-brand-name">Global Capital BV</span>
-          <span class="gc-pill-green">Client Portal</span>
-        </div>
-        <div class="gc-topbar-right">
+    <div class="gc-shell">
+      <aside class="gc-sidebar">
+        <div class="gc-sidebar-brand">
+          <div class="gc-sidebar-logo"><div class="gc-sidebar-logo-inner">GC</div></div>
           <div>
-            <p class="gc-user-name">${escapeHtml(clientName)}</p>
-            <p class="gc-user-sub">${escapeHtml(companyName)}</p>
+            <p class="gc-sidebar-name">Global Capital BV</p>
+            <p class="gc-sidebar-tagline">Funding &amp; Investment OS</p>
           </div>
-          <div class="gc-avatar">${escapeHtml(initials)}</div>
-          <a href="/api/client-portal/logout" class="gc-signout">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <path d="M16 17 21 12 16 7" />
-              <path d="M21 12H9" />
-            </svg>
-            Sign out
-          </a>
         </div>
-      </div>
-    </div>
-    <div class="gc-main">
-      ${bodyHtml}
+        <p class="gc-sidebar-section-label">Client Portal</p>
+        <a href="/api/client-portal/dashboard" class="gc-sidebar-item">
+          <span class="gc-sidebar-item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" width="15" height="15" aria-hidden="true">
+              <path d="M9 11l3 3L22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+          </span>
+          Deal Progress
+        </a>
+        <div class="gc-sidebar-spacer"></div>
+        <div class="gc-sidebar-tag">
+          <p>Strategic Investments,</p>
+          <p>Sustainable Growth</p>
+        </div>
+      </aside>
+
+      <main>
+        <div class="gc-topbar">
+          <div class="gc-topbar-inner">
+            <div class="gc-brand">
+              <div class="gc-brand-logo"><div class="gc-brand-logo-inner">GC</div></div>
+              <span class="gc-brand-name">Global Capital BV</span>
+              <span class="gc-pill-green">Client Portal</span>
+            </div>
+            <div class="gc-topbar-right">
+              <div>
+                <p class="gc-user-name">${escapeHtml(clientName)}</p>
+                <p class="gc-user-sub">${escapeHtml(companyName)}</p>
+              </div>
+              <div class="gc-avatar">${escapeHtml(initials)}</div>
+              <a href="/api/client-portal/logout" class="gc-signout">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <path d="M16 17 21 12 16 7" />
+                  <path d="M21 12H9" />
+                </svg>
+                Sign out
+              </a>
+            </div>
+          </div>
+        </div>
+        <div class="gc-main">
+          ${bodyHtml}
+        </div>
+      </main>
     </div>
   </body>
 </html>`;
