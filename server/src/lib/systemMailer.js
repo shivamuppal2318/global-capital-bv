@@ -109,3 +109,22 @@ export function clientPortalInviteEmail({ contactName, company, registerUrl }) {
     )
   };
 }
+
+// isNewAccount picks the button's destination and wording — a client who
+// already has a portal account gets sent to sign in, not asked to
+// register again; one who doesn't gets an invite link that lands them on
+// registration first, then the NDA once they're in.
+export function ndaReadyToSignEmail({ contactName, company, doeName, portalUrl, isNewAccount }) {
+  const contactLine = doeName ? `Your Global Capital BV contact, <strong>${doeName}</strong>, has` : "We've";
+  return {
+    subject: `${company} — NDA ready for signature`,
+    text: `Hi ${contactName},\n\n${doeName ? `Your Global Capital BV contact, ${doeName}, has` : "We've"} sent over an NDA for ${company} to review and sign.\n\n${isNewAccount ? "Set up your client portal account, then sign it there:" : "Sign in to your client portal to review and sign it:"}\n${portalUrl}`,
+    html: shell(
+      "NDA ready for your signature",
+      `<p style="font-size:15px;color:#334463;line-height:1.6">Hi ${contactName},</p>
+       <p style="font-size:15px;color:#334463;line-height:1.6">${contactLine} sent over an NDA for ${company} to review and sign.</p>
+       <p style="margin:24px 0"><a href="${portalUrl}" style="background:#3046b2;color:#fff;text-decoration:none;padding:12px 22px;border-radius:12px;font-weight:600;display:inline-block">${isNewAccount ? "Set up your account & sign" : "Sign in to sign"}</a></p>
+       <p style="font-size:13px;color:#8592ab;line-height:1.6">If the button doesn't work, paste this into your browser:<br><span style="word-break:break-all">${portalUrl}</span></p>`
+    )
+  };
+}

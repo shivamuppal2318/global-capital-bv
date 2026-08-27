@@ -171,7 +171,7 @@ const STATUS_STYLE = {
   not_started: { bg: "#eef1f6", fg: "#748096", label: "Not started" }
 };
 
-function stageRowHtml(stage, isLast) {
+function stageRowHtml(stage, isLast, extraHtml = "") {
   const style = STATUS_STYLE[stage.status];
   return `
     <div style="display:flex;gap:16px;padding:18px 0;${isLast ? "" : "border-bottom:1px solid #eef1f6;"}">
@@ -182,7 +182,31 @@ function stageRowHtml(stage, isLast) {
           <span style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;background:${style.bg};color:${style.fg};white-space:nowrap;">${style.label}</span>
         </div>
         <p style="margin:4px 0 0;font-size:13px;color:#5c6b87;">${escapeHtml(stage.detail)}</p>
+        ${extraHtml}
       </div>
+    </div>`;
+}
+
+// The NDA row is the only stage a client can act on directly — it's the
+// gate everything else waits behind, and the same typed-name-plus-checkbox
+// "clickwrap" the old cold-email NDA link used (see routes/nda.js), just
+// reached through the portal instead of a one-off signing link.
+function ndaSignFormHtml({ error, doeName } = {}) {
+  return `
+    <div style="margin-top:14px;padding:16px;background:#fbfcfe;border:1px solid #e7edf5;border-radius:14px;">
+      ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
+      ${error ? `<p style="margin:0 0 12px;padding:10px 14px;background:#fdecea;color:#e0483f;border-radius:10px;font-size:13px;">${escapeHtml(error)}</p>` : ""}
+      <form method="POST" action="/api/client-portal/nda/sign">
+        <label style="display:block;margin:0 0 12px;">
+          <span style="display:block;margin-bottom:6px;font-size:13px;font-weight:600;color:#334463;">Type your full name to sign</span>
+          <input name="fullName" required style="display:block;width:100%;padding:10px 14px;border:1px solid #d6deea;border-radius:10px;font-size:14px;color:#102246;box-sizing:border-box;outline:none;" />
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin:0 0 14px;font-size:13px;color:#334463;">
+          <input type="checkbox" name="agree" required />
+          I have read and agree to the terms of this NDA
+        </label>
+        <button type="submit" style="background:#3046b2;color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;">Accept &amp; sign</button>
+      </form>
     </div>`;
 }
 
@@ -217,6 +241,13 @@ clientPortalRouter.get(
 
     const completedCount = stages.filter((s) => s.status === "completed").length;
 
+    // Only SENT/REMINDER_1/REMINDER_2 are actually awaiting the client's
+    // signature — DRAFT hasn't reached them yet, and SIGNED/DECLINED/
+    // EXPIRED are already resolved, so the form only appears in the one
+    // state where signing is a real, available action.
+    const ndaSignable = nda && ["SENT", "REMINDER_1", "REMINDER_2"].includes(nda.status);
+    const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
+
     res.send(
       portalShell({
         title: "Your deal",
@@ -231,10 +262,49 @@ clientPortalRouter.get(
           </div>
           <p style="margin:0 0 24px;font-size:13px;color:#8592ab;">${completedCount} of ${stages.length} steps completed</p>
           <div>
-            ${stages.map((s, i) => stageRowHtml(s, i === stages.length - 1)).join("")}
+            ${stages
+              .map((s, i) =>
+                stageRowHtml(
+                  s,
+                  i === stages.length - 1,
+                  s.key === "nda" && ndaSignable ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner }) : ""
+                )
+              )
+              .join("")}
           </div>
         `
       })
     );
+  })
+);
+
+// --- NDA signing (client-side) ---------------------------------------
+
+const ndaSignSchema = z.object({ fullName: z.string().trim().min(1), agree: z.string().min(1) });
+
+clientPortalRouter.post(
+  "/nda/sign",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const leadId = req.clientUser.leadId;
+    const parsed = ndaSignSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("Enter your name and confirm you agree to the terms.")}`);
+    }
+
+    const nda = await prisma.ndaRecord.findUnique({ where: { leadId } });
+    // Re-checked server-side, not just hidden by the dashboard's own
+    // conditional rendering — someone could POST here directly after the
+    // NDA had already moved to SIGNED/DECLINED/EXPIRED in the meantime.
+    if (!nda || !["SENT", "REMINDER_1", "REMINDER_2"].includes(nda.status)) {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA isn't awaiting a signature right now.")}`);
+    }
+
+    await prisma.ndaRecord.update({
+      where: { leadId },
+      data: { status: "SIGNED", signedAt: new Date(), signerName: parsed.data.fullName, signerEmail: req.clientUser.email }
+    });
+
+    res.redirect("/api/client-portal/dashboard");
   })
 );

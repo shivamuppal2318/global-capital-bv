@@ -3,8 +3,17 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { ndaMetrics } from "../lib/relationshipMetrics.js";
+import { signClientInviteToken } from "../lib/clientPortalToken.js";
+import { sendSystemEmail, ndaReadyToSignEmail } from "../lib/systemMailer.js";
 
 export const ndaRecordsRouter = Router();
+
+// Same reasoning as leads.js's apiBaseUrl(): the client portal is
+// server-rendered by THIS API, not the React SPA, so its links point at
+// the API's own base URL, not the frontend's CORS_ORIGIN.
+function apiBaseUrl() {
+  return process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
+}
 
 const NDA_STATUSES = ["DRAFT", "SENT", "REMINDER_1", "REMINDER_2", "SIGNED", "DECLINED", "EXPIRED"];
 
@@ -123,12 +132,47 @@ ndaRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "Record the send date before logging a reminder." });
   }
 
+  // Sending (or re-sending) after the client has already acted on it would
+  // silently regress a SIGNED/DECLINED/EXPIRED record back to "Sent" — the
+  // status flow's forward-only buttons make that easy to click by accident.
+  if (req.params.action === "send" && ["SIGNED", "DECLINED", "EXPIRED"].includes(existing.status)) {
+    return res.status(400).json({ error: `This NDA is already ${existing.status.toLowerCase()} — sending again would incorrectly reset it.` });
+  }
+
   const record = await prisma.ndaRecord.update({
     where: { id: existing.id },
     data: { [step.field]: new Date(), status: step.status },
     include
   });
-  res.json(record);
+
+  // "Send" is the one action a client actually needs to hear about — it's
+  // what puts the ball in their court. Reminders/signing stay internal
+  // record-keeping (a reminder nudge is a real conversation, not an
+  // automated email; signing is either the client's own portal action or a
+  // rep recording something that happened offline).
+  let emailResult = null;
+  if (req.params.action === "send") {
+    const lead = await prisma.lead.findUnique({ where: { id: existing.leadId }, include: { clientUser: true } });
+    const portalUrl = lead.clientUser
+      ? `${apiBaseUrl()}/api/client-portal/login`
+      : `${apiBaseUrl()}/api/client-portal/register/${signClientInviteToken(lead.id)}`;
+
+    if (!lead.email) {
+      emailResult = { emailed: false, reason: "This lead has no email address on file.", portalUrl: null };
+    } else {
+      const { subject, html, text } = ndaReadyToSignEmail({
+        contactName: lead.name,
+        company: lead.company,
+        doeName: record.owner,
+        portalUrl,
+        isNewAccount: !lead.clientUser
+      });
+      const result = await sendSystemEmail({ to: lead.email, subject, html, text });
+      emailResult = { emailed: result.sent, reason: result.sent ? undefined : result.reason, portalUrl };
+    }
+  }
+
+  res.json({ ...record, emailResult });
 }));
 
 ndaRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
