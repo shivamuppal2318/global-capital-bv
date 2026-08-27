@@ -216,7 +216,7 @@ export function OutreachDoeModule() {
           <table className="w-full min-w-[640px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
-                {["DOE", "Outreach Sent", "Outreach/Day", "Positive Response %", "Cold Email Open Rate"].map((h) => (
+                {["DOE", "Outreach Sent", "Positive Response %", "Cold Email Open Rate"].map((h) => (
                   <th key={h} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
                     {h}
                   </th>
@@ -228,7 +228,6 @@ export function OutreachDoeModule() {
                 <tr key={row.doe} className="border-b border-[#f1f4f9] last:border-0">
                   <td className="py-3 pr-4 text-[14px] font-semibold text-[#102246]">{row.doe}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{row.outreachSent}</td>
-                  <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtNum(row.outreachPerDay)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtPct(row.positiveResponseRate)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtPct(row.coldEmailOpenRate)}</td>
                 </tr>
