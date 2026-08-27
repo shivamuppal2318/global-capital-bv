@@ -4,7 +4,6 @@ import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
 import { meetingsApi } from "../../lib/zoomApi";
 import { callsApi } from "../../lib/relationshipsApi";
 import { leadsApi } from "../../lib/leadsApi";
-import { ZoomConnectionPanel } from "./ZoomConnectionPanel";
 import { CallOutcomePanel } from "./CallOutcomePanel";
 
 function formatDateTime(iso) {
@@ -153,71 +152,67 @@ export function MeetingsModule() {
       <Header stats={stats} />
 
       <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
-        <div className="space-y-4">
-          <Card className="px-5 py-5">
-            <SectionTitle icon={PlusIcon} iconClass="text-[#3046b2]">
-              Schedule a Zoom call
-            </SectionTitle>
-            <form onSubmit={handleSchedule} className="mt-4 space-y-4">
+        <Card className="px-5 py-5">
+          <SectionTitle icon={PlusIcon} iconClass="text-[#3046b2]">
+            Schedule a Zoom call
+          </SectionTitle>
+          <form onSubmit={handleSchedule} className="mt-4 space-y-4">
+            <div>
+              <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Lead</label>
+              <select
+                value={leadId}
+                onChange={(e) => handleLeadChange(e.target.value)}
+                className="w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+              >
+                <option value="">No lead (general call)</option>
+                {leads.map((lead) => (
+                  <option key={lead.id} value={lead.id}>
+                    {lead.name} — {lead.company}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Topic</label>
+              <input
+                type="text"
+                required
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="Mandate fit call"
+                className="w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Lead</label>
+                <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Date & time</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Duration</label>
                 <select
-                  value={leadId}
-                  onChange={(e) => handleLeadChange(e.target.value)}
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
                   className="w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
                 >
-                  <option value="">No lead (general call)</option>
-                  {leads.map((lead) => (
-                    <option key={lead.id} value={lead.id}>
-                      {lead.name} — {lead.company}
+                  {[15, 30, 45, 60].map((m) => (
+                    <option key={m} value={m}>
+                      {m} minutes
                     </option>
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Topic</label>
-                <input
-                  type="text"
-                  required
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="Mandate fit call"
-                  className="w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Date & time</label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Duration</label>
-                  <select
-                    value={duration}
-                    onChange={(e) => setDuration(e.target.value)}
-                    className="w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
-                  >
-                    {[15, 30, 45, 60].map((m) => (
-                      <option key={m} value={m}>
-                        {m} minutes
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <ActionButton label={scheduling ? "Scheduling…" : "Schedule Zoom call"} icon={VideoIcon} primary onClick={handleSchedule} />
-              {scheduleError ? <p className="text-[13px] font-medium text-[#e0483f]">{scheduleError}</p> : null}
-            </form>
-          </Card>
-
-          <ZoomConnectionPanel />
-        </div>
+            </div>
+            <ActionButton label={scheduling ? "Scheduling…" : "Schedule Zoom call"} icon={VideoIcon} primary onClick={handleSchedule} />
+            {scheduleError ? <p className="text-[13px] font-medium text-[#e0483f]">{scheduleError}</p> : null}
+          </form>
+        </Card>
 
         <Card className="px-5 py-5">
           <SectionTitle icon={CalendarIcon} iconClass="text-[#f29b3a]">
