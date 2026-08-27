@@ -5,7 +5,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { hashPassword, verifyPassword, signClientToken } from "../lib/auth.js";
 import { verifyClientInviteToken } from "../lib/clientPortalToken.js";
 import { requireClientAuth, setClientSessionCookie, clearClientSessionCookie } from "../middleware/requireClientAuth.js";
-import { portalShell, formField, primaryButton, errorBanner, noteText, escapeHtml } from "../lib/clientPortalPage.js";
+import { authShell, dashboardShell, formField, primaryButton, errorBanner, noteText, escapeHtml } from "../lib/clientPortalPage.js";
 import { buildPortalStages } from "../lib/clientPortalStages.js";
 import { REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
 
@@ -13,22 +13,36 @@ export const clientPortalRouter = Router();
 
 // --- Registration ----------------------------------------------------------
 
-function registerFormHtml({ lead, error, values = {} }) {
-  return portalShell({
-    title: "Set up your account",
+function inviteMessagePage({ title, message, note }) {
+  return authShell({
+    title,
+    subtitle: "",
     bodyHtml: `
-      <h1 style="margin:0 0 6px;font-size:20px;color:#0f2042;">Set up your account</h1>
-      <p style="margin:0 0 24px;font-size:14px;color:#5c6b87;">For ${escapeHtml(lead.company)} — track your NDA, IOI and every step in between.</p>
-      ${errorBanner(error)}
-      <form method="POST">
-        ${formField({ label: "Full name", name: "name", value: values.name ?? lead.name ?? "" })}
-        ${formField({ label: "Email", name: "email", type: "email", value: values.email ?? lead.email ?? "" })}
-        ${formField({ label: "Phone number", name: "phone", type: "tel", required: false, value: values.phone ?? "" })}
-        ${formField({ label: "Password", name: "password", type: "password", placeholder: "At least 8 characters" })}
-        ${formField({ label: "Confirm password", name: "confirmPassword", type: "password" })}
-        ${primaryButton("Create account")}
-      </form>
-      ${noteText(`Already registered? <a href="/api/client-portal/login" style="color:#3046b2;">Sign in</a>`)}
+      <div style="margin-top:24px;">
+        <p style="margin:0;font-size:14px;color:#5c6b87;line-height:1.7;text-align:center;">${message}</p>
+        ${note ? noteText(note) : ""}
+      </div>
+    `
+  });
+}
+
+function registerFormHtml({ lead, error, values = {} }) {
+  return authShell({
+    title: "Set up your account",
+    subtitle: `For ${escapeHtml(lead.company)} — track your NDA, IOI and every step in between.`,
+    bodyHtml: `
+      <div style="margin-top:24px;">
+        ${errorBanner(error)}
+        <form method="POST">
+          ${formField({ label: "Full name", name: "name", value: values.name ?? lead.name ?? "" })}
+          ${formField({ label: "Email", name: "email", type: "email", value: values.email ?? lead.email ?? "" })}
+          ${formField({ label: "Phone number", name: "phone", type: "tel", required: false, value: values.phone ?? "" })}
+          ${formField({ label: "Password", name: "password", type: "password", placeholder: "At least 8 characters" })}
+          ${formField({ label: "Confirm password", name: "confirmPassword", type: "password" })}
+          ${primaryButton("Create account")}
+        </form>
+        ${noteText(`Already registered? <a href="/api/client-portal/login">Sign in</a>`)}
+      </div>
     `
   });
 }
@@ -38,20 +52,19 @@ clientPortalRouter.get(
   asyncHandler(async (req, res) => {
     const leadId = verifyClientInviteToken(req.params.token);
     if (!leadId) {
-      return res
-        .status(410)
-        .send(portalShell({ title: "Link expired", bodyHtml: `<p style="font-size:14px;color:#5c6b87;">This invite link is invalid or has expired. Ask your contact at Global Capital BV to send a new one.</p>` }));
+      return res.status(410).send(inviteMessagePage({ title: "Link expired", message: "This invite link is invalid or has expired. Ask your contact at Global Capital BV to send a new one." }));
     }
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId }, include: { clientUser: true } });
     if (!lead) {
-      return res.status(404).send(portalShell({ title: "Not found", bodyHtml: `<p style="font-size:14px;color:#5c6b87;">We couldn't find this invite.</p>` }));
+      return res.status(404).send(inviteMessagePage({ title: "Not found", message: "We couldn't find this invite." }));
     }
     if (lead.clientUser) {
       return res.send(
-        portalShell({
+        inviteMessagePage({
           title: "Already registered",
-          bodyHtml: `<p style="font-size:14px;color:#5c6b87;">An account already exists for ${escapeHtml(lead.company)}.</p>${noteText(`<a href="/api/client-portal/login" style="color:#3046b2;">Sign in instead</a>`)}`
+          message: `An account already exists for ${escapeHtml(lead.company)}.`,
+          note: `<a href="/api/client-portal/login">Sign in instead</a>`
         })
       );
     }
@@ -75,14 +88,18 @@ clientPortalRouter.post(
   asyncHandler(async (req, res) => {
     const leadId = verifyClientInviteToken(req.params.token);
     if (!leadId) {
-      return res.status(410).send(portalShell({ title: "Link expired", bodyHtml: `<p style="font-size:14px;color:#5c6b87;">This invite link is invalid or has expired.</p>` }));
+      return res.status(410).send(inviteMessagePage({ title: "Link expired", message: "This invite link is invalid or has expired." }));
     }
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId }, include: { clientUser: true } });
-    if (!lead) return res.status(404).send(portalShell({ title: "Not found", bodyHtml: `<p>We couldn't find this invite.</p>` }));
+    if (!lead) return res.status(404).send(inviteMessagePage({ title: "Not found", message: "We couldn't find this invite." }));
     if (lead.clientUser) {
       return res.send(
-        portalShell({ title: "Already registered", bodyHtml: `<p>An account already exists for ${escapeHtml(lead.company)}.</p>${noteText('<a href="/api/client-portal/login" style="color:#3046b2;">Sign in instead</a>')}` })
+        inviteMessagePage({
+          title: "Already registered",
+          message: `An account already exists for ${escapeHtml(lead.company)}.`,
+          note: `<a href="/api/client-portal/login">Sign in instead</a>`
+        })
       );
     }
 
@@ -115,18 +132,19 @@ clientPortalRouter.post(
 // --- Login -------------------------------------------------------------
 
 function loginFormHtml({ error } = {}) {
-  return portalShell({
+  return authShell({
     title: "Sign in",
+    subtitle: "Track your deal's progress with Global Capital BV.",
     bodyHtml: `
-      <h1 style="margin:0 0 6px;font-size:20px;color:#0f2042;">Sign in</h1>
-      <p style="margin:0 0 24px;font-size:14px;color:#5c6b87;">Track your deal's progress with Global Capital BV.</p>
-      ${errorBanner(error)}
-      <form method="POST">
-        ${formField({ label: "Email", name: "email", type: "email" })}
-        ${formField({ label: "Password", name: "password", type: "password" })}
-        ${primaryButton("Sign in")}
-      </form>
-      ${noteText("Received an invite email? Use the link in that email to set up your account first.")}
+      <div style="margin-top:24px;">
+        ${errorBanner(error)}
+        <form method="POST">
+          ${formField({ label: "Email", name: "email", type: "email" })}
+          ${formField({ label: "Password", name: "password", type: "password" })}
+          ${primaryButton("Sign in")}
+        </form>
+        ${noteText("Received an invite email? Use the link in that email to set up your account first.")}
+      </div>
     `
   });
 }
@@ -164,26 +182,47 @@ clientPortalRouter.get("/logout", (_req, res) => {
 
 // --- Dashboard -------------------------------------------------------------
 
+// Same hexes as src/components/ui.jsx's noteToneClass (green/amber/red/slate)
+// — the badges here should read as the exact same "Badge" component used
+// everywhere else in the app, not a lookalike.
 const STATUS_STYLE = {
-  completed: { bg: "#dff5e7", fg: "#2a9c60", label: "Completed" },
-  in_progress: { bg: "#fff4e0", fg: "#c47f1a", label: "In progress" },
-  declined: { bg: "#fdecea", fg: "#e0483f", label: "Declined" },
-  not_started: { bg: "#eef1f6", fg: "#748096", label: "Not started" }
+  completed: { bg: "#dff5e7", fg: "#2b9b60", label: "Completed" },
+  in_progress: { bg: "#ffe9d0", fg: "#f29c38", label: "In progress" },
+  declined: { bg: "#ffe3e3", fg: "#e0483f", label: "Declined" },
+  not_started: { bg: "#edf1f6", fg: "#748096", label: "Not started" }
 };
 
-function stageRowHtml(stage, isLast, extraHtml = "") {
+function stageRowHtml(stage, extraHtml = "") {
   const style = STATUS_STYLE[stage.status];
   return `
-    <div style="display:flex;gap:16px;padding:18px 0;${isLast ? "" : "border-bottom:1px solid #eef1f6;"}">
-      <div style="width:14px;height:14px;border-radius:50%;margin-top:4px;flex-shrink:0;background:${stage.status === "not_started" ? "#d6deea" : style.fg};"></div>
+    <div class="gc-stage-row">
+      <div class="gc-stage-dot" style="background:${stage.status === "not_started" ? "#d6deea" : style.fg};"></div>
       <div style="flex:1;min-width:0;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-          <span style="font-size:15px;font-weight:600;color:#102246;">${escapeHtml(stage.label)}</span>
-          <span style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;background:${style.bg};color:${style.fg};white-space:nowrap;">${style.label}</span>
+        <div class="gc-stage-head">
+          <span class="gc-stage-label">${escapeHtml(stage.label)}</span>
+          <span class="gc-badge" style="background:${style.bg};color:${style.fg};">${style.label}</span>
         </div>
-        <p style="margin:4px 0 0;font-size:13px;color:#5c6b87;">${escapeHtml(stage.detail)}</p>
+        <p class="gc-stage-detail">${escapeHtml(stage.detail)}</p>
         ${extraHtml}
       </div>
+    </div>`;
+}
+
+// Same hexes as ui.jsx's noteToneClass blue/violet — matching the StatCard
+// note pills used across the SPA's own dashboards.
+const STAT_TONE = {
+  green: { bg: "#dff5e7", fg: "#2b9b60" },
+  blue: { bg: "#eef1ff", fg: "#4766cc" },
+  violet: { bg: "#efe5ff", fg: "#8853d0" }
+};
+
+function statCardHtml(card) {
+  const tone = STAT_TONE[card.tone];
+  return `
+    <div class="gc-stat-card">
+      <p class="gc-stat-label">${escapeHtml(card.label)}</p>
+      <p class="gc-stat-value">${escapeHtml(card.value)}</p>
+      <span class="gc-stat-note" style="background:${tone.bg};color:${tone.fg};">${escapeHtml(card.note)}</span>
     </div>`;
 }
 
@@ -193,19 +232,19 @@ function stageRowHtml(stage, isLast, extraHtml = "") {
 // reached through the portal instead of a one-off signing link.
 function ndaSignFormHtml({ error, doeName } = {}) {
   return `
-    <div style="margin-top:14px;padding:16px;background:#fbfcfe;border:1px solid #e7edf5;border-radius:14px;">
+    <div class="gc-sign-box">
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
-      ${error ? `<p style="margin:0 0 12px;padding:10px 14px;background:#fdecea;color:#e0483f;border-radius:10px;font-size:13px;">${escapeHtml(error)}</p>` : ""}
+      ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
       <form method="POST" action="/api/client-portal/nda/sign">
-        <label style="display:block;margin:0 0 12px;">
-          <span style="display:block;margin-bottom:6px;font-size:13px;font-weight:600;color:#334463;">Type your full name to sign</span>
-          <input name="fullName" required style="display:block;width:100%;padding:10px 14px;border:1px solid #d6deea;border-radius:10px;font-size:14px;color:#102246;box-sizing:border-box;outline:none;" />
+        <label class="gc-field" style="margin-bottom:12px;">
+          <span class="gc-label">Type your full name to sign</span>
+          <input name="fullName" required class="gc-input" />
         </label>
-        <label style="display:flex;align-items:center;gap:8px;margin:0 0 14px;font-size:13px;color:#334463;">
+        <label class="gc-checkbox-row">
           <input type="checkbox" name="agree" required />
           I have read and agree to the terms of this NDA
         </label>
-        <button type="submit" style="background:#3046b2;color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;">Accept &amp; sign</button>
+        <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">Accept &amp; sign</button>
       </form>
     </div>`;
 }
@@ -248,29 +287,59 @@ clientPortalRouter.get(
     const ndaSignable = nda && ["SENT", "REMINDER_1", "REMINDER_2"].includes(nda.status);
     const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
 
+    // Mirrors the SPA's own StatCard row (see e.g. MeetingsModule's five
+    // cards) — a quick-read summary above the full stage-by-stage list,
+    // not just decoration.
+    const nextStage = stages.find((s) => s.status !== "completed");
+    const stats = [
+      {
+        label: "Steps Completed",
+        value: `${completedCount}/${stages.length}`,
+        note: `${Math.round((completedCount / stages.length) * 100)}% complete`,
+        tone: "green"
+      },
+      {
+        label: "Current Stage",
+        value: nextStage ? nextStage.label : "All done",
+        note: nextStage ? nextStage.detail : "Every step is complete",
+        tone: "blue"
+      },
+      {
+        label: "Your Contact",
+        value: nda?.owner || "—",
+        note: "Global Capital BV",
+        tone: "violet"
+      }
+    ];
+
     res.send(
-      portalShell({
+      dashboardShell({
         title: "Your deal",
-        wide: true,
+        clientName: req.clientUser.name,
+        companyName: req.clientUser.lead.company,
         bodyHtml: `
-          <div style="display:flex;align-items:start;justify-content:space-between;gap:16px;margin-bottom:8px;">
-            <div>
-              <h1 style="margin:0 0 4px;font-size:22px;color:#0f2042;">${escapeHtml(req.clientUser.lead.company)}</h1>
-              <p style="margin:0;font-size:14px;color:#5c6b87;">Welcome back, ${escapeHtml(req.clientUser.name)}</p>
+          <span class="gc-badge-pill">Your Deal</span>
+          <h1 class="gc-heading">${escapeHtml(req.clientUser.lead.company)}</h1>
+          <p class="gc-subheading">Welcome back, ${escapeHtml(req.clientUser.name)} — track your NDA, IOI and every step in between, right here.</p>
+
+          <div class="gc-stats">${stats.map(statCardHtml).join("")}</div>
+
+          <div class="gc-card">
+            <div class="gc-card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#3046b2" stroke-width="2" width="20" height="20" aria-hidden="true">
+                <path d="M9 11l3 3L22 4" />
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              </svg>
+              Deal Progress
             </div>
-            <a href="/api/client-portal/logout" style="font-size:13px;color:#8592ab;text-decoration:none;white-space:nowrap;">Sign out</a>
-          </div>
-          <p style="margin:0 0 24px;font-size:13px;color:#8592ab;">${completedCount} of ${stages.length} steps completed</p>
-          <div>
-            ${stages
-              .map((s, i) =>
-                stageRowHtml(
-                  s,
-                  i === stages.length - 1,
-                  s.key === "nda" && ndaSignable ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner }) : ""
+            <p class="gc-card-subtitle">Every step of your deal with Global Capital BV, in order.</p>
+            <div style="margin-top:8px;">
+              ${stages
+                .map((s) =>
+                  stageRowHtml(s, s.key === "nda" && ndaSignable ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner }) : "")
                 )
-              )
-              .join("")}
+                .join("")}
+            </div>
           </div>
         `
       })
