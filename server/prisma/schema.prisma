@@ -924,6 +924,7 @@ model EmailCampaign {
 
   leads        EmailLead[]
   cadenceSteps CadenceStep[]
+  segments     EmailSegment[]
 
   @@index([status])
 }
@@ -1020,6 +1021,7 @@ model EmailLead {
   activityLog      EmailActivityLog[]
   matchedBySignals MarketSignal[]     @relation("MarketSignalMatchedLead")
   createdBySignals MarketSignal[]     @relation("MarketSignalCreatedLead")
+  aiReplyDrafts    AiReplyDraft[]
 
   @@index([campaignId])
   @@index([email])
@@ -1207,4 +1209,76 @@ enum IoiStatus {
   SIGNED
   DECLINED
   EXPIRED
+}
+
+// ============================================================================
+// Segments (Email Automation → Segments tab) — a saved filter over EmailLead
+// rows within a list (campaign), evaluated live rather than snapshotted, so
+// matchingCount always reflects the current lead data instead of drifting
+// stale the moment a lead's stage/reply changes. `conditions` is a small JSON
+// array ({ field, operator, value }[]) rather than one row per condition —
+// there's no need to query/join on a single condition independently, and the
+// UI always reads/writes the whole list as one unit (see
+// lib/segmentMatching.js for the matching logic and the fixed field/operator
+// vocabulary it accepts).
+// ============================================================================
+
+enum SegmentMatchType {
+  ALL
+  ANY
+}
+
+model EmailSegment {
+  id         String           @id @default(cuid())
+  name       String
+  // Null = spans every list, not just one campaign's leads.
+  campaign   EmailCampaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignId String?
+  matchType  SegmentMatchType @default(ALL)
+  conditions Json
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([campaignId])
+}
+
+// ============================================================================
+// AI Agent (Email Automation → AI Agent tab) — drafts a reply for a lead who
+// has actually replied (using the real inbound text off their most recent
+// ReplyEvent, see lib/aiReplyAgent.js), holds it for human review, and only
+// sends it through the existing leadSender.js pipeline once a person clicks
+// Send — never automatically. Regenerating while still DRAFT overwrites the
+// same row (see routes/emailAiAgent.js); once QUEUED/SENT/SKIPPED/FAILED the
+// row is a historical record and a fresh generate creates a new one instead.
+// ============================================================================
+
+enum AiReplyDraftStatus {
+  DRAFT
+  SENT
+  SKIPPED
+  FAILED
+}
+
+model AiReplyDraft {
+  id       String @id @default(cuid())
+  lead     EmailLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId   String
+  subject  String
+  body     String
+  status   AiReplyDraftStatus @default(DRAFT)
+  // Which model actually produced this draft — admin-configurable (Admin
+  // Panel → AI Assistant), so this can differ per draft over time.
+  model    String?
+  // Set only on a FAILED send attempt (leadSender.js threw) — kept instead
+  // of silently reverting to DRAFT, so a suppressed/capped-out send is
+  // visible rather than looking like it's still just waiting for review.
+  error    String?
+  // The EmailActivityLog row leadSender.js created for the real send —
+  // lets the UI link straight from a SENT draft to its actual send record.
+  sentActivityId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([status])
 }
