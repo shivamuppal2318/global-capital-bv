@@ -63,3 +63,32 @@ test("computeRelevanceScore treats an unknown signal type as zero base points", 
   });
   assert.equal(score, 25);
 });
+
+test("computeRelevanceScore adds SEEKING_FUNDING points when the company is currently raising", () => {
+  const score = computeRelevanceScore(DEFAULT_CRITERIA, {
+    signalType: "EXPANSION",
+    hasConcreteDetail: false,
+    hasRealContent: false,
+    entityClearlyNamed: false,
+    isSeekingFunding: true
+  });
+  assert.equal(score, 30 + 30); // Expansion (30) + Seeking Funding (30)
+});
+
+test("computeRelevanceScore does not add SEEKING_FUNDING points when false or omitted", () => {
+  const withFalse = computeRelevanceScore(DEFAULT_CRITERIA, {
+    signalType: "OTHER",
+    hasConcreteDetail: false,
+    hasRealContent: false,
+    entityClearlyNamed: false,
+    isSeekingFunding: false
+  });
+  const omitted = computeRelevanceScore(DEFAULT_CRITERIA, {
+    signalType: "OTHER",
+    hasConcreteDetail: false,
+    hasRealContent: false,
+    entityClearlyNamed: false
+  });
+  assert.equal(withFalse, 5);
+  assert.equal(omitted, 5);
+});

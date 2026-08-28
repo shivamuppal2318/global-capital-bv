@@ -83,6 +83,7 @@ export function MarketIntelligenceModule() {
   const [notice, setNotice] = useState("Checking backend connectivity…");
   const [running, setRunning] = useState(false);
   const [searchText, setSearchText] = useState("");
+  const [seekingOnly, setSeekingOnly] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -168,10 +169,15 @@ export function MarketIntelligenceModule() {
   // "High confidence companies" per the KPI Framework — Hot-tier signals
   // that haven't already been routed to a lead, i.e. still actionable.
   const aiRecommendedCount = hotSignals.filter((s) => !s.matchedLeadId && !s.createdLeadId).length;
+  // The AI's own judgment on tense/status (see aiProcessor.js) — currently
+  // raising, not a round that already closed. Not routed anywhere yet
+  // (that still needs a real company match), but the most directly
+  // actionable class of signal for a rep to act on today.
+  const seekingFundingSignals = signals.filter((s) => s.isSeekingFunding);
 
-  const filteredSignals = searchText.trim()
-    ? signals.filter((s) => `${s.entityName ?? ""} ${s.rawTitle}`.toLowerCase().includes(searchText.trim().toLowerCase()))
-    : signals;
+  const filteredSignals = signals
+    .filter((s) => !seekingOnly || s.isSeekingFunding)
+    .filter((s) => !searchText.trim() || `${s.entityName ?? ""} ${s.rawTitle}`.toLowerCase().includes(searchText.trim().toLowerCase()));
 
   const chatEnabled = Boolean(status?.aiProcessor);
 
@@ -261,6 +267,21 @@ export function MarketIntelligenceModule() {
                 {aiRecommendedCount} AI-recommended lead{aiRecommendedCount === 1 ? "" : "s"} — Hot-tier signal
                 {aiRecommendedCount === 1 ? "" : "s"} not yet matched or converted to a lead.
               </p>
+
+              {seekingFundingSignals.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setSeekingOnly(true)}
+                  className="mt-2.5 flex w-full items-center justify-between gap-3 rounded-[12px] border border-[#cce7d6] bg-[#f1fbf5] px-4 py-2.5 text-left text-[13px] font-medium text-[#1f7a4a] transition hover:border-[#9ed4b3]"
+                >
+                  <span>
+                    💰 {seekingFundingSignals.length} compan{seekingFundingSignals.length === 1 ? "y is" : "ies are"} currently{" "}
+                    <span className="font-semibold">seeking funding</span> — the AI judged these are mid-raise, not reporting a
+                    round that already closed.
+                  </span>
+                  <span className="shrink-0 text-[12px] font-semibold underline">View →</span>
+                </button>
+              ) : null}
             </div>
           ) : null}
         </>
@@ -332,12 +353,23 @@ export function MarketIntelligenceModule() {
             </span>
           </div>
           {signals.length > 0 ? (
-            <input
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search captured headlines…"
-              className="w-full max-w-[280px] rounded-[10px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[13px] text-[#102246] outline-none focus:border-[#3046b2]"
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSeekingOnly((v) => !v)}
+                className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
+                  seekingOnly ? "bg-[#2b9b60] text-white" : "border border-[#d6deea] bg-white text-[#4f6181] hover:bg-[#f4f7fb]"
+                }`}
+              >
+                💰 Seeking funding only
+              </button>
+              <input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search captured headlines…"
+                className="w-full max-w-[280px] rounded-[10px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[13px] text-[#102246] outline-none focus:border-[#3046b2]"
+              />
+            </div>
           ) : null}
         </div>
 
@@ -358,6 +390,11 @@ export function MarketIntelligenceModule() {
                           <p className="text-[15px] font-semibold text-[#102246]">{signal.entityName ?? "Not yet identified"}</p>
                           {typeConfig ? (
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${typeConfig.tone}`}>{typeConfig.label}</span>
+                          ) : null}
+                          {signal.isSeekingFunding ? (
+                            <span className="shrink-0 rounded-full bg-[#2b9b60] px-2.5 py-1 text-[11px] font-semibold text-white">
+                              💰 Seeking funding
+                            </span>
                           ) : null}
                           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${signalStatusToneClass[signal.status]}`}>
                             {signal.status}
@@ -409,9 +446,11 @@ export function MarketIntelligenceModule() {
           </div>
         ) : (
           <p className="mt-4 text-[14px] text-[#9aa6ba]">
-            {signals.length > 0
-              ? `No captured headlines match "${searchText}".`
-              : "No signals captured yet — either the backend's unreachable, or a data source needs configuring below."}
+            {signals.length === 0
+              ? "No signals captured yet — either the backend's unreachable, or a data source needs configuring below."
+              : seekingOnly && !searchText.trim()
+                ? "None of the captured signals are judged to be currently seeking funding."
+                : `No captured headlines match "${searchText}"${seekingOnly ? " among companies seeking funding" : ""}.`}
           </p>
         )}
       </div>

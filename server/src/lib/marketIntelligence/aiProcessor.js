@@ -12,7 +12,7 @@ export function isAiProcessorConfigured() {
   return isAiConfigured();
 }
 
-// The AI only ever extracts facts — which signal type, and three yes/no
+// The AI only ever extracts facts — which signal type, and four yes/no
 // flags — never a raw 0-100 number itself. relevanceScore is computed
 // afterwards, deterministically, from admin-editable points (Admin Panel →
 // Market Intelligence → Signal scoring, see lib/scoringCriteria.js). That
@@ -20,10 +20,21 @@ export function isAiProcessorConfigured() {
 // admin retune scoring without touching this prompt or redeploying.
 function buildFlagQuestions(criteria) {
   const label = (key) => criteria.find((c) => c.key === key)?.label ?? key;
-  return `Also determine these three yes/no facts:
+  return `Also determine these four yes/no facts:
 - hasConcreteDetail: ${label("HAS_CONCRETE_DETAIL")}?
 - hasRealContent: ${label("HAS_REAL_CONTENT")}?
-- entityClearlyNamed: ${label("ENTITY_CLEARLY_NAMED")}?`;
+- entityClearlyNamed: ${label("ENTITY_CLEARLY_NAMED")}?
+- isSeekingFunding: ${label("SEEKING_FUNDING")}?
+  Judge this one on tense/status, not just topic — a company IS seeking
+  funding when the text says it's currently looking to raise, is in talks
+  with investors, has engaged advisors to explore a raise, or is exploring
+  strategic/financing options ("is seeking", "is looking to raise", "is in
+  discussions with", "is exploring a Series B", "has hired bankers to
+  explore a sale/raise"). It is NOT seeking funding — even though the
+  article is about funding — when a round has already happened ("raised",
+  "closed", "secured", "completed its Series B"); that's history, not a
+  live opportunity. When genuinely ambiguous, answer false rather than
+  guessing yes.`;
 }
 
 // Pure — testable without any network access or API key. `criteria` is
@@ -41,7 +52,7 @@ If Content adds nothing beyond Title (they're the same or nearly so), base your 
 ${buildFlagQuestions(criteria)}
 
 Return ONLY valid JSON, no other text, in exactly this shape:
-{"entityName": "the primary company this signal is about", "signalType": one of ${JSON.stringify(VALID_SIGNAL_TYPES)}, "hasConcreteDetail": boolean, "hasRealContent": boolean, "entityClearlyNamed": boolean, "summary": "one sentence summary, stating only what the headline/content actually says"}`;
+{"entityName": "the primary company this signal is about", "signalType": one of ${JSON.stringify(VALID_SIGNAL_TYPES)}, "hasConcreteDetail": boolean, "hasRealContent": boolean, "entityClearlyNamed": boolean, "isSeekingFunding": boolean, "summary": "one sentence summary, stating only what the headline/content actually says"}`;
 }
 
 // Pure — testable with any mock LLM response string, real or fabricated.
@@ -63,7 +74,7 @@ export function parseProcessingResponse(rawResponseText) {
   if (!VALID_SIGNAL_TYPES.includes(parsed.signalType)) {
     throw new Error(`AI response has an invalid signalType: ${parsed.signalType}`);
   }
-  for (const flag of ["hasConcreteDetail", "hasRealContent", "entityClearlyNamed"]) {
+  for (const flag of ["hasConcreteDetail", "hasRealContent", "entityClearlyNamed", "isSeekingFunding"]) {
     if (typeof parsed[flag] !== "boolean") {
       throw new Error(`AI response has an invalid ${flag}: ${parsed[flag]}`);
     }
@@ -75,6 +86,7 @@ export function parseProcessingResponse(rawResponseText) {
     hasConcreteDetail: parsed.hasConcreteDetail,
     hasRealContent: parsed.hasRealContent,
     entityClearlyNamed: parsed.entityClearlyNamed,
+    isSeekingFunding: parsed.isSeekingFunding,
     summary: typeof parsed.summary === "string" ? parsed.summary : ""
   };
 }
@@ -112,6 +124,7 @@ export async function processSignalWithAi(rawSignal) {
     entityName: extracted.entityName,
     signalType: extracted.signalType,
     relevanceScore: computeRelevanceScore(criteria, extracted),
+    isSeekingFunding: extracted.isSeekingFunding,
     summary: extracted.summary
   };
 }

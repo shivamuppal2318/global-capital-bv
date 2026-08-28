@@ -17,17 +17,20 @@ test("buildProcessingPrompt truncates very long content to 4000 chars", () => {
   assert.ok(xRunLength <= 4000);
 });
 
-test("buildProcessingPrompt asks for the three scoring flags, using the given criteria's labels", () => {
+test("buildProcessingPrompt asks for the four scoring flags, using the given criteria's labels", () => {
   const criteria = [
     { key: "HAS_CONCRETE_DETAIL", label: "States a real deal size" },
     { key: "HAS_REAL_CONTENT", label: "Content beyond the headline" },
-    { key: "ENTITY_CLEARLY_NAMED", label: "Company is specifically named" }
+    { key: "ENTITY_CLEARLY_NAMED", label: "Company is specifically named" },
+    { key: "SEEKING_FUNDING", label: "Company is currently raising" }
   ];
   const prompt = buildProcessingPrompt({ rawTitle: "T", rawContent: "C" }, criteria);
   assert.match(prompt, /States a real deal size/);
   assert.match(prompt, /Content beyond the headline/);
   assert.match(prompt, /Company is specifically named/);
+  assert.match(prompt, /Company is currently raising/);
   assert.match(prompt, /"hasConcreteDetail": boolean/);
+  assert.match(prompt, /"isSeekingFunding": boolean/);
 });
 
 test("parseProcessingResponse parses a well-formed JSON response", () => {
@@ -37,6 +40,7 @@ test("parseProcessingResponse parses a well-formed JSON response", () => {
     hasConcreteDetail: true,
     hasRealContent: true,
     entityClearlyNamed: true,
+    isSeekingFunding: false,
     summary: "Acme raised a $50M Series B."
   });
   const result = parseProcessingResponse(response);
@@ -46,6 +50,7 @@ test("parseProcessingResponse parses a well-formed JSON response", () => {
     hasConcreteDetail: true,
     hasRealContent: true,
     entityClearlyNamed: true,
+    isSeekingFunding: false,
     summary: "Acme raised a $50M Series B."
   });
 });
@@ -53,7 +58,15 @@ test("parseProcessingResponse parses a well-formed JSON response", () => {
 test("parseProcessingResponse strips markdown code fences some models wrap JSON in", () => {
   const response =
     "```json\n" +
-    JSON.stringify({ entityName: "Acme", signalType: "OTHER", hasConcreteDetail: false, hasRealContent: false, entityClearlyNamed: true, summary: "x" }) +
+    JSON.stringify({
+      entityName: "Acme",
+      signalType: "OTHER",
+      hasConcreteDetail: false,
+      hasRealContent: false,
+      entityClearlyNamed: true,
+      isSeekingFunding: false,
+      summary: "x"
+    }) +
     "\n```";
   const result = parseProcessingResponse(response);
   assert.equal(result.entityName, "Acme");
@@ -65,7 +78,8 @@ test("parseProcessingResponse defaults summary to empty string when absent", () 
     signalType: "OTHER",
     hasConcreteDetail: false,
     hasRealContent: false,
-    entityClearlyNamed: false
+    entityClearlyNamed: false,
+    isSeekingFunding: false
   });
   assert.equal(parseProcessingResponse(response).summary, "");
 });
@@ -75,7 +89,14 @@ test("parseProcessingResponse throws on non-JSON text", () => {
 });
 
 test("parseProcessingResponse throws when entityName is missing", () => {
-  const response = JSON.stringify({ signalType: "OTHER", hasConcreteDetail: false, hasRealContent: false, entityClearlyNamed: false, summary: "x" });
+  const response = JSON.stringify({
+    signalType: "OTHER",
+    hasConcreteDetail: false,
+    hasRealContent: false,
+    entityClearlyNamed: false,
+    isSeekingFunding: false,
+    summary: "x"
+  });
   assert.throws(() => parseProcessingResponse(response), /entityName/);
 });
 
@@ -86,23 +107,45 @@ test("parseProcessingResponse throws on an invalid signalType", () => {
     hasConcreteDetail: false,
     hasRealContent: false,
     entityClearlyNamed: false,
+    isSeekingFunding: false,
     summary: "x"
   });
   assert.throws(() => parseProcessingResponse(response), /invalid signalType/);
 });
 
 test("parseProcessingResponse throws when a scoring flag is missing or not boolean", () => {
-  const missing = JSON.stringify({ entityName: "Acme", signalType: "OTHER", hasConcreteDetail: true, hasRealContent: true, summary: "x" });
+  const missing = JSON.stringify({
+    entityName: "Acme",
+    signalType: "OTHER",
+    hasConcreteDetail: true,
+    hasRealContent: true,
+    entityClearlyNamed: true,
+    summary: "x"
+  });
   const wrongType = JSON.stringify({
     entityName: "Acme",
     signalType: "OTHER",
     hasConcreteDetail: "yes",
     hasRealContent: true,
     entityClearlyNamed: true,
+    isSeekingFunding: true,
     summary: "x"
   });
-  assert.throws(() => parseProcessingResponse(missing), /entityClearlyNamed/);
+  assert.throws(() => parseProcessingResponse(missing), /isSeekingFunding/);
   assert.throws(() => parseProcessingResponse(wrongType), /hasConcreteDetail/);
+});
+
+test("parseProcessingResponse extracts isSeekingFunding distinctly from a completed funding signal type", () => {
+  const seeking = JSON.stringify({
+    entityName: "Acme",
+    signalType: "FUNDING",
+    hasConcreteDetail: false,
+    hasRealContent: true,
+    entityClearlyNamed: true,
+    isSeekingFunding: true,
+    summary: "Acme is in talks to raise a Series C."
+  });
+  assert.equal(parseProcessingResponse(seeking).isSeekingFunding, true);
 });
 
 // isAiProcessorConfigured is now async — credentials can come from the

@@ -3,10 +3,13 @@ import { adminApi } from "../../lib/adminApi";
 import { ActionButton, Card, SectionTitle } from "../ui";
 import { RadarIcon } from "../Icons";
 
-// Order the AI's own signal-type extraction, then the three factual bonus
+// Order the AI's own signal-type extraction, then the four factual bonus
 // flags — matches the grouping in the scoring explanation banner below.
+// SEEKING_FUNDING listed first among the bonuses since it's the one most
+// worth an admin's attention (the single highest-value distinction for
+// deal sourcing — see lib/marketIntelligence/aiProcessor.js).
 const SIGNAL_TYPE_KEYS = ["SIGNAL_FUNDING", "SIGNAL_ACQUISITION", "SIGNAL_DISTRESS", "SIGNAL_EXPANSION", "SIGNAL_LEADERSHIP_CHANGE", "SIGNAL_OTHER"];
-const BONUS_KEYS = ["HAS_CONCRETE_DETAIL", "HAS_REAL_CONTENT", "ENTITY_CLEARLY_NAMED"];
+const BONUS_KEYS = ["SEEKING_FUNDING", "HAS_CONCRETE_DETAIL", "HAS_REAL_CONTENT", "ENTITY_CLEARLY_NAMED"];
 
 function CriterionRow({ criterion, onSaved }) {
   const [value, setValue] = useState(String(criterion.points));

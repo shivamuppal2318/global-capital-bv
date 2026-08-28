@@ -1136,6 +1136,12 @@ model MarketSignal {
   signalType     SignalType?
   relevanceScore Int? // 0-100
   aiSummary      String?
+  // True when the article says the company is currently looking to raise
+  // (in talks, exploring options, engaged advisors) as opposed to reporting
+  // a round that already closed — the single highest-value distinction for
+  // deal sourcing, since a company mid-raise is an active, reachable
+  // opportunity today. See lib/marketIntelligence/aiProcessor.js.
+  isSeekingFunding Boolean?
 
   // Routing outcome: either an existing lead this signal updated, or a
   // newly-created one from an Apollo lookup — never both.
