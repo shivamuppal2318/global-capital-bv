@@ -208,17 +208,30 @@ export function OutreachDoeModule() {
       </Card>
 
       <Card className="px-5 py-5">
-        <SectionTitle icon={RadarIcon} iconClass="text-[#3046b2]" subtitle="Compare reps on the three metrics cold outreach can actually attribute to a person.">
+        <SectionTitle
+          icon={RadarIcon}
+          iconClass="text-[#3046b2]"
+          subtitle="Every DOE Scorecard KPI, side by side per rep — three columns are attributable per person, three are company-wide since they aren't linked to a DOE yet."
+        >
           DOE Performance Compression
         </SectionTitle>
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[640px] border-collapse text-left">
+          <table className="w-full min-w-[820px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
-                {["DOE", "Outreach Sent", "Positive Response %", "Cold Email Open Rate"].map((h) => (
-                  <th key={h} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
-                    {h}
+                {[
+                  { label: "DOE" },
+                  { label: "Outreach/Day" },
+                  { label: "Positive Response %" },
+                  { label: "LinkedIn Acceptance", companyWide: true },
+                  { label: "Cold Email Open Rate" },
+                  { label: "WhatsApp Reply Rate", companyWide: true },
+                  { label: "Zoom Call Booked", companyWide: true }
+                ].map((h) => (
+                  <th key={h.label} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
+                    {h.label}
+                    {h.companyWide ? <span className="ml-1.5 font-normal normal-case text-[#9aa6bd]">(company-wide)</span> : null}
                   </th>
                 ))}
               </tr>
@@ -227,9 +240,14 @@ export function OutreachDoeModule() {
               {(data?.scorecard ?? []).map((row) => (
                 <tr key={row.doe} className="border-b border-[#f1f4f9] last:border-0">
                   <td className="py-3 pr-4 text-[14px] font-semibold text-[#102246]">{row.doe}</td>
-                  <td className="py-3 pr-4 text-[13px] text-[#334463]">{row.outreachSent}</td>
+                  <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtNum(row.outreachPerDay)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtPct(row.positiveResponseRate)}</td>
+                  <td className="py-3 pr-4 text-[13px] text-[#9aa6bd]">{fmtPct(data.companyWide.linkedinAcceptanceRate)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtPct(row.coldEmailOpenRate)}</td>
+                  <td className="py-3 pr-4 text-[13px] text-[#9aa6bd]">{fmtPct(data.companyWide.whatsappReplyRate)}</td>
+                  <td className="py-3 pr-4 text-[13px] text-[#9aa6bd]">
+                    {has(data.companyWide.zoomCallsPerDay) ? `${data.companyWide.zoomCallsPerDay}/day` : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -238,6 +256,14 @@ export function OutreachDoeModule() {
           {!loading && data && data.scorecard.length === 0 ? (
             <p className="rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
               No outreach recorded for any DOE yet.
+            </p>
+          ) : null}
+
+          {!loading && data && data.scorecard.length > 0 ? (
+            <p className="mt-3 text-[12px] text-[#9aa6bd]">
+              LinkedIn Acceptance, WhatsApp Reply Rate and Zoom Call Booked repeat the same company-wide number in
+              every row — Agent and Meeting records aren't linked to a DOE yet, so there's no real per-rep split for
+              these three.
             </p>
           ) : null}
         </div>
