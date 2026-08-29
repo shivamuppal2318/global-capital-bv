@@ -10,11 +10,16 @@ function request(path, options = {}) {
 export const leadsApi = {
   list: () => request(""),
   get: (id) => request(`/${id}`),
+  create: (body) => request("", { method: "POST", body }),
+  bulkCreate: (rows) => request("/bulk", { method: "POST", body: { rows } }),
   patch: (id, body) => request(`/${id}`, { method: "PATCH", body }),
   sendPortalInvite: (id) => request(`/${id}/portal-invite`, { method: "POST" }),
   // This one lead's real progress across the full deal lifecycle — see
   // server/src/lib/leadPipeline.js.
   pipeline: (id) => request(`/${id}/pipeline`),
   // How many of ALL leads have reached each stage — see the same file.
-  pipelineSummary: () => request("/pipeline-summary")
+  pipelineSummary: () => request("/pipeline-summary"),
+  // Kanban board — one column per stage, one card per lead in its current
+  // stage. See the same file.
+  dealBoard: () => request("/deal-board")
 };

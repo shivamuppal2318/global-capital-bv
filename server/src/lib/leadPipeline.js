@@ -90,13 +90,56 @@ export async function computeLeadPipeline(leadId) {
 // a second, separately-written query, so this can never drift out of sync
 // with what the per-lead Deal Journey popup shows for the same lead.
 export async function computePipelineSummary() {
-  const leads = await prisma.lead.findMany({ select: { id: true } });
+  const leads = await prisma.lead.findMany({ select: { id: true, name: true } });
   const pipelines = await Promise.all(leads.map((l) => computeLeadPipeline(l.id)));
 
-  return STAGES.map((stage, idx) => ({
-    id: stage,
-    label: STAGE_LABELS[stage],
-    reached: pipelines.filter((p) => p[idx].status !== "not_started").length,
-    total: leads.length
-  }));
+  return STAGES.map((stage, idx) => {
+    // Which leads, by name — not just how many — so the CRM Workspace
+    // screen can show who actually reached each stage (mirrors how the
+    // Outreach/NDA-signed lists elsewhere name the people involved) instead
+    // of a bare count.
+    const names = leads.filter((_, leadIdx) => pipelines[leadIdx][idx].status !== "not_started").map((l) => l.name);
+    return {
+      id: stage,
+      label: STAGE_LABELS[stage],
+      reached: names.length,
+      total: leads.length,
+      names
+    };
+  });
+}
+
+// A Kanban view of the SAME per-lead pipeline computeLeadPipeline already
+// tracks — one column per stage, one card per lead, placed in whichever
+// stage is furthest along for that lead (the highest-index stage that
+// isn't "not_started"). Deliberately not the same shape as
+// computePipelineSummary: that one is cumulative ("reached this stage at
+// least once", so one lead counts toward several stages at once); a Kanban
+// board needs each deal to live in exactly one column, its current stage,
+// the way a real pipeline board works.
+export async function computeDealBoard() {
+  const leads = await prisma.lead.findMany({ select: { id: true, name: true, company: true, capitalAsk: true, updatedAt: true } });
+  const pipelines = await Promise.all(leads.map((l) => computeLeadPipeline(l.id)));
+
+  const board = STAGES.map((stage) => ({ id: stage, label: STAGE_LABELS[stage], deals: [] }));
+
+  leads.forEach((lead, leadIdx) => {
+    const pipeline = pipelines[leadIdx];
+    let currentIdx = 0;
+    pipeline.forEach((stageSummary, idx) => {
+      if (stageSummary.status !== "not_started") currentIdx = idx;
+    });
+
+    board[currentIdx].deals.push({
+      id: lead.id,
+      name: lead.name,
+      company: lead.company,
+      capitalAsk: lead.capitalAsk,
+      updatedAt: lead.updatedAt,
+      stageStatus: pipeline[currentIdx].status,
+      stageDetail: pipeline[currentIdx].detail
+    });
+  });
+
+  return board;
 }
