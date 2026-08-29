@@ -55,20 +55,36 @@ executiveDashboardRouter.get("/", asyncHandler(async (_req, res) => {
   const activeDeals = activeDealsMetrics(leads);
   const pipelineValue = pipelineValueMetrics({ ioiRecords, termSheetRecords: termSheetRows });
 
-  // The funnel's Outreach/NDA/Zoom/Data-room/IOI stages are CRM leads that
-  // reached that point — a lead counts as "reached NDA" whether the record
-  // lives in the new NdaRecord table or (for anyone predating that move)
-  // the shared DealStageRecord. "Outreach" here means a CRM lead that has
-  // moved past NEW, i.e. someone has actually engaged with it; it is
-  // deliberately not the same population as the cold-email EmailLead list
-  // above, which has no link back to a CRM Lead record.
+  // A lead has had a "second Zoom call" once it has two or more meeting
+  // records, regardless of each one's status — same convention "Zoom Call
+  // 1" already uses (any meeting at all counts as having reached that
+  // stage). Grouped here rather than in the pure funnel function because
+  // it needs the raw per-lead meeting counts, not just a flat id list.
+  const meetingCountByLead = new Map();
+  for (const m of meetings) {
+    if (!m.leadId) continue;
+    meetingCountByLead.set(m.leadId, (meetingCountByLead.get(m.leadId) ?? 0) + 1);
+  }
+  const zoomCall2Ids = [...meetingCountByLead.entries()].filter(([, count]) => count >= 2).map(([leadId]) => leadId);
+
+  // The funnel's Outreach/NDA/Zoom/Data-room/IOI-Signed stages are CRM
+  // leads that reached that point — a lead counts as "reached NDA" whether
+  // the record lives in the new NdaRecord table or (for anyone predating
+  // that move) the shared DealStageRecord. "Outreach" here means a CRM
+  // lead that has moved past NEW, i.e. someone has actually engaged with
+  // it; it is deliberately not the same population as the cold-email
+  // EmailLead list above, which has no link back to a CRM Lead record.
+  // IOI Signed (not just "has an IOI on file") is the funnel gate before
+  // Zoom Call 2 — the second call is the deeper due-diligence conversation
+  // that happens once a lead has actually committed to an IOI.
   const funnel = executiveFunnel({
     lead: leads.map((l) => l.id),
     outreach: leads.filter((l) => l.status !== "NEW").map((l) => l.id),
     nda: [...ndaRecords.map((r) => r.leadId), ...atStage("NDA").map((r) => r.leadId)],
     zoom: [...meetings.filter((m) => m.leadId).map((m) => m.leadId), ...atStage("ZOOM_CALL").map((r) => r.leadId)],
     dataRoom: atStage("DATA_ROOM").map((r) => r.leadId),
-    ioi: [...ioiRecords.map((r) => r.leadId), ...atStage("IOI").map((r) => r.leadId)],
+    ioiSigned: ioiRecords.filter((r) => r.status === "SIGNED").map((r) => r.leadId),
+    zoomCall2: zoomCall2Ids,
     fieldVisit: [...visitPlans.filter((p) => p.status === "COMPLETED").map((p) => p.leadId), ...fieldVisitRows.map((r) => r.leadId)],
     termSheet: termSheetRows.map((r) => r.leadId)
   });

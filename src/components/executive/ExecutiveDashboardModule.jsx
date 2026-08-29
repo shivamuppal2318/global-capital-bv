@@ -154,8 +154,8 @@ export function ExecutiveDashboardModule() {
           </div>
         ) : (
           <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
-            The funnel fills in as leads move through outreach, NDA, Zoom calls, the Data Room, IOIs, field visits and
-            term sheets.
+            The funnel fills in as leads move through outreach, NDA, Zoom Call 1, the Data Room, a signed IOI, Zoom
+            Call 2, field visits and term sheets.
           </p>
         )}
       </Card>
