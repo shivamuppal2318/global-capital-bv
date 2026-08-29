@@ -218,22 +218,17 @@ export function MarketIntelligenceModule() {
             Intelligence
           </span>
           <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Market Intelligence</h1>
-          <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
-            Scans news, the open web, and press pages for funding/acquisition/expansion signals, then matches them to existing
-            deals or sources a new one via Apollo.
-          </p>
         </div>
       </section>
 
       {signals.length > 0 ? (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               { label: "Companies scanned", value: signalStats.total },
-              { label: "Processed", value: signalStats.processed },
-              { label: "Matched to lead", value: signalStats.matched },
-              { label: "New leads created", value: signalStats.created },
-              { label: "Failed (AI not configured)", value: signalStats.failed }
+              { label: "Searched in DB tools", value: signalStats.processed },
+              { label: "Matched with DB", value: signalStats.matched },
+              { label: "New leads created", value: signalStats.created }
             ].map((stat) => (
               <div key={stat.label} className="rounded-[16px] border border-[#d6deea] bg-white px-4 py-3 shadow-[0_2px_8px_rgba(30,48,87,0.04)]">
                 <p className="text-[1.6rem] font-semibold leading-none text-[#102246]">{stat.value}</p>
