@@ -113,6 +113,10 @@ executiveDashboardRouter.get("/", asyncHandler(async (_req, res) => {
       zoomConversion: zoom.completed && meetings.length ? Math.round((zoom.completed / meetings.length) * 1000) / 10 : null,
       dataRoomCompletion: dataRoomCompletionRate,
       ioiConversion: ioi.signRate,
+      // Same funnel-conversion shape termSheetConversion already uses below
+      // — leads that reached a second call as a share of leads that reached
+      // IOI Signed, the stage immediately before it.
+      zoomCall2Conversion: byKey.zoomCall2?.conversionFromPrevious ?? null,
       fieldVisitCompletion: visits.completionRate,
       termSheetConversion: byKey.termSheet?.conversionFromPrevious ?? null,
       pipelineValue: pipelineValue.total,

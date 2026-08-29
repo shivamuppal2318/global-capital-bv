@@ -26,6 +26,7 @@ const KPI_ROWS = [
   { key: "zoomConversion", label: "Zoom Call 1", formula: "Calls completed / Calls scheduled", format: fmtPct },
   { key: "dataRoomCompletion", label: "Data Room Completion", formula: "Required categories uploaded / Required categories", format: fmtPct },
   { key: "ioiConversion", label: "IOI Signed", formula: "IOIs signed / IOIs generated", format: fmtPct },
+  { key: "zoomCall2Conversion", label: "Zoom Call 2", formula: "Leads with a 2nd call / Leads with IOI Signed", format: fmtPct },
   { key: "fieldVisitCompletion", label: "Field Visit", formula: "Visits completed / Visits planned", format: fmtPct },
   { key: "termSheetConversion", label: "Term Sheet Close", formula: "Term sheets issued / Leads reaching field visit", format: fmtPct },
   { key: "pipelineValue", label: "Pipeline Value", formula: "Sum of qualified IOI + term sheet value", format: fmtMoney },
