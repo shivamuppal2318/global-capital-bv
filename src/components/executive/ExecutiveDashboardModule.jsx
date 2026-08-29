@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { executiveDashboardApi } from "../../lib/executiveDashboardApi";
 import { Card, SectionTitle, StatCard } from "../ui";
-import { GridIcon, SparklesIcon } from "../Icons";
+import { ChartBarIcon, GridIcon, SparklesIcon } from "../Icons";
 
 const has = (v) => v !== null && v !== undefined;
 const fmtPct = (v) => (has(v) ? `${v}%` : "—");
@@ -98,6 +98,17 @@ export function ExecutiveDashboardModule() {
     }
   ];
 
+  // The four Executive Metrics rows that aren't a "count of leads at this
+  // stage" — a %, a currency total and a day count don't belong as bars
+  // next to Funnel Health's lead counts (a "75" bar would read as 75 leads,
+  // not a 75% rate), so they get their own strip instead.
+  const funnelExtras = [
+    { label: "Response Rate", value: fmtPct(kpis.responseRate), note: "Replies received / Total outreach", noteTone: "blue" },
+    { label: "Pipeline Value", value: fmtMoney(kpis.pipelineValue), note: "Qualified IOI + Term Sheet", noteTone: "green" },
+    { label: "Avg Deal Age", value: has(kpis.avgDealAge) ? `${kpis.avgDealAge} Days` : "—", note: "Across all lifecycle phases", noteTone: "amber" },
+    { label: "Win Rate", value: fmtPct(kpis.winRate), note: "Closed won / (won + lost)", noteTone: "violet" }
+  ];
+
   return (
     <div className="space-y-6">
       <Header />
@@ -159,6 +170,17 @@ export function ExecutiveDashboardModule() {
             Call 2, field visits and term sheets.
           </p>
         )}
+      </Card>
+
+      <Card className="px-5 py-5">
+        <SectionTitle icon={ChartBarIcon} iconClass="text-[#2b9b60]" subtitle="Rate, value and speed metrics that don't fit a lead-count bar chart.">
+          Rate &amp; Value Snapshot
+        </SectionTitle>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {funnelExtras.map((c) => (
+            <StatCard key={c.label} card={c} />
+          ))}
+        </div>
       </Card>
     </div>
   );
