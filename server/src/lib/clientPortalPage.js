@@ -17,14 +17,30 @@ function pageStyles() {
     * { box-sizing: border-box; }
     body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
 
-    /* Auth shell (register / login / invite errors) — mirrors LoginPage.jsx's Shell */
-    .gc-auth-bg { min-height: 100vh; background: #1b295f; display: flex; align-items: center; justify-content: center; padding: 24px; }
-    .gc-auth-card { width: 100%; max-width: 400px; background: #fff; border-radius: 24px; padding: 32px; box-shadow: 0 20px 60px rgba(10,20,50,0.35); }
-    .gc-logo-wrap { display: flex; flex-direction: column; align-items: center; text-align: center; }
-    .gc-logo { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; background: #ebf6ef; }
-    .gc-logo-inner { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 999px; background: #fff; color: #2b9b60; font-size: 13px; font-weight: 700; }
-    .gc-auth-title { margin: 16px 0 0; font-size: 19px; font-weight: 600; color: #102246; }
-    .gc-auth-subtitle { margin: 2px 0 0; font-size: 13px; color: #8592ab; }
+    /* Auth shell (register / login / invite errors) — mirrors LoginPage.jsx's
+       split-screen AuthShell: a real form on the left, the product's own
+       pitch on the right, same as the staff sign-in page. */
+    .gc-split { display: grid; min-height: 100vh; background: #f7f9fc; }
+    .gc-split-left { display: flex; align-items: center; justify-content: center; padding: 48px 24px; }
+    .gc-split-left-inner { width: 100%; max-width: 380px; }
+    .gc-split-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
+    .gc-split-logo { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 16px; background: #ebf6ef; flex-shrink: 0; }
+    .gc-split-logo-inner { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: #fff; color: #2b9b60; font-size: 12px; font-weight: 700; }
+    .gc-split-brand-name { font-size: 14px; font-weight: 600; color: #102246; }
+    .gc-split-right { display: none; flex-direction: column; justify-content: space-between; background: #1b295f; color: #fff; padding: 64px 48px; }
+    .gc-split-right-label { margin: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.24em; color: rgba(255,255,255,0.5); }
+    .gc-split-right-heading { margin: 24px 0 0; font-size: 2.4rem; font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; }
+    .gc-split-right-copy { margin: 24px 0 0; max-width: 420px; font-size: 15px; line-height: 1.7; color: rgba(255,255,255,0.7); }
+    .gc-split-features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 32px; }
+    .gc-split-feature-title { margin: 12px 0 0; font-size: 14px; font-weight: 600; }
+    .gc-split-feature-desc { margin: 4px 0 0; font-size: 13px; line-height: 1.4; color: rgba(255,255,255,0.6); }
+    @media (min-width: 1024px) {
+      .gc-split { grid-template-columns: 1fr 1fr; }
+      .gc-split-right { display: flex; }
+    }
+
+    .gc-auth-title { margin: 0; font-size: 26px; font-weight: 600; line-height: 1.25; color: #102246; }
+    .gc-auth-subtitle { margin: 8px 0 0; font-size: 14px; color: #5c6b87; }
 
     /* Form controls */
     .gc-field { display: block; margin: 0 0 16px; }
@@ -110,9 +126,10 @@ function pageStyles() {
   `;
 }
 
-// Registration/login/invite-error pages — a narrow centered card on the
-// same navy background as the staff LoginPage, so the very first thing a
-// client sees still feels like Global Capital BV rather than a generic form.
+// Registration/login/invite-error pages — the same split-screen frame as
+// the staff LoginPage's AuthShell: a real form on the left, the product's
+// own pitch on the right, so a client landing here from an email link sees
+// the same Global Capital BV, not a different-looking product.
 export function authShell({ title, subtitle, bodyHtml }) {
   return `<!doctype html>
 <html>
@@ -123,14 +140,54 @@ export function authShell({ title, subtitle, bodyHtml }) {
     <style>${pageStyles()}</style>
   </head>
   <body>
-    <div class="gc-auth-bg">
-      <div class="gc-auth-card">
-        <div class="gc-logo-wrap">
-          <div class="gc-logo"><div class="gc-logo-inner">GC</div></div>
+    <div class="gc-split">
+      <div class="gc-split-left">
+        <div class="gc-split-left-inner">
+          <div class="gc-split-brand">
+            <div class="gc-split-logo"><div class="gc-split-logo-inner">GC</div></div>
+            <span class="gc-split-brand-name">Global Capital BV</span>
+          </div>
           <h1 class="gc-auth-title">${escapeHtml(title)}</h1>
           ${subtitle ? `<p class="gc-auth-subtitle">${subtitle}</p>` : ""}
+          ${bodyHtml}
         </div>
-        ${bodyHtml}
+      </div>
+
+      <div class="gc-split-right">
+        <div>
+          <p class="gc-split-right-label">Global Capital BV</p>
+          <h2 class="gc-split-right-heading">One operating system from opportunity discovery to portfolio monitoring.</h2>
+          <p class="gc-split-right-copy">
+            Twenty-four governed stages covering lead intelligence, NDA execution, secure data rooms, KYC, AI due
+            diligence, valuation, term sheets, funding and impact reporting.
+          </p>
+        </div>
+        <div class="gc-split-features">
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#2fa84f" stroke-width="2" width="20" height="20" aria-hidden="true">
+              <path d="M12 3 4.5 6v6c0 4.5 3.2 7.6 7.5 9 4.3-1.4 7.5-4.5 7.5-9V6L12 3Z" />
+              <path d="m9 12 2 2 4-4.5" />
+            </svg>
+            <p class="gc-split-feature-title">Governed</p>
+            <p class="gc-split-feature-desc">Stage-gated approvals</p>
+          </div>
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#2fa84f" stroke-width="2" width="20" height="20" aria-hidden="true">
+              <rect x="4" y="10" width="16" height="10" rx="2" />
+              <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+            </svg>
+            <p class="gc-split-feature-title">Secure</p>
+            <p class="gc-split-feature-desc">Audited data rooms</p>
+          </div>
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#2fa84f" stroke-width="2" width="20" height="20" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M3 12h18M12 3c2.5 2.5 3.8 5.7 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.7-3.8-9S9.5 5.5 12 3Z" />
+            </svg>
+            <p class="gc-split-feature-title">Global</p>
+            <p class="gc-split-feature-desc">14 markets covered</p>
+          </div>
+        </div>
       </div>
     </div>
   </body>
