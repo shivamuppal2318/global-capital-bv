@@ -917,6 +917,13 @@ model EmailCampaign {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
+  // Where a lead's reply should land — set this when it needs to differ
+  // from the sending mailbox itself (e.g. routing replies to a shared
+  // team inbox instead of the individual account a campaign sends
+  // through). Null = replies just go to whichever mailbox actually sent
+  // the email, the normal email behavior with no header override.
+  replyTo String?
+
   // Which mailbox this campaign sends through. Null = fall back to the
   // single global EMAIL_PROVIDER/.env-configured provider.
   emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id])

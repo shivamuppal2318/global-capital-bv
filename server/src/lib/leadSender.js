@@ -119,7 +119,14 @@ export async function sendRawEmail(leadId, { subject, body, html }) {
   const trackedHtml = applyTracking(html, pendingActivity.id, unsubscribeUrl);
 
   const emailProvider = getEmailProvider(lead.resolvedAccount);
-  const { providerMessageId } = await emailProvider.send({ to: lead.email, subject, body, html: trackedHtml, unsubscribeUrl });
+  const { providerMessageId } = await emailProvider.send({
+    to: lead.email,
+    subject,
+    body,
+    html: trackedHtml,
+    unsubscribeUrl,
+    replyTo: lead.campaign.replyTo
+  });
 
   const activity = await finalizeSendActivity(pendingActivity.id, {
     detail: `Sent via ${emailProvider.name} provider (message id ${providerMessageId}).`,
@@ -157,7 +164,8 @@ export async function sendTemplateEmail(leadId, templateKey) {
     subject: rendered.subject,
     body: rendered.body,
     html: trackedHtml,
-    unsubscribeUrl
+    unsubscribeUrl,
+    replyTo: lead.campaign.replyTo
   });
 
   const activity = await finalizeSendActivity(pendingActivity.id, {

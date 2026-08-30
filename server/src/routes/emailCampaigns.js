@@ -58,7 +58,12 @@ const createCampaignSchema = z.object({
   autoPause: z.boolean().default(true),
   // Optional — omit to fall back to the single global env-configured
   // provider, exactly as every campaign behaved before EmailAccount existed.
-  emailAccountId: z.string().optional()
+  emailAccountId: z.string().optional(),
+  // Optional — omit/null/blank to let replies land on whichever mailbox
+  // actually sent the email, the normal behavior with no header override.
+  // preprocess so a blank input field (an empty string, not omitted)
+  // normalizes to null instead of failing .email() validation.
+  replyTo: z.preprocess((val) => (val === "" ? null : val), z.string().trim().email().nullable().optional())
 });
 
 // Real open/click rates, computed from ActivityLog rows the tracking pixel
@@ -222,7 +227,8 @@ const updateCampaignSchema = z.object({
   delayDays: z.number().int().positive().optional(),
   followUpCount: z.number().int().min(0).optional(),
   abTest: z.boolean().optional(),
-  autoPause: z.boolean().optional()
+  autoPause: z.boolean().optional(),
+  replyTo: z.preprocess((val) => (val === "" ? null : val), z.string().trim().email().nullable().optional())
 });
 
 // Edits an existing campaign's settings in place. Added because the "Save

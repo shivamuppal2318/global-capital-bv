@@ -13,6 +13,28 @@ const SEED_CAMPAIGNS = [
 ];
 const DEFAULT_CAMPAIGN_NAME = SEED_CAMPAIGNS[0][0];
 
+// Single source of truth for "a blank, not-yet-saved campaign" — both
+// CampaignsTab's "New Campaign" and AutomationTab's "New Drip Campaign"
+// buttons reset to this (via startNewCampaign() below) instead of each
+// keeping its own separate copy, which is exactly how the two drifted out
+// of sync before: CampaignsTab reset the form on "New Campaign", but
+// AutomationTab's equivalent button didn't reset anything at all, so
+// opening a campaign then clicking "New Drip Campaign" silently carried
+// that campaign's real settings into what looked like a fresh one.
+const DEFAULT_AUTOMATION_FORM = {
+  campaignName: DEFAULT_CAMPAIGN_NAME,
+  audience: "Renewables founders",
+  template: "Cold intro — Renewables founder",
+  delayDays: "3",
+  followUpCount: "3",
+  dailyLimit: "2000",
+  abTest: true,
+  autoPause: true,
+  replyType: "interested",
+  preferredPath: "nda-first",
+  replyTo: ""
+};
+
 function normalizeCampaigns(campaigns) {
   return campaigns.map(([name, status, sent, open, click, reply], index) => ({
     id: `${name}-${index}`,
@@ -331,6 +353,20 @@ export function useEmailOutreachState() {
           // reset to "Default" on every reload even though the backend
           // still has it.
           emailAccountId: campaign.emailAccountId ?? null,
+          // The rest of the campaign's real, saved settings — previously
+          // dropped entirely here, which meant opening an existing campaign
+          // in CampaignsTab/AutomationTab only ever populated its name, and
+          // clicking Save would silently overwrite audience/dailyLimit/
+          // delayDays/followUpCount/abTest/autoPause/replyTo with whatever
+          // was already sitting in the form from a different campaign.
+          audience: campaign.audience,
+          template: campaign.template,
+          dailyLimit: String(campaign.dailyLimit),
+          delayDays: String(campaign.delayDays),
+          followUpCount: String(campaign.followUpCount),
+          abTest: campaign.abTest,
+          autoPause: campaign.autoPause,
+          replyTo: campaign.replyTo ?? "",
           sent: campaign.engagement?.sent ? String(campaign.engagement.sent) : "—",
           open: campaign.engagement?.openRate != null ? `${campaign.engagement.openRate}%` : "—",
           click: campaign.engagement?.clickRate != null ? `${campaign.engagement.clickRate}%` : "—",
@@ -470,18 +506,7 @@ export function useEmailOutreachState() {
       });
   }, [selectedLeadId]);
 
-  const [automationForm, setAutomationForm] = useState({
-    campaignName: DEFAULT_CAMPAIGN_NAME,
-    audience: "Renewables founders",
-    template: "Cold intro — Renewables founder",
-    delayDays: "3",
-    followUpCount: "3",
-    dailyLimit: "2000",
-    abTest: true,
-    autoPause: true,
-    replyType: "interested",
-    preferredPath: "nda-first"
-  });
+  const [automationForm, setAutomationForm] = useState(DEFAULT_AUTOMATION_FORM);
   const [automationNotice, setAutomationNotice] = useState("Automation ready. Select a campaign or create a new one.");
   const [newLeadForm, setNewLeadForm] = useState({ name: "", company: "", email: "", country: "" });
   const [csvText, setCsvText] = useState("");
@@ -871,6 +896,19 @@ export function useEmailOutreachState() {
     }
   }
 
+  // Shared by CampaignsTab's "New Campaign" and AutomationTab's "New Drip
+  // Campaign" buttons — see DEFAULT_AUTOMATION_FORM above for why this is
+  // one function instead of each tab resetting its own way.
+  function startNewCampaign() {
+    setSelectedCampaignId(null);
+    // Blank, not DEFAULT_AUTOMATION_FORM's seed name — pre-filling a new
+    // campaign with an existing real campaign's exact name invites an
+    // accidental duplicate-named campaign, even though it can't silently
+    // edit that other campaign (selectedCampaignId is null here, so
+    // handleSaveAutomation's isEditingSelected check can't match it).
+    setAutomationForm({ ...DEFAULT_AUTOMATION_FORM, campaignName: "" });
+  }
+
   async function handleSaveAutomation() {
     const followUpCount = Number(automationForm.followUpCount) || 3;
     const dailyLimit = Number(automationForm.dailyLimit) || 2000;
@@ -882,7 +920,8 @@ export function useEmailOutreachState() {
       delayDays,
       followUpCount,
       abTest: automationForm.abTest,
-      autoPause: automationForm.autoPause
+      autoPause: automationForm.autoPause,
+      replyTo: automationForm.replyTo?.trim() || null
     };
 
     // The campaign name still matching the currently-selected (already
@@ -1073,7 +1112,7 @@ export function useEmailOutreachState() {
     liveSteps, workflowSteps, replyAction,
     handleFormChange, handleTemplateDraftChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
     handleToggleCampaignStatus, handleAddLead, handleImportCsv, handleAddEmailAccount,
-    handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation,
+    handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation, startNewCampaign,
     handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, simulateIncomingReply
   };
 }

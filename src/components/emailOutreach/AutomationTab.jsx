@@ -1,9 +1,41 @@
 import { useState } from "react";
-import { SearchIcon } from "../Icons.jsx";
+import { SearchIcon, FunnelIcon, SendIcon } from "../Icons.jsx";
+import { ActionButton } from "../ui.jsx";
 import { CadenceStepsEditor } from "./CadenceStepsEditor.jsx";
 
+function escapeCsvCell(value) {
+  const normalized = String(value ?? "");
+  return normalized.includes(",") || normalized.includes('"') || normalized.includes("\n")
+    ? `"${normalized.replace(/"/g, '""')}"`
+    : normalized;
+}
+
+function downloadCampaignsCsv(campaigns) {
+  const header = ["Drip Campaign", "Send To", "Status", "Enrolled"];
+  const rows = campaigns.map((c) => [c.name, c.audience ?? "", c.status, String(c.leadCount ?? 0)]);
+  const csv = [header, ...rows].map((row) => row.map(escapeCsvCell).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "drip-campaigns.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function AutomationTab({ mailing }) {
-  const { campaigns, automationForm, handleFormChange, handleSaveAutomation, automationNotice, liveSteps, selectedCampaign } = mailing;
+  const {
+    campaigns, automationForm, setAutomationForm, startNewCampaign, handleFormChange, handleSaveAutomation, automationNotice, liveSteps,
+    selectedCampaign, emailAccounts, handleAssignAccountToCampaign, handleToggleCampaignStatus, systemStatus
+  } = mailing;
+
+  // Same reasoning as CampaignsTab: there's no separate "from name" concept
+  // anywhere in the real send pipeline (emailProvider.js sends `from` as a
+  // bare address only), so this shows the one real value — the assigned
+  // mailbox's address, or the global env-configured fallback — instead of
+  // a second, fictional field.
+  const assignedAccount = selectedCampaign?.emailAccountId ? emailAccounts.find((a) => a.id === selectedCampaign.emailAccountId) : null;
+  const resolvedFromAddress = assignedAccount?.fromAddress ?? systemStatus?.smtpFromAddress ?? "Not configured yet";
   const [viewMode, setViewMode] = useState("list");
   const [searchText, setSearchText] = useState("");
 
@@ -65,48 +97,28 @@ export function AutomationTab({ mailing }) {
                 </p>
               </label>
 
-              <label className="block">
-                <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">Lead Status</p>
-                <textarea
-                  rows={3}
-                  defaultValue="Customer"
-                  className="w-full resize-none rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-3 text-[14px] leading-5 text-[#102246] outline-none"
-                />
-              </label>
-
-              <label className="block">
-                <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">Lead Source</p>
-                <textarea
-                  rows={3}
-                  defaultValue={"Facebook\nGoogle"}
-                  className="w-full resize-none rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-3 text-[14px] leading-5 text-[#102246] outline-none"
-                />
-              </label>
-
-              <label className="block">
-                <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">City</p>
-                <textarea
-                  rows={3}
-                  className="w-full resize-none rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-3 text-[14px] leading-5 text-[#102246] outline-none"
-                />
-                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">Hold Ctrl (Cmd on Mac) to select more than one.</p>
-              </label>
-
               <div className="border-t border-[#e7edf5] pt-3">
                 <label className="block">
-                  <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">From Name</p>
-                  <input value="LockYourIdea Tech Pvt Ltd" readOnly className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none" />
+                  <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">From Email</p>
+                  <input value={resolvedFromAddress} readOnly className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none" />
+                  <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                    From the mailbox assigned on the right — change it there, not here.
+                  </p>
                 </label>
               </div>
 
               <label className="block">
-                <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">From Email</p>
-                <input value="contact@lyicrm.com" readOnly className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none" />
-              </label>
-
-              <label className="block">
-                <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">Reply-To</p>
-                <input className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none" />
+                <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">Reply-To (optional)</p>
+                <input
+                  type="email"
+                  value={automationForm.replyTo}
+                  onChange={(event) => handleFormChange("replyTo", event.target.value)}
+                  placeholder="e.g. deals@globalcapitalbv.com"
+                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                />
+                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                  Leave blank to let replies land on the sending mailbox itself.
+                </p>
               </label>
 
               <div className="space-y-1.5 text-[14px] font-medium text-[#303750]">
@@ -120,17 +132,35 @@ export function AutomationTab({ mailing }) {
                 </label>
               </div>
 
-              <label className="block">
-                <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">Send via SMTP server(s)</p>
-                <textarea
-                  rows={2}
-                  defaultValue={"Pankaj (smtpout.secureserver.net)\nYogita Pawar (smtpout.secureserver.net)"}
-                  className="w-full resize-none rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-3 text-[13px] leading-5 text-[#102246] outline-none"
-                />
-                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
-                  Choose which SMTP server(s) to send this through. Select more than one to rotate across them.
+              {selectedCampaign ? (
+                <div className="rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3">
+                  <p className="text-[12px] font-semibold text-[#102246]">Sending mailbox</p>
+                  <select
+                    value={selectedCampaign.emailAccountId ?? ""}
+                    onChange={handleAssignAccountToCampaign}
+                    className="mt-2 w-full rounded-[12px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] text-[#102246] outline-none"
+                  >
+                    <option value="">Default (global env provider)</option>
+                    {emailAccounts.map((account) => (
+                      <option key={account.id} value={account.id} disabled={!account.isActive}>
+                        {account.label} {account.country ? `(${account.country})` : ""} {account.isActive ? "" : "(inactive)"}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-2.5">
+                    <ActionButton
+                      label={selectedCampaign.status === "Sending" ? "Pause automation" : "Resume automation"}
+                      icon={selectedCampaign.status === "Sending" ? FunnelIcon : SendIcon}
+                      primary
+                      onClick={handleToggleCampaignStatus}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <p className="rounded-[10px] bg-[#f7f9fc] px-4 py-3 text-[12px] leading-5 text-[#6a7790]">
+                  Save this campaign first, then reopen it to assign a mailbox and pause/resume sending.
                 </p>
-              </label>
+              )}
 
               <button
                 type="button"
@@ -186,7 +216,10 @@ export function AutomationTab({ mailing }) {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setViewMode("form")}
+              onClick={() => {
+                startNewCampaign();
+                setViewMode("form");
+              }}
               className="rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)]"
             >
               New Drip Campaign
@@ -194,10 +227,12 @@ export function AutomationTab({ mailing }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[12px] text-[#6a7790]">25</div>
+            <div className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[12px] text-[#6a7790]">{campaigns.length}</div>
             <button
               type="button"
-              className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[12px] font-medium text-[#6a7790]"
+              onClick={() => downloadCampaignsCsv(campaigns)}
+              disabled={!campaigns.length}
+              className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[12px] font-medium text-[#6a7790] disabled:opacity-40"
             >
               Export
             </button>
@@ -233,14 +268,29 @@ export function AutomationTab({ mailing }) {
                 filteredCampaigns.map((campaign) => (
                   <tr key={campaign.id} className="border-t border-[#e7edf5] bg-white text-[13px] text-[#5d6286]">
                     <td className="px-4 py-3 font-medium text-[#102246]">{campaign.name}</td>
-                    <td className="px-4 py-3">{automationForm.audience}</td>
+                    <td className="px-4 py-3">{campaign.audience}</td>
                     <td className="px-4 py-3">{campaign.status}</td>
                     <td className="px-4 py-3">{campaign.leadCount ?? 0}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
                         onClick={() => {
-                          handleFormChange("campaignName", campaign.name);
+                          // Same fix as CampaignsTab's openCampaign — load
+                          // this campaign's own real settings, not just its
+                          // name, so Save doesn't silently overwrite them
+                          // with whatever was left in the form.
+                          setAutomationForm((current) => ({
+                            ...current,
+                            campaignName: campaign.name,
+                            audience: campaign.audience,
+                            template: campaign.template,
+                            dailyLimit: campaign.dailyLimit,
+                            delayDays: campaign.delayDays,
+                            followUpCount: campaign.followUpCount,
+                            abTest: campaign.abTest,
+                            autoPause: campaign.autoPause,
+                            replyTo: campaign.replyTo ?? ""
+                          }));
                           setViewMode("form");
                         }}
                         className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#3046b2]"
