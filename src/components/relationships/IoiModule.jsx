@@ -60,7 +60,19 @@ export function IoiModule() {
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState("All");
   const [query, setQuery] = useState("");
+  // Lead/owner search criteria — draft values live in the Search IOI panel
+  // and only take effect once "Search" is clicked, unlike statusFilter/query
+  // above which apply immediately. Same split as NdaModule's Search panel.
+  const [searchLeadId, setSearchLeadId] = useState("");
+  const [searchOwner, setSearchOwner] = useState("");
+  const [appliedLeadId, setAppliedLeadId] = useState("");
+  const [appliedOwner, setAppliedOwner] = useState("");
   const [editing, setEditing] = useState(null);
+  // "edit" is the comprehensive editor (per-record Edit) — every field.
+  // "quick" is the lean creation form (Add IOI button) — Lead, Owner, IOI
+  // value, Generated date, Expires date, Attach IOI document. "search" is
+  // the Search IOI filter panel — not tied to any one record.
+  const [formMode, setFormMode] = useState(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
   const [busyId, setBusyId] = useState(null);
@@ -68,7 +80,11 @@ export function IoiModule() {
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([ioiApi.list({ status: statusFilter, q: query }), ioiApi.metrics(), ioiApi.funnel()])
+    Promise.all([
+      ioiApi.list({ status: statusFilter, q: query, leadId: appliedLeadId, owner: appliedOwner }),
+      ioiApi.metrics(),
+      ioiApi.funnel()
+    ])
       .then(([rows, m, f]) => {
         setRecords(rows);
         setMetrics(m);
@@ -77,7 +93,7 @@ export function IoiModule() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [statusFilter, query]);
+  }, [statusFilter, query, appliedLeadId, appliedOwner]);
 
   useEffect(() => {
     const t = setTimeout(load, query ? 300 : 0);
@@ -89,25 +105,45 @@ export function IoiModule() {
     documentsApi.list().then(setDocuments).catch(() => {});
   }, []);
 
-  const startNew = () =>
-    setEditing({
-      leadId: "",
-      status: "DRAFT",
-      generatedAt: "",
-      sentAt: "",
-      signedAt: "",
-      expiresAt: "",
-      value: "",
-      valueCurrency: "EUR",
-      industry: "",
-      geography: "",
-      counterparty: "",
-      owner: "",
-      notes: "",
-      documentId: ""
-    });
+  const blankRecord = () => ({
+    leadId: "",
+    status: "DRAFT",
+    generatedAt: "",
+    sentAt: "",
+    signedAt: "",
+    expiresAt: "",
+    value: "",
+    valueCurrency: "EUR",
+    industry: "",
+    geography: "",
+    counterparty: "",
+    owner: "",
+    notes: "",
+    documentId: ""
+  });
 
-  const startEdit = (r) =>
+  const startQuickAdd = () => {
+    setFormMode("quick");
+    setEditing(blankRecord());
+  };
+
+  const openSearch = () => {
+    setFormMode("search");
+    setSearchLeadId(appliedLeadId);
+    setSearchOwner(appliedOwner);
+  };
+
+  // Applies the panel's draft Lead/Owner criteria and closes it — Status
+  // already applies immediately via the pills below, so it isn't
+  // duplicated as a separate draft here.
+  const applySearch = () => {
+    setAppliedLeadId(searchLeadId);
+    setAppliedOwner(searchOwner);
+    setFormMode(null);
+  };
+
+  const startEdit = (r) => {
+    setFormMode("edit");
     setEditing({
       id: r.id,
       leadId: r.lead?.id ?? "",
@@ -125,6 +161,12 @@ export function IoiModule() {
       notes: r.notes ?? "",
       documentId: r.document?.id ?? ""
     });
+  };
+
+  const closeForm = () => {
+    setEditing(null);
+    setFormMode(null);
+  };
 
   async function handleSave(e) {
     e?.preventDefault?.();
@@ -138,7 +180,34 @@ export function IoiModule() {
       body.documentId = body.documentId || null;
       if (editing.id) await ioiApi.update(editing.id, body);
       else await ioiApi.save(body);
-      setEditing(null);
+      closeForm();
+      load();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Saves the form, then immediately fires "generate" — the first real step
+  // in the IOI lifecycle (Generate -> Send -> Sign), same idea as the NDA
+  // quick form's Save/Send pair. Unlike NDA's "send", IOI's actions don't
+  // email anyone — they're internal status/timestamp advances only, so
+  // "Generate" is the honest equivalent, not "Send".
+  async function handleSaveAndGenerate(e) {
+    e?.preventDefault?.();
+    if (!editing.leadId) return setFormError("Pick which lead this IOI is for.");
+    setSaving(true);
+    setFormError(null);
+    try {
+      const body = { ...editing };
+      for (const k of ["generatedAt", "sentAt", "signedAt", "expiresAt"]) body[k] = body[k] || null;
+      body.value = body.value === "" ? null : body.value;
+      body.documentId = body.documentId || null;
+      const record = editing.id ? await ioiApi.update(editing.id, body) : await ioiApi.save(body);
+      await ioiApi.advance(record.id, "generate");
+      closeForm();
+      setNotice(`Saved and generated for ${record.lead?.company ?? "the client"}.`);
       load();
     } catch (err) {
       setFormError(err.message);
@@ -288,18 +357,190 @@ export function IoiModule() {
           iconClass="text-[#3046b2]"
           subtitle="One IOI per lead - saving the same lead again updates it rather than adding a duplicate."
           action={
-            <ActionButton
-              label={editing ? "Cancel" : "Add IOI"}
-              icon={editing ? XIcon : PlusIcon}
-              small
-              onClick={() => (editing ? setEditing(null) : startNew())}
-            />
+            formMode ? (
+              <ActionButton label="Cancel" icon={XIcon} small onClick={closeForm} />
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <ActionButton label="Search IOI" icon={SearchIcon} small onClick={openSearch} />
+                <ActionButton label="Add IOI" icon={PlusIcon} primary small onClick={startQuickAdd} />
+              </div>
+            )
           }
         >
           IOI records
         </SectionTitle>
 
-        {editing ? (
+        {formMode === "search" ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              applySearch();
+            }}
+            className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4"
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className={labelClass}>Lead</label>
+                <select className={inputClass} value={searchLeadId} onChange={(e) => setSearchLeadId(e.target.value)}>
+                  <option value="">Any lead</option>
+                  {leads.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} — {l.company}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Status</label>
+                <select className={inputClass} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  <option value="All">Any status</option>
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className={labelClass}>Owner</label>
+                <input
+                  className={inputClass}
+                  value={searchOwner}
+                  onChange={(e) => setSearchOwner(e.target.value)}
+                  placeholder="Filter by deal owner"
+                />
+              </div>
+            </div>
+            <p className="mt-3 text-[12px] text-[#8592ab]">
+              Looking for a counterparty signatory or note instead? Use the search box below the filters — it
+              already covers that.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ActionButton
+                label="Clear"
+                small
+                onClick={() => {
+                  setSearchLeadId("");
+                  setSearchOwner("");
+                  setStatusFilter("All");
+                  setAppliedLeadId("");
+                  setAppliedOwner("");
+                }}
+              />
+              <ActionButton label="Search" primary small onClick={applySearch} />
+            </div>
+          </form>
+        ) : null}
+
+        {editing && formMode === "quick" ? (
+          <form onSubmit={handleSave} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className={labelClass}>Lead</label>
+                <select
+                  className={inputClass}
+                  value={editing.leadId}
+                  onChange={(e) => setEditing({ ...editing, leadId: e.target.value })}
+                >
+                  <option value="">Select a lead…</option>
+                  {leads.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} — {l.company}
+                    </option>
+                  ))}
+                </select>
+                {leads.length === 0 ? (
+                  <p className="mt-1 text-[12px] text-[#c47f1a]">No leads yet - add one in CRM Workspace first.</p>
+                ) : null}
+              </div>
+
+              <div>
+                <label className={labelClass}>Owner</label>
+                <input
+                  className={inputClass}
+                  value={editing.owner}
+                  onChange={(e) => setEditing({ ...editing, owner: e.target.value })}
+                  placeholder="Who owns this on our side"
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>IOI value</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    className={inputClass}
+                    value={editing.value}
+                    onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                    placeholder="2000000"
+                  />
+                  <select
+                    className={`${inputClass} w-28`}
+                    value={editing.valueCurrency}
+                    onChange={(e) => setEditing({ ...editing, valueCurrency: e.target.value })}
+                  >
+                    {["EUR", "USD", "GBP", "AED", "INR"].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Generated date</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={editing.generatedAt}
+                  onChange={(e) => setEditing({ ...editing, generatedAt: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Expires</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={editing.expiresAt}
+                  onChange={(e) => setEditing({ ...editing, expiresAt: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Attach IOI document</label>
+                <select
+                  className={inputClass}
+                  value={editing.documentId}
+                  onChange={(e) => setEditing({ ...editing, documentId: e.target.value })}
+                >
+                  <option value="">None</option>
+                  {documents.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.originalName}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[12px] text-[#8592ab]">Pulled from the Data Room - upload it there first.</p>
+              </div>
+            </div>
+
+            {formError ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{formError}</p> : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ActionButton label={saving ? "Saving…" : "Save"} small onClick={handleSave} disabled={saving} />
+              <ActionButton
+                label={saving ? "Generating…" : "Generate"}
+                primary
+                small
+                onClick={handleSaveAndGenerate}
+                disabled={saving}
+              />
+            </div>
+          </form>
+        ) : null}
+
+        {editing && formMode === "edit" ? (
           <form onSubmit={handleSave} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
