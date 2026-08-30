@@ -1,18 +1,17 @@
 import { useState } from "react";
-import { SearchIcon, XIcon } from "../Icons.jsx";
-import { RichTextEditor } from "../emailTemplates/RichTextEditor.jsx";
-
-function buildStepHtml(title, description) {
-  return `<p><strong>${title}</strong></p><p>${description}</p>`;
-}
+import { SearchIcon } from "../Icons.jsx";
+import { CadenceStepsEditor } from "./CadenceStepsEditor.jsx";
 
 export function AutomationTab({ mailing }) {
-  const { campaigns, automationForm, handleFormChange, handleSaveAutomation, automationNotice, liveSteps } = mailing;
+  const { campaigns, automationForm, handleFormChange, handleSaveAutomation, automationNotice, liveSteps, selectedCampaign } = mailing;
   const [viewMode, setViewMode] = useState("list");
   const [searchText, setSearchText] = useState("");
-  const [stepName, setStepName] = useState("");
-  const [stepSubject, setStepSubject] = useState(automationForm.template);
-  const [stepContent, setStepContent] = useState(buildStepHtml("Intro email", "Share the teaser, overview, and a clear next step."));
+
+  // Cadence steps attach to a real campaign id — only available once this
+  // campaign has actually been saved once (selectedCampaign is populated
+  // from the backend list, so its name only matches automationForm's once
+  // a real row exists). A brand-new, not-yet-saved campaign has no id yet.
+  const activeCampaignId = selectedCampaign?.name === automationForm.campaignName ? selectedCampaign.id : null;
 
   const filteredCampaigns = campaigns.filter((campaign) => {
     const haystack = `${campaign.name} ${campaign.status}`.toLowerCase();
@@ -152,82 +151,28 @@ export function AutomationTab({ mailing }) {
               </p>
             </div>
 
-            <div className="mt-4 rounded-[16px] border border-[#e7edf5] bg-white p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[13px] font-semibold text-[#303750]">Step 1</p>
-                <button type="button" className="grid size-5 place-items-center rounded-full bg-[#ff5d76] text-white">
-                  <XIcon className="size-3" />
-                </button>
-              </div>
-
-              <div className="mt-3 grid gap-3 md:grid-cols-[0.32fr_0.38fr_0.3fr]">
-                <label className="block">
-                  <p className="mb-1.5 text-[12px] font-semibold text-[#5f6f89]">Wait</p>
-                  <input value="0" readOnly className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none" />
-                </label>
-                <label className="block">
-                  <p className="mb-1.5 text-[12px] font-semibold text-[#5f6f89]">&nbsp;</p>
-                  <select className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none">
-                    <option>day(s)</option>
-                  </select>
-                </label>
-                <label className="block">
-                  <p className="mb-1.5 text-[12px] font-semibold text-[#5f6f89]">Only send if</p>
-                  <select className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none">
-                    <option>Always send</option>
-                  </select>
-                </label>
-              </div>
-
-              <label className="mt-3 block">
-                <p className="mb-1.5 text-[12px] font-semibold text-[#5f6f89]">Internal step name (optional)</p>
-                <input
-                  value={stepName}
-                  onChange={(event) => setStepName(event.target.value)}
-                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
-                />
-              </label>
-
-              <label className="mt-3 block">
-                <p className="mb-1.5 text-[12px] font-semibold text-[#5f6f89]">Subject</p>
-                <input
-                  value={stepSubject}
-                  onChange={(event) => setStepSubject(event.target.value)}
-                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
-                />
-              </label>
-
-              <div className="mt-3">
-                <p className="mb-1.5 text-[12px] font-semibold text-[#5f6f89]">Email Content</p>
-                <RichTextEditor
-                  value={stepContent}
-                  onChange={setStepContent}
-                  placeholder="Compose the drip email step here."
-                />
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <button
-                type="button"
-                className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#435471]"
-              >
-                + Add Email Step
-              </button>
-            </div>
-
-            {liveSteps.length ? (
-              <div className="mt-4 rounded-[14px] border border-[#e7edf5] bg-[#f8faff] px-4 py-3">
-                <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">Current automation preview</p>
-                <div className="mt-2 space-y-2">
-                  {liveSteps.slice(0, 3).map((step) => (
-                    <div key={step.title} className="text-[13px] text-[#435471]">
-                      <span className="font-semibold text-[#102246]">{step.title}</span> · {step.desc}
+            {activeCampaignId ? (
+              <CadenceStepsEditor campaignId={activeCampaignId} />
+            ) : (
+              <>
+                <p className="rounded-[10px] bg-[#f7f9fc] px-4 py-3 text-[12px] leading-5 text-[#6a7790]">
+                  Save this drip campaign first (the "Save" button on the left) — follow-up steps attach to a real,
+                  already-saved campaign. Here's roughly what a {Number(automationForm.followUpCount) + 1}-email sequence at{" "}
+                  {automationForm.delayDays}-day intervals will look like once you do:
+                </p>
+                {liveSteps.length ? (
+                  <div className="mt-3 rounded-[14px] border border-[#e7edf5] bg-[#f8faff] px-4 py-3">
+                    <div className="space-y-2">
+                      {liveSteps.slice(0, 3).map((step) => (
+                        <div key={step.title} className="text-[13px] text-[#435471]">
+                          <span className="font-semibold text-[#102246]">{step.title}</span> · {step.desc}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       </section>

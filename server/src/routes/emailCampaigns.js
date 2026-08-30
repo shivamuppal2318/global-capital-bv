@@ -296,3 +296,71 @@ emailCampaignsRouter.post("/:id/email-account", asyncHandler(async (req, res) =>
   });
   res.json(campaign);
 }));
+
+// A campaign's real, per-step follow-up sequence — read by
+// scheduleCadenceSteps (routes/emailLeads.js) whenever a lead is added to
+// this campaign. Until these routes existed, nothing anywhere could create
+// a CadenceStep row outside the seed script, so delayDays/followUpCount on
+// the campaign itself only ever drove a cosmetic preview
+// (useEmailOutreachState.js's buildAutomationSteps) — no real campaign a
+// user created ever actually had a follow-up scheduled.
+const cadenceStepSchema = z.object({
+  title: z.string().min(1),
+  bodyTemplate: z.string().min(1),
+  delayDays: z.number().int().min(0)
+});
+
+emailCampaignsRouter.get("/:id/cadence-steps", asyncHandler(async (req, res) => {
+  const steps = await prisma.cadenceStep.findMany({ where: { campaignId: req.params.id }, orderBy: { stepIndex: "asc" } });
+  res.json(steps);
+}));
+
+// stepIndex is assigned here, not accepted from the client — a new step
+// always goes at the end of the sequence; reordering isn't supported yet,
+// only add/edit/delete.
+emailCampaignsRouter.post("/:id/cadence-steps", asyncHandler(async (req, res) => {
+  const parsed = cadenceStepSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const campaign = await prisma.emailCampaign.findUnique({ where: { id: req.params.id } });
+  if (!campaign) {
+    return res.status(404).json({ error: "Campaign not found" });
+  }
+
+  const lastStep = await prisma.cadenceStep.findFirst({ where: { campaignId: req.params.id }, orderBy: { stepIndex: "desc" } });
+  const stepIndex = (lastStep?.stepIndex ?? -1) + 1;
+
+  const step = await prisma.cadenceStep.create({ data: { campaignId: req.params.id, stepIndex, ...parsed.data } });
+  await recordAudit({ req, action: "campaign.cadence_step_added", entityType: "EmailCampaign", entityId: campaign.id, detail: `Step ${stepIndex}: ${step.title}` });
+  res.status(201).json(step);
+}));
+
+const updateCadenceStepSchema = cadenceStepSchema.partial();
+
+emailCampaignsRouter.put("/:id/cadence-steps/:stepId", asyncHandler(async (req, res) => {
+  const parsed = updateCadenceStepSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const existing = await prisma.cadenceStep.findUnique({ where: { id: req.params.stepId } });
+  if (!existing || existing.campaignId !== req.params.id) {
+    return res.status(404).json({ error: "Step not found" });
+  }
+
+  const step = await prisma.cadenceStep.update({ where: { id: req.params.stepId }, data: parsed.data });
+  res.json(step);
+}));
+
+emailCampaignsRouter.delete("/:id/cadence-steps/:stepId", asyncHandler(async (req, res) => {
+  const existing = await prisma.cadenceStep.findUnique({ where: { id: req.params.stepId } });
+  if (!existing || existing.campaignId !== req.params.id) {
+    return res.status(404).json({ error: "Step not found" });
+  }
+
+  await prisma.cadenceStep.delete({ where: { id: req.params.stepId } });
+  await recordAudit({ req, action: "campaign.cadence_step_removed", entityType: "EmailCampaign", entityId: req.params.id, detail: existing.title });
+  res.status(204).end();
+}));

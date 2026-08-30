@@ -23,5 +23,14 @@ export const emailCampaignsApi = {
   resume: (id) => request(`/${id}/resume`, { method: "POST" }),
   // Pass emailAccountId: null to clear the assignment and fall back to the
   // single global env-configured provider.
-  assignEmailAccount: (id, emailAccountId) => request(`/${id}/email-account`, { method: "POST", body: { emailAccountId } })
+  assignEmailAccount: (id, emailAccountId) => request(`/${id}/email-account`, { method: "POST", body: { emailAccountId } }),
+  // A campaign's real follow-up sequence — see routes/emailLeads.js's
+  // scheduleCadenceSteps, which is what actually reads these when a lead
+  // is added. Add-to-end/edit/delete only; no reordering yet.
+  cadenceSteps: {
+    list: (campaignId) => request(`/${campaignId}/cadence-steps`),
+    create: (campaignId, body) => request(`/${campaignId}/cadence-steps`, { method: "POST", body }),
+    update: (campaignId, stepId, body) => request(`/${campaignId}/cadence-steps/${stepId}`, { method: "PUT", body }),
+    remove: (campaignId, stepId) => request(`/${campaignId}/cadence-steps/${stepId}`, { method: "DELETE" })
+  }
 };
