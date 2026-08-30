@@ -53,7 +53,6 @@ function fmtMoney(value, currency = "EUR") {
 export function IoiModule() {
   const [records, setRecords] = useState([]);
   const [metrics, setMetrics] = useState(null);
-  const [funnel, setFunnel] = useState([]);
   const [leads, setLeads] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -82,13 +81,11 @@ export function IoiModule() {
     setLoading(true);
     Promise.all([
       ioiApi.list({ status: statusFilter, q: query, leadId: appliedLeadId, owner: appliedOwner }),
-      ioiApi.metrics(),
-      ioiApi.funnel()
+      ioiApi.metrics()
     ])
-      .then(([rows, m, f]) => {
+      .then(([rows, m]) => {
         setRecords(rows);
         setMetrics(m);
-        setFunnel(f);
         setError(null);
       })
       .catch((err) => setError(err.message))
@@ -280,8 +277,6 @@ export function IoiModule() {
     [metrics]
   );
 
-  const funnelTop = funnel[0]?.count ?? 0;
-
   return (
     <div className="space-y-5">
       <section>
@@ -300,56 +295,6 @@ export function IoiModule() {
           ))}
         </div>
       </section>
-
-      {/* Deal funnel: NDA -> Zoom -> Data room -> IOI -> Term sheet. */}
-      <Card className="px-5 py-5">
-        <SectionTitle
-          icon={CheckCircleIcon}
-          iconClass="text-[#3046b2]"
-          subtitle="Distinct leads reaching each stage, newest data. Percentages are conversion from the stage above."
-        >
-          Deal funnel
-        </SectionTitle>
-
-        {funnelTop ? (
-          <div className="mt-5 space-y-2">
-            {funnel.map((s, i) => {
-              // Width tracks share of the top stage, floored so a stage with
-              // a real count never renders as an invisible sliver.
-              const width = funnelTop ? Math.max(18, (s.count / funnelTop) * 100) : 0;
-              return (
-                <div key={s.key} className="flex items-center gap-3">
-                  <span className="w-28 shrink-0 text-right text-[13px] font-semibold text-[#334463]">{s.label}</span>
-                  <div className="flex-1">
-                    <div
-                      className="flex h-11 items-center justify-center rounded-[10px] bg-[#3046b2] text-[15px] font-semibold text-white"
-                      style={{ width: `${width}%`, marginLeft: `${(100 - width) / 2}%`, opacity: 1 - i * 0.13 }}
-                    >
-                      {s.count}
-                    </div>
-                  </div>
-                  <span className="w-32 shrink-0 text-[12px] text-[#5c6b87]">
-                    {has(s.conversionFromPrevious)
-                      ? `${s.conversionFromPrevious}% of above`
-                      : i === 0
-                        ? "Top of funnel"
-                        : "No leads at prior stage"}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
-            The funnel fills in as leads move through NDA, Zoom calls, the Data Room, IOIs and term sheets.
-          </p>
-        )}
-      </Card>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Distribution title="IOI by industry" rows={metrics?.byIndustry} empty="No IOIs recorded yet." />
-        <Distribution title="IOI by geography" rows={metrics?.byGeography} empty="No IOIs recorded yet." />
-      </div>
 
       <Card className="px-5 py-5">
         <SectionTitle
@@ -818,42 +763,5 @@ export function IoiModule() {
         </div>
       </Card>
     </div>
-  );
-}
-
-function Distribution({ title, rows, empty }) {
-  const max = (rows ?? []).reduce((m, r) => Math.max(m, r.count), 0);
-  return (
-    <Card className="px-5 py-5">
-      <SectionTitle icon={CheckCircleIcon} iconClass="text-[#3046b2]">
-        {title}
-      </SectionTitle>
-      {rows?.length ? (
-        <div className="mt-5 space-y-2">
-          {rows.map((r) => (
-            <div key={r.label} className="flex items-center gap-3">
-              <span className="w-36 shrink-0 truncate text-[13px] font-semibold text-[#334463]" title={r.label}>
-                {r.label}
-              </span>
-              <div className="h-6 flex-1 overflow-hidden rounded-[8px] bg-[#f1f4f9]">
-                <div
-                  // Blanks are shown in grey: they are a gap in the data, not
-                  // a category worth the same visual weight as a real one.
-                  className={`h-full rounded-[8px] ${r.label === "Unspecified" ? "bg-[#c0cade]" : "bg-[#3046b2]"}`}
-                  style={{ width: `${max ? (r.count / max) * 100 : 0}%` }}
-                />
-              </div>
-              <span className="w-20 shrink-0 text-right text-[12px] text-[#5c6b87]">
-                {r.count} · {r.share}%
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
-          {empty}
-        </p>
-      )}
-    </Card>
   );
 }
