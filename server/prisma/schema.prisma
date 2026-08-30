@@ -489,8 +489,18 @@ model ChannelPartner {
   commissionPct Float?
   status        ChannelPartnerStatus @default(ACTIVE)
   notes         String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+
+  // Same lightweight "clickwrap" e-signature as EmailLead's NDA flow (typed
+  // name + IP + timestamp, see routes/channelPartnerAgreement.js) — not a
+  // certified e-signature, but enough to record that whoever held the
+  // signed link asserted agreement to the standard Channel Partner
+  // Agreement.
+  agreementSignedAt   DateTime?
+  agreementSignedName String?
+  agreementSignedIp   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
 }

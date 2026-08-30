@@ -57,7 +57,17 @@ export const channelPartnersApi = {
   metrics: () => apiFetch(`${channelPartnersBase}/metrics`),
   create: (body) => apiFetch(channelPartnersBase, { method: "POST", body }),
   update: (id, body) => apiFetch(`${channelPartnersBase}/${id}`, { method: "PATCH", body }),
-  remove: (id) => apiFetch(`${channelPartnersBase}/${id}`, { method: "DELETE" })
+  remove: (id) => apiFetch(`${channelPartnersBase}/${id}`, { method: "DELETE" }),
+  // The standard tiered incentive schedule (Clause 7.3 of the Channel
+  // Partner Agreement) and a real per-deal calculator against it — see
+  // server/src/lib/channelPartnerCommission.js.
+  commissionTiers: () => apiFetch(`${channelPartnersBase}/commission-tiers`),
+  estimateCommission: (id, borrowingAmount) =>
+    apiFetch(`${channelPartnersBase}/${id}/estimate-commission?borrowingAmount=${encodeURIComponent(borrowingAmount)}`),
+  // Real signed link to the public agreement-signing page (routes/
+  // channelPartnerAgreement.js) — copy it and send it to the partner
+  // however you want; nothing auto-sends.
+  agreementLink: (id) => apiFetch(`${channelPartnersBase}/${id}/agreement-link`)
 };
 
 const meetingsBase = `${API_ROOT}/api/meetings`;

@@ -25,6 +25,7 @@ import { ageingReportRouter } from "./routes/ageingReport.js";
 import { ndaRecordsRouter } from "./routes/ndaRecords.js";
 import { visitPlansRouter } from "./routes/visitPlans.js";
 import { channelPartnersRouter } from "./routes/channelPartners.js";
+import { channelPartnerAgreementRouter } from "./routes/channelPartnerAgreement.js";
 import { ioiRecordsRouter } from "./routes/ioiRecords.js";
 import { executiveDashboardRouter } from "./routes/executiveDashboard.js";
 import { universalFiltersRouter } from "./routes/universalFilters.js";
@@ -70,7 +71,7 @@ app.use("/api/auth", authRouter);
 // Calendly/other external senders). Matches the app.js comment this
 // replaces — auth was deliberately deferred until it could be done as one
 // real pass instead of piecemeal.
-const PUBLIC_PREFIXES = ["/api/webhooks", "/api/unsubscribe", "/api/nda", "/api/track", "/api/client-portal"];
+const PUBLIC_PREFIXES = ["/api/webhooks", "/api/unsubscribe", "/api/nda", "/api/track", "/api/client-portal", "/api/channel-partner-agreement"];
 const INBOUND_WEBHOOK_PATHS = ["/api/leads/inbound", "/api/email/leads/inbound"];
 // Matches the prefix itself or the prefix followed by "/" — a plain
 // startsWith would also match "/api/nda-records" against "/api/nda" (no
@@ -140,6 +141,10 @@ app.use("/api/ageing-report", requireModule("ageing-report"), ageingReportRouter
 app.use("/api/nda-records", requireModule("nda"), ndaRecordsRouter);
 app.use("/api/visit-plans", requireModule("visit-planning"), visitPlansRouter);
 app.use("/api/channel-partners", requireModule("channel-partner"), channelPartnersRouter);
+// Public token-based signing page (same pattern as /api/nda) — not
+// "/api/channel-partners" plus a subpath, since that's the authenticated
+// admin CRUD router above.
+app.use("/api/channel-partner-agreement", channelPartnerAgreementRouter);
 app.use("/api/ioi-records", requireModule("ioi"), ioiRecordsRouter);
 app.use("/api/executive-dashboard", requireModule("command-center"), executiveDashboardRouter);
 app.use("/api/universal-filters", requireModule("universal-filters"), universalFiltersRouter);
