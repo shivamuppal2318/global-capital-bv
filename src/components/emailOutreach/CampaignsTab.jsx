@@ -95,35 +95,10 @@ export function CampaignsTab({ mailing }) {
                 />
               </Field>
 
-              <Field label="Email Content">
-                <div className="rounded-[8px] border border-[#d8dfea] bg-white">
-                  <div className="flex flex-wrap items-center gap-3 border-b border-[#e7edf5] px-4 py-2 text-[11px] text-[#5f6f89]">
-                    <span>Normal</span>
-                    <span className="text-[11px]">↕</span>
-                    <span className="font-bold">B</span>
-                    <span className="italic">I</span>
-                    <span className="underline">U</span>
-                    <span className="text-[11px]">S</span>
-                    <span>A</span>
-                    <span>▤</span>
-                    <span>☰</span>
-                    <span>☷</span>
-                    <span>≡</span>
-                    <span>🔗</span>
-                    <span>🖼</span>
-                    <span>❞</span>
-                    <span>Tx</span>
-                  </div>
-                  <textarea
-                    rows={9}
-                    className="w-full resize-none rounded-b-[8px] bg-white px-4 py-3 text-[14px] leading-5 text-[#435471] outline-none"
-                  />
-                </div>
-                <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
-                  Format with the toolbar, or click the HTML button to edit raw HTML. Merge tags: `first_name`, `last_name`,
-                  `email`, `company`, `unsubscribe_url`
-                </p>
-              </Field>
+              <p className="rounded-[10px] bg-[#f7f9fc] px-4 py-3 text-[12px] leading-5 text-[#6a7790]">
+                Email bodies are edited per reply-type under the Templates tab — a campaign sends whichever template
+                matches how a lead replies, not a single fixed body typed here.
+              </p>
             </div>
           </div>
 
