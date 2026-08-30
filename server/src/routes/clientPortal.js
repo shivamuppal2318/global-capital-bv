@@ -1,4 +1,6 @@
 import { Router } from "express";
+import multer from "multer";
+import path from "node:path";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
@@ -8,6 +10,8 @@ import { requireClientAuth, setClientSessionCookie, clearClientSessionCookie } f
 import { authShell, dashboardShell, formField, primaryButton, errorBanner, noteText, escapeHtml } from "../lib/clientPortalPage.js";
 import { buildPortalStages } from "../lib/clientPortalStages.js";
 import { REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
+import { extractText } from "../lib/documentText.js";
+import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
 
 export const clientPortalRouter = Router();
 
@@ -227,25 +231,38 @@ function statCardHtml(card) {
 }
 
 // The NDA row is the only stage a client can act on directly — it's the
-// gate everything else waits behind, and the same typed-name-plus-checkbox
-// "clickwrap" the old cold-email NDA link used (see routes/nda.js), just
-// reached through the portal instead of a one-off signing link.
+// gate everything else waits behind. Two ways to clear it: accept in the
+// portal using the identity they're already authenticated as (no re-typed
+// name — that's what the old cold-email NDA link needed, but this client
+// is already signed in), or upload their own signed copy, which counts as
+// acceptance in its own right and is kept as the record.
 function ndaSignFormHtml({ error, doeName } = {}) {
   return `
     <div class="gc-sign-box">
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
-      <form method="POST" action="/api/client-portal/nda/sign">
-        <label class="gc-field" style="margin-bottom:12px;">
-          <span class="gc-label">Type your full name to sign</span>
-          <input name="fullName" required class="gc-input" />
-        </label>
-        <label class="gc-checkbox-row">
-          <input type="checkbox" name="agree" required />
-          I have read and agree to the terms of this NDA
-        </label>
-        <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">Accept &amp; sign</button>
-      </form>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;">
+        <form method="POST" action="/api/client-portal/nda/sign" style="margin:0;">
+          <label class="gc-checkbox-row">
+            <input type="checkbox" name="agree" required />
+            I have read and agree to the terms of this NDA
+          </label>
+          <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">I Am Accept It</button>
+        </form>
+        <form method="POST" action="/api/client-portal/nda/upload" enctype="multipart/form-data" style="margin:0;">
+          <label class="gc-btn-secondary">
+            Upload My NDA
+            <input
+              type="file"
+              name="file"
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+              required
+              class="gc-visually-hidden"
+              onchange="this.form.requestSubmit()"
+            />
+          </label>
+        </form>
+      </div>
     </div>`;
 }
 
@@ -356,7 +373,10 @@ clientPortalRouter.get(
 
 // --- NDA signing (client-side) ---------------------------------------
 
-const ndaSignSchema = z.object({ fullName: z.string().trim().min(1), agree: z.string().min(1) });
+// No typed name anymore — the client is already authenticated, so their
+// account's own name/email is the signature, not a free-text field they
+// could type anything into.
+const ndaSignSchema = z.object({ agree: z.string().min(1) });
 
 clientPortalRouter.post(
   "/nda/sign",
@@ -365,7 +385,7 @@ clientPortalRouter.post(
     const leadId = req.clientUser.leadId;
     const parsed = ndaSignSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("Enter your name and confirm you agree to the terms.")}`);
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("Confirm you agree to the terms first.")}`);
     }
 
     const nda = await prisma.ndaRecord.findUnique({ where: { leadId } });
@@ -378,7 +398,84 @@ clientPortalRouter.post(
 
     await prisma.ndaRecord.update({
       where: { leadId },
-      data: { status: "SIGNED", signedAt: new Date(), signerName: parsed.data.fullName, signerEmail: req.clientUser.email }
+      data: { status: "SIGNED", signedAt: new Date(), signerName: req.clientUser.name, signerEmail: req.clientUser.email }
+    });
+
+    res.redirect("/api/client-portal/dashboard");
+  })
+);
+
+// --- NDA upload (client-side alternative to typing/clicking accept) ------
+
+// multer's own middleware form doesn't let us redirect-with-a-friendly-
+// message on failure (a bad file just 500s), so it's invoked manually and
+// its error caught here, same query-param error convention the rest of
+// this router already uses.
+function runUpload(req, res) {
+  return new Promise((resolve, reject) => {
+    upload.single("file")(req, res, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
+clientPortalRouter.post(
+  "/nda/upload",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const leadId = req.clientUser.leadId;
+    const nda = await prisma.ndaRecord.findUnique({ where: { leadId } });
+    if (!nda || !["SENT", "REMINDER_1", "REMINDER_2"].includes(nda.status)) {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA isn't awaiting a signature right now.")}`);
+    }
+
+    try {
+      await runUpload(req, res);
+    } catch (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? `That file is too large. The limit is ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`
+          : "Could not upload that file. Try again.";
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent(message)}`);
+    }
+
+    if (!req.file) {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("Choose a file to upload.")}`);
+    }
+
+    const filePath = path.join(UPLOAD_DIR, req.file.filename);
+    // Extraction failures are captured as a note rather than thrown — a
+    // scanned PDF or a photo of a signature page should still upload fine.
+    const { text, note } = await extractText(filePath, req.file.mimetype, req.file.originalname);
+
+    // Filed the same way a staff upload would be (see routes/documents.js)
+    // so it shows up in the Data Room and is searchable by the AI
+    // assistant like any other document — uploadedById is null because a
+    // ClientUser isn't a staff User, the two identity systems don't cross.
+    const doc = await prisma.document.create({
+      data: {
+        originalName: req.file.originalname,
+        storedName: req.file.filename,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        category: "NDA",
+        description: `Uploaded by ${req.clientUser.name} via the client portal`,
+        extractedText: text,
+        extractionNote: note,
+        uploadedById: null
+      }
+    });
+
+    // Uploading their own signed copy IS acceptance — same end state as
+    // the "I Am Accept It" button, just with the client's own document
+    // kept as the record instead of a typed clickwrap.
+    await prisma.ndaRecord.update({
+      where: { leadId },
+      data: {
+        documentId: doc.id,
+        status: "SIGNED",
+        signedAt: new Date(),
+        signerName: req.clientUser.name,
+        signerEmail: req.clientUser.email
+      }
     });
 
     res.redirect("/api/client-portal/dashboard");

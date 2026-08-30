@@ -50,6 +50,9 @@ function pageStyles() {
     .gc-checkbox-row { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; font-size: 13px; color: #334463; }
     .gc-btn-primary { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: #3046b2; color: #fff; border: none; border-radius: 14px; padding: 13px 20px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background .15s; font-family: inherit; }
     .gc-btn-primary:hover { background: #25348a; }
+    .gc-btn-secondary { display: inline-flex; align-items: center; gap: 8px; width: auto; background: #fff; color: #102246; border: 1px solid #d6deea; border-radius: 12px; padding: 10px 22px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; font-family: inherit; }
+    .gc-btn-secondary:hover { background: #f7f9fc; }
+    .gc-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     .gc-note { margin: 16px 0 0; font-size: 13px; color: #8592ab; text-align: center; line-height: 1.6; }
     .gc-note a { color: #3046b2; font-weight: 500; text-decoration: none; }
     .gc-note a:hover { text-decoration: underline; }
