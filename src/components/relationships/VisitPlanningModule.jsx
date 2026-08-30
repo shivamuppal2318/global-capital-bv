@@ -33,6 +33,15 @@ export function VisitPlanningModule() {
   const [statusFilter, setStatusFilter] = useState("All");
   const [regionFilter, setRegionFilter] = useState("All");
   const [query, setQuery] = useState("");
+  // Lead/owner search criteria for the separate Search visit panel below —
+  // draft values only take effect once "Search" is clicked, same pattern
+  // as NdaModule/IoiModule's Search panels. Independent of `editing` (Plan
+  // a visit / Edit), which is untouched.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchLeadId, setSearchLeadId] = useState("");
+  const [searchOwner, setSearchOwner] = useState("");
+  const [appliedLeadId, setAppliedLeadId] = useState("");
+  const [appliedOwner, setAppliedOwner] = useState("");
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -46,7 +55,7 @@ export function VisitPlanningModule() {
   const load = useCallback(() => {
     setLoading(true);
     Promise.all([
-      visitPlansApi.list({ status: statusFilter, region: regionFilter, q: query }),
+      visitPlansApi.list({ status: statusFilter, region: regionFilter, q: query, leadId: appliedLeadId, owner: appliedOwner }),
       visitPlansApi.metrics(),
       visitPlansApi.calendar()
     ])
@@ -58,7 +67,7 @@ export function VisitPlanningModule() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [statusFilter, regionFilter, query]);
+  }, [statusFilter, regionFilter, query, appliedLeadId, appliedOwner]);
 
   useEffect(() => {
     const t = setTimeout(load, query ? 300 : 0);
@@ -70,7 +79,8 @@ export function VisitPlanningModule() {
     documentsApi.list().then(setDocuments).catch(() => {});
   }, []);
 
-  const startNew = () =>
+  const startNew = () => {
+    setSearchOpen(false);
     setEditing({
       leadId: "",
       status: "PLANNED",
@@ -89,8 +99,26 @@ export function VisitPlanningModule() {
       reportSubmitted: false,
       reportId: ""
     });
+  };
 
-  const startEdit = (p) =>
+  const openSearch = () => {
+    setEditing(null);
+    setSearchOpen(true);
+    setSearchLeadId(appliedLeadId);
+    setSearchOwner(appliedOwner);
+  };
+
+  // Applies the panel's draft Lead/Owner criteria and closes it — Status
+  // and Region already apply immediately via the pills/dropdown below, so
+  // they aren't duplicated as separate drafts here.
+  const applySearch = () => {
+    setAppliedLeadId(searchLeadId);
+    setAppliedOwner(searchOwner);
+    setSearchOpen(false);
+  };
+
+  const startEdit = (p) => {
+    setSearchOpen(false);
     setEditing({
       id: p.id,
       leadId: p.lead?.id ?? "",
@@ -110,6 +138,7 @@ export function VisitPlanningModule() {
       reportSubmitted: Boolean(p.reportSubmitted),
       reportId: p.report?.id ?? ""
     });
+  };
 
   async function handleSave(e) {
     e?.preventDefault?.();
@@ -209,10 +238,6 @@ export function VisitPlanningModule() {
   );
 
   const regionOptions = useMemo(() => (metrics?.regions ?? []).map((r) => r.region), [metrics]);
-  const maxRegionCount = useMemo(
-    () => (metrics?.regions ?? []).reduce((max, r) => Math.max(max, r.count), 0),
-    [metrics]
-  );
 
   // Month grid, Monday-first (European convention, matching where these
   // visits actually happen).
@@ -261,7 +286,7 @@ export function VisitPlanningModule() {
         <SectionTitle
           icon={CheckCircleIcon}
           iconClass="text-[#3046b2]"
-          subtitle="Planned and confirmed visits by date. Cancelled trips are left off."
+          subtitle="Planned, confirmed and completed visits by date. Cancelled trips are left off."
           action={
             <div className="flex items-center gap-2">
               <ActionButton small label="←" onClick={() => shiftMonth(-1)} />
@@ -312,47 +337,6 @@ export function VisitPlanningModule() {
         </div>
       </Card>
 
-      <Card className="px-5 py-5">
-        <SectionTitle
-          icon={CheckCircleIcon}
-          iconClass="text-[#3046b2]"
-          subtitle="Where the travel is going. A region with only one visit is a dedicated trip; the taller bars are where clustering already works."
-        >
-          Visit density by region
-        </SectionTitle>
-
-        {metrics?.regions?.length ? (
-          <div className="mt-5 space-y-2">
-            {metrics.regions.map((r) => (
-              <div key={r.region} className="flex items-center gap-3">
-                <span className="w-40 shrink-0 truncate text-[13px] font-semibold text-[#334463]">{r.region}</span>
-                <div className="h-6 flex-1 overflow-hidden rounded-[8px] bg-[#f1f4f9]">
-                  <div
-                    className={`h-full rounded-[8px] ${r.count > 1 ? "bg-[#3046b2]" : "bg-[#c0cade]"}`}
-                    style={{ width: `${maxRegionCount ? (r.count / maxRegionCount) * 100 : 0}%` }}
-                  />
-                </div>
-                <span className="w-24 shrink-0 text-right text-[12px] text-[#5c6b87]">
-                  {r.count} visit{r.count === 1 ? "" : "s"}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
-            No visits recorded yet.
-          </p>
-        )}
-
-        {/* Being straight about what this is not: a real map and route
-            optimiser need a maps provider and an API key, which this app
-            does not have. */}
-        <p className="mt-4 rounded-[12px] border border-[#e7edf5] bg-[#fbfcfe] px-4 py-3 text-[12px] leading-5 text-[#5c6b87]">
-          Geographic clustering here is grouped by the region you enter, not by real coordinates. A map view and
-          automatic route optimisation would need a maps provider (Google Maps or Mapbox) and an API key — say the word
-          and that can be added.
-        </p>
-      </Card>
 
       <Card className="px-5 py-5">
         <SectionTitle
@@ -360,16 +344,82 @@ export function VisitPlanningModule() {
           iconClass="text-[#3046b2]"
           subtitle="A lead can be visited more than once - each trip is its own record with its own cost and report."
           action={
-            <ActionButton
-              label={editing ? "Cancel" : "Plan a visit"}
-              icon={editing ? XIcon : PlusIcon}
-              small
-              onClick={() => (editing ? setEditing(null) : startNew())}
-            />
+            editing ? (
+              <ActionButton label="Cancel" icon={XIcon} small onClick={() => setEditing(null)} />
+            ) : searchOpen ? (
+              <ActionButton label="Cancel" icon={XIcon} small onClick={() => setSearchOpen(false)} />
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <ActionButton label="Search visit" icon={SearchIcon} small onClick={openSearch} />
+                <ActionButton label="Plan a visit" icon={PlusIcon} primary small onClick={startNew} />
+              </div>
+            )
           }
         >
           Visits
         </SectionTitle>
+
+        {searchOpen ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              applySearch();
+            }}
+            className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4"
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className={labelClass}>Lead</label>
+                <select className={inputClass} value={searchLeadId} onChange={(e) => setSearchLeadId(e.target.value)}>
+                  <option value="">Any lead</option>
+                  {leads.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} — {l.company}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Status</label>
+                <select className={inputClass} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  <option value="All">Any status</option>
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className={labelClass}>Owner</label>
+                <input
+                  className={inputClass}
+                  value={searchOwner}
+                  onChange={(e) => setSearchOwner(e.target.value)}
+                  placeholder="Filter by who is travelling"
+                />
+              </div>
+            </div>
+            <p className="mt-3 text-[12px] text-[#8592ab]">
+              Looking for a location or purpose instead? Use the search box below the filters — it already covers
+              that.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ActionButton
+                label="Clear"
+                small
+                onClick={() => {
+                  setSearchLeadId("");
+                  setSearchOwner("");
+                  setStatusFilter("All");
+                  setAppliedLeadId("");
+                  setAppliedOwner("");
+                }}
+              />
+              <ActionButton label="Search" primary small onClick={applySearch} />
+            </div>
+          </form>
+        ) : null}
 
         {editing ? (
           <form onSubmit={handleSave} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">

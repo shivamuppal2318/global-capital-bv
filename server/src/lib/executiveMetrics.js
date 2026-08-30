@@ -12,17 +12,22 @@ function round(n, places = 1) {
 
 // --- Deal funnel -----------------------------------------------------------
 
-// Lead -> Outreach -> NDA -> Zoom call -> Data room -> IOI -> Field visit ->
-// Term sheet. Each stage is a list of ids at that point in the pipeline;
-// only distinct ids are counted, so a lead appearing twice in one stage's
-// source data cannot inflate it.
+// Lead -> Outreach -> NDA -> Zoom Call 1 -> Data room -> IOI Signed ->
+// Zoom Call 2 -> Field visit -> Term sheet. Each stage is a list of ids at
+// that point in the pipeline; only distinct ids are counted, so a lead
+// appearing twice in one stage's source data cannot inflate it.
+//
+// Zoom Call 2 sits after IOI Signed, not after Zoom Call 1: the second call
+// is the deeper due-diligence conversation that happens once a lead has
+// actually committed to an IOI, not a generic "second meeting of any kind".
 export function executiveFunnel({
   lead = [],
   outreach = [],
   nda = [],
   zoom = [],
   dataRoom = [],
-  ioi = [],
+  ioiSigned = [],
+  zoomCall2 = [],
   fieldVisit = [],
   termSheet = []
 } = {}) {
@@ -30,9 +35,10 @@ export function executiveFunnel({
     { key: "lead", label: "Lead", ids: lead },
     { key: "outreach", label: "Outreach", ids: outreach },
     { key: "nda", label: "NDA", ids: nda },
-    { key: "zoom", label: "Zoom call", ids: zoom },
+    { key: "zoom", label: "Zoom Call 1", ids: zoom },
     { key: "dataRoom", label: "Data room", ids: dataRoom },
-    { key: "ioi", label: "IOI", ids: ioi },
+    { key: "ioiSigned", label: "IOI Signed", ids: ioiSigned },
+    { key: "zoomCall2", label: "Zoom Call 2", ids: zoomCall2 },
     { key: "fieldVisit", label: "Field visit", ids: fieldVisit },
     { key: "termSheet", label: "Term sheet", ids: termSheet }
   ];

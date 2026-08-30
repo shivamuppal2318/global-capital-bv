@@ -23,10 +23,12 @@ const include = {
 };
 
 ndaRecordsRouter.get("/", asyncHandler(async (req, res) => {
-  const { status, q } = req.query;
+  const { status, q, leadId, owner } = req.query;
   const records = await prisma.ndaRecord.findMany({
     where: {
       ...(status && status !== "All" ? { status: String(status) } : {}),
+      ...(leadId ? { leadId: String(leadId) } : {}),
+      ...(owner ? { owner: { contains: String(owner), mode: "insensitive" } } : {}),
       ...(q
         ? {
             OR: [

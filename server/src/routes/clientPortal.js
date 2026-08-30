@@ -1,4 +1,6 @@
 import { Router } from "express";
+import multer from "multer";
+import path from "node:path";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
@@ -6,8 +8,10 @@ import { hashPassword, verifyPassword, signClientToken } from "../lib/auth.js";
 import { verifyClientInviteToken } from "../lib/clientPortalToken.js";
 import { requireClientAuth, setClientSessionCookie, clearClientSessionCookie } from "../middleware/requireClientAuth.js";
 import { authShell, dashboardShell, formField, primaryButton, errorBanner, noteText, escapeHtml } from "../lib/clientPortalPage.js";
-import { buildPortalStages } from "../lib/clientPortalStages.js";
+import { buildPortalStages, PORTAL_STAGES } from "../lib/clientPortalStages.js";
 import { REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
+import { extractText } from "../lib/documentText.js";
+import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
 
 export const clientPortalRouter = Router();
 
@@ -195,7 +199,7 @@ const STATUS_STYLE = {
 function stageRowHtml(stage, extraHtml = "") {
   const style = STATUS_STYLE[stage.status];
   return `
-    <div class="gc-stage-row">
+    <div class="gc-stage-row" id="stage-${escapeHtml(stage.key)}">
       <div class="gc-stage-dot" style="background:${stage.status === "not_started" ? "#d6deea" : style.fg};"></div>
       <div style="flex:1;min-width:0;">
         <div class="gc-stage-head">
@@ -227,26 +231,83 @@ function statCardHtml(card) {
 }
 
 // The NDA row is the only stage a client can act on directly — it's the
-// gate everything else waits behind, and the same typed-name-plus-checkbox
-// "clickwrap" the old cold-email NDA link used (see routes/nda.js), just
-// reached through the portal instead of a one-off signing link.
-function ndaSignFormHtml({ error, doeName } = {}) {
+// gate everything else waits behind. Two ways to clear it: accept in the
+// portal using the identity they're already authenticated as (no re-typed
+// name — that's what the old cold-email NDA link needed, but this client
+// is already signed in), or upload their own signed copy, which counts as
+// acceptance in its own right and is kept as the record.
+function ndaSignFormHtml({ error, doeName, alreadySigned } = {}) {
   return `
     <div class="gc-sign-box">
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
+      ${
+        alreadySigned
+          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this NDA. You can still upload a copy for your own records, or accept again if needed.</p>`
+          : ""
+      }
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
-      <form method="POST" action="/api/client-portal/nda/sign">
-        <label class="gc-field" style="margin-bottom:12px;">
-          <span class="gc-label">Type your full name to sign</span>
-          <input name="fullName" required class="gc-input" />
-        </label>
-        <label class="gc-checkbox-row">
-          <input type="checkbox" name="agree" required />
-          I have read and agree to the terms of this NDA
-        </label>
-        <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">Accept &amp; sign</button>
-      </form>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;">
+        <form method="POST" action="/api/client-portal/nda/sign" style="margin:0;">
+          <label class="gc-checkbox-row">
+            <input type="checkbox" name="agree" required />
+            I have read and agree to the terms of this NDA
+          </label>
+          <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">I Am Accept It</button>
+        </form>
+        <form method="POST" action="/api/client-portal/nda/upload" enctype="multipart/form-data" style="margin:0;">
+          <label class="gc-btn-secondary">
+            Upload My NDA
+            <input
+              type="file"
+              name="file"
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+              required
+              class="gc-visually-hidden"
+              onchange="this.form.requestSubmit()"
+            />
+          </label>
+        </form>
+      </div>
     </div>`;
+}
+
+// Both /dashboard (the overview) and /stage/:key (one stage on its own
+// page) need the exact same underlying records and the same 8-stage
+// computation — the only difference is how much of it gets rendered.
+// Kept in one place so the two routes can't quietly drift apart.
+async function loadPortalData(leadId) {
+  const [nda, meetings, ioi, visits, fieldVisit, termSheet, documentCategories] = await Promise.all([
+    prisma.ndaRecord.findUnique({ where: { leadId } }),
+    prisma.meeting.findMany({ where: { leadId } }),
+    prisma.ioiRecord.findUnique({ where: { leadId } }),
+    prisma.visitPlan.findMany({ where: { leadId } }),
+    prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "FIELD_VISIT" } } }),
+    prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "TERM_SHEET" } } }),
+    prisma.document.findMany({ select: { category: true }, distinct: ["category"] })
+  ]);
+
+  const uploadedCategories = new Set(documentCategories.map((d) => d.category));
+  const receivedCount = REQUIRED_DOCUMENT_LABELS.filter((label) => uploadedCategories.has(label)).length;
+
+  const stages = buildPortalStages({
+    nda,
+    meetings,
+    dataRoom: { receivedCount, totalRequired: REQUIRED_DOCUMENT_LABELS.length },
+    ioi,
+    visits,
+    fieldVisit,
+    termSheet
+  });
+
+  return { nda, stages };
+}
+
+function sidebarStagesFrom(stages) {
+  return stages.map((s) => ({
+    key: s.key,
+    label: s.label,
+    dotColor: s.status === "not_started" ? "#5c6b9a" : STATUS_STYLE[s.status].fg
+  }));
 }
 
 clientPortalRouter.get(
@@ -254,37 +315,19 @@ clientPortalRouter.get(
   requireClientAuth,
   asyncHandler(async (req, res) => {
     const leadId = req.clientUser.leadId;
-
-    const [nda, meetings, ioi, visits, fieldVisit, termSheet, documentCategories] = await Promise.all([
-      prisma.ndaRecord.findUnique({ where: { leadId } }),
-      prisma.meeting.findMany({ where: { leadId } }),
-      prisma.ioiRecord.findUnique({ where: { leadId } }),
-      prisma.visitPlan.findMany({ where: { leadId } }),
-      prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "FIELD_VISIT" } } }),
-      prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "TERM_SHEET" } } }),
-      prisma.document.findMany({ select: { category: true }, distinct: ["category"] })
-    ]);
-
-    const uploadedCategories = new Set(documentCategories.map((d) => d.category));
-    const receivedCount = REQUIRED_DOCUMENT_LABELS.filter((label) => uploadedCategories.has(label)).length;
-
-    const stages = buildPortalStages({
-      nda,
-      meetings,
-      dataRoom: { receivedCount, totalRequired: REQUIRED_DOCUMENT_LABELS.length },
-      ioi,
-      visits,
-      fieldVisit,
-      termSheet
-    });
+    const { nda, stages } = await loadPortalData(leadId);
 
     const completedCount = stages.filter((s) => s.status === "completed").length;
 
-    // Only SENT/REMINDER_1/REMINDER_2 are actually awaiting the client's
-    // signature — DRAFT hasn't reached them yet, and SIGNED/DECLINED/
-    // EXPIRED are already resolved, so the form only appears in the one
-    // state where signing is a real, available action.
-    const ndaSignable = nda && ["SENT", "REMINDER_1", "REMINDER_2"].includes(nda.status);
+    // Available any time the NDA has actually been sent — DRAFT hasn't
+    // reached the client yet, so there's nothing to act on, but once it's
+    // out there the client can accept or (re-)upload their copy at any
+    // point, including after it's already marked SIGNED: they may want to
+    // attach their own signed PDF after clicking "I Am Accept It" earlier,
+    // or replace an upload with a better copy. DECLINED/EXPIRED stay
+    // excluded — those are a deliberate call made on the staff side, not
+    // something the client should be able to override from the portal.
+    const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
     const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
 
     // Mirrors the SPA's own StatCard row (see e.g. MeetingsModule's five
@@ -317,6 +360,7 @@ clientPortalRouter.get(
         title: "Your deal",
         clientName: req.clientUser.name,
         companyName: req.clientUser.lead.company,
+        stages: sidebarStagesFrom(stages),
         bodyHtml: `
           <span class="gc-badge-pill">Your Deal</span>
           <h1 class="gc-heading">${escapeHtml(req.clientUser.lead.company)}</h1>
@@ -336,7 +380,12 @@ clientPortalRouter.get(
             <div style="margin-top:8px;">
               ${stages
                 .map((s) =>
-                  stageRowHtml(s, s.key === "nda" && ndaSignable ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner }) : "")
+                  stageRowHtml(
+                    s,
+                    s.key === "nda" && ndaActionable
+                      ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner, alreadySigned: nda.status === "SIGNED" })
+                      : ""
+                  )
                 )
                 .join("")}
             </div>
@@ -347,9 +396,59 @@ clientPortalRouter.get(
   })
 );
 
+// One stage on its own page — reached from the sidebar's per-stage links.
+// Reuses stageRowHtml unchanged, so a stage looks identical here and on
+// the Overview; only how much of the page it takes up differs.
+clientPortalRouter.get(
+  "/stage/:key",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const stageMeta = PORTAL_STAGES.find((s) => s.key === req.params.key);
+    if (!stageMeta) return res.redirect("/api/client-portal/dashboard");
+
+    const leadId = req.clientUser.leadId;
+    const { nda, stages } = await loadPortalData(leadId);
+    const stage = stages.find((s) => s.key === stageMeta.key);
+
+    const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
+    const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
+
+    res.send(
+      dashboardShell({
+        title: stage.label,
+        clientName: req.clientUser.name,
+        companyName: req.clientUser.lead.company,
+        stages: sidebarStagesFrom(stages),
+        activeKey: stage.key,
+        bodyHtml: `
+          <span class="gc-badge-pill">Deal Stage</span>
+          <h1 class="gc-heading">${escapeHtml(stage.label)}</h1>
+          <p class="gc-subheading">Part of your deal with ${escapeHtml(req.clientUser.lead.company)}.</p>
+
+          <div class="gc-card">
+            ${stageRowHtml(
+              stage,
+              stage.key === "nda" && ndaActionable
+                ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner, alreadySigned: nda.status === "SIGNED" })
+                : ""
+            )}
+          </div>
+
+          <p style="margin-top:16px;">
+            <a href="/api/client-portal/dashboard" style="font-size:13px;font-weight:600;color:#3046b2;text-decoration:none;">← Back to full overview</a>
+          </p>
+        `
+      })
+    );
+  })
+);
+
 // --- NDA signing (client-side) ---------------------------------------
 
-const ndaSignSchema = z.object({ fullName: z.string().trim().min(1), agree: z.string().min(1) });
+// No typed name anymore — the client is already authenticated, so their
+// account's own name/email is the signature, not a free-text field they
+// could type anything into.
+const ndaSignSchema = z.object({ agree: z.string().min(1) });
 
 clientPortalRouter.post(
   "/nda/sign",
@@ -358,20 +457,98 @@ clientPortalRouter.post(
     const leadId = req.clientUser.leadId;
     const parsed = ndaSignSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("Enter your name and confirm you agree to the terms.")}`);
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("Confirm you agree to the terms first.")}`);
     }
 
     const nda = await prisma.ndaRecord.findUnique({ where: { leadId } });
     // Re-checked server-side, not just hidden by the dashboard's own
-    // conditional rendering — someone could POST here directly after the
-    // NDA had already moved to SIGNED/DECLINED/EXPIRED in the meantime.
-    if (!nda || !["SENT", "REMINDER_1", "REMINDER_2"].includes(nda.status)) {
-      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA isn't awaiting a signature right now.")}`);
+    // conditional rendering. Allowed any time it's been sent, including
+    // re-accepting an already-SIGNED one — DECLINED/EXPIRED are the only
+    // states blocked, since those are a deliberate staff-side call.
+    if (!nda || !nda.sentAt || ["DECLINED", "EXPIRED"].includes(nda.status)) {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA isn't available to accept right now.")}`);
     }
 
     await prisma.ndaRecord.update({
       where: { leadId },
-      data: { status: "SIGNED", signedAt: new Date(), signerName: parsed.data.fullName, signerEmail: req.clientUser.email }
+      data: { status: "SIGNED", signedAt: new Date(), signerName: req.clientUser.name, signerEmail: req.clientUser.email }
+    });
+
+    res.redirect("/api/client-portal/dashboard");
+  })
+);
+
+// --- NDA upload (client-side alternative to typing/clicking accept) ------
+
+// multer's own middleware form doesn't let us redirect-with-a-friendly-
+// message on failure (a bad file just 500s), so it's invoked manually and
+// its error caught here, same query-param error convention the rest of
+// this router already uses.
+function runUpload(req, res) {
+  return new Promise((resolve, reject) => {
+    upload.single("file")(req, res, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
+clientPortalRouter.post(
+  "/nda/upload",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const leadId = req.clientUser.leadId;
+    const nda = await prisma.ndaRecord.findUnique({ where: { leadId } });
+    if (!nda || !nda.sentAt || ["DECLINED", "EXPIRED"].includes(nda.status)) {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA isn't available to accept right now.")}`);
+    }
+
+    try {
+      await runUpload(req, res);
+    } catch (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? `That file is too large. The limit is ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`
+          : "Could not upload that file. Try again.";
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent(message)}`);
+    }
+
+    if (!req.file) {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("Choose a file to upload.")}`);
+    }
+
+    const filePath = path.join(UPLOAD_DIR, req.file.filename);
+    // Extraction failures are captured as a note rather than thrown — a
+    // scanned PDF or a photo of a signature page should still upload fine.
+    const { text, note } = await extractText(filePath, req.file.mimetype, req.file.originalname);
+
+    // Filed the same way a staff upload would be (see routes/documents.js)
+    // so it shows up in the Data Room and is searchable by the AI
+    // assistant like any other document — uploadedById is null because a
+    // ClientUser isn't a staff User, the two identity systems don't cross.
+    const doc = await prisma.document.create({
+      data: {
+        originalName: req.file.originalname,
+        storedName: req.file.filename,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        category: "NDA",
+        description: `Uploaded by ${req.clientUser.name} via the client portal`,
+        extractedText: text,
+        extractionNote: note,
+        uploadedById: null
+      }
+    });
+
+    // Uploading their own signed copy IS acceptance — same end state as
+    // the "I Am Accept It" button, just with the client's own document
+    // kept as the record instead of a typed clickwrap.
+    await prisma.ndaRecord.update({
+      where: { leadId },
+      data: {
+        documentId: doc.id,
+        status: "SIGNED",
+        signedAt: new Date(),
+        signerName: req.clientUser.name,
+        signerEmail: req.clientUser.email
+      }
     });
 
     res.redirect("/api/client-portal/dashboard");

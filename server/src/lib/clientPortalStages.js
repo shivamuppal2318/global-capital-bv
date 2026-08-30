@@ -13,11 +13,17 @@
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : null);
 
+// Zoom Call 2 sits after IOI, not right after Zoom Call 1 — same ordering
+// as the Executive Dashboard's funnel (see executiveMetrics.js): the
+// second call is the deeper due-diligence conversation that happens once
+// a lead has actually committed to an IOI, not a generic "second meeting
+// of any kind".
 export const PORTAL_STAGES = [
   { key: "nda", label: "NDA" },
-  { key: "zoom", label: "Zoom Call" },
+  { key: "zoom", label: "Zoom Call 1" },
   { key: "dataRoom", label: "Data Room" },
   { key: "ioi", label: "IOI" },
+  { key: "zoom2", label: "Zoom Call 2" },
   { key: "visitPlanning", label: "Visit Planning" },
   { key: "fieldVisit", label: "Field Visit" },
   { key: "termSheet", label: "Term Sheet" }
@@ -44,6 +50,21 @@ export function deriveZoomStage(meetings) {
     return { status: "in_progress", detail: `Scheduled for ${fmtDate(next.startTime)}` };
   }
   return { status: "not_started", detail: "No upcoming call" };
+}
+
+// Reports on the SECOND meeting specifically (chronologically) — the
+// deeper due-diligence call that happens once a lead has moved past the
+// introductory Zoom Call 1. Fewer than two meetings means the second call
+// hasn't been scheduled yet, regardless of how the first one went.
+export function deriveZoomStage2(meetings) {
+  if (meetings.length < 2) return { status: "not_started", detail: "No second call scheduled yet" };
+  const sorted = [...meetings].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+  const second = sorted[1];
+  if (second.status === "Completed") return { status: "completed", detail: `Completed ${fmtDate(second.startTime)}` };
+  if (second.status === "Scheduled" && new Date(second.startTime) > new Date()) {
+    return { status: "in_progress", detail: `Scheduled for ${fmtDate(second.startTime)}` };
+  }
+  return { status: "not_started", detail: "No second call scheduled yet" };
 }
 
 // Data Room isn't per-lead in this app — the document library is shared
@@ -102,6 +123,7 @@ export function buildPortalStages({ nda, meetings, dataRoom, ioi, visits, fieldV
     zoom: deriveZoomStage(meetings),
     dataRoom: deriveDataRoomStage(dataRoom),
     ioi: deriveIoiStage(ioi),
+    zoom2: deriveZoomStage2(meetings),
     visitPlanning: deriveVisitStage(visits),
     fieldVisit: deriveDealStage(fieldVisit),
     termSheet: deriveDealStage(termSheet)

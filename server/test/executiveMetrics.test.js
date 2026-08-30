@@ -14,12 +14,20 @@ const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 
 // --- executiveFunnel -------------------------------------------------------
 
-test("executiveFunnel: called with no arguments returns eight empty stages", () => {
+test("executiveFunnel: called with no arguments returns nine empty stages", () => {
   const f = executiveFunnel();
-  assert.equal(f.length, 8);
-  assert.deepEqual(f.map((s) => s.count), [0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.equal(f.length, 9);
+  assert.deepEqual(f.map((s) => s.count), [0, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.equal(f[0].label, "Lead");
   assert.equal(f.at(-1).label, "Term sheet");
+});
+
+test("executiveFunnel: stage order places Zoom Call 2 after IOI Signed", () => {
+  const f = executiveFunnel();
+  assert.deepEqual(
+    f.map((s) => s.label),
+    ["Lead", "Outreach", "NDA", "Zoom Call 1", "Data room", "IOI Signed", "Zoom Call 2", "Field visit", "Term sheet"]
+  );
 });
 
 test("executiveFunnel: counts distinct ids and derives stage-to-stage conversion", () => {
@@ -29,7 +37,7 @@ test("executiveFunnel: counts distinct ids and derives stage-to-stage conversion
     nda: ["a", "b"],
     zoom: ["a"]
   });
-  assert.deepEqual(f.map((s) => s.count), [4, 3, 2, 1, 0, 0, 0, 0]);
+  assert.deepEqual(f.map((s) => s.count), [4, 3, 2, 1, 0, 0, 0, 0, 0]);
   assert.equal(f[0].conversionFromPrevious, null, "nothing precedes the top of the funnel");
   assert.equal(f[1].conversionFromPrevious, 75);
   assert.equal(f[1].dropOff, 1);
@@ -39,6 +47,14 @@ test("executiveFunnel: counts distinct ids and derives stage-to-stage conversion
 test("executiveFunnel: a duplicated id in one stage is counted once", () => {
   const f = executiveFunnel({ lead: ["a", "a", "b"], outreach: ["a"] });
   assert.equal(f[0].count, 2);
+});
+
+test("executiveFunnel: ioiSigned and zoomCall2 land in their own stages, in that order", () => {
+  const f = executiveFunnel({ ioiSigned: ["a", "b"], zoomCall2: ["a"] });
+  const byKey = Object.fromEntries(f.map((s) => [s.key, s]));
+  assert.equal(byKey.ioiSigned.count, 2);
+  assert.equal(byKey.zoomCall2.count, 1);
+  assert.ok(f.indexOf(byKey.ioiSigned) < f.indexOf(byKey.zoomCall2), "IOI Signed precedes Zoom Call 2");
 });
 
 test("executiveFunnel: an empty preceding stage gives null conversion, not a divide-by-zero", () => {

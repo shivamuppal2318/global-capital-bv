@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { executiveDashboardApi } from "../../lib/executiveDashboardApi";
 import { Card, SectionTitle, StatCard } from "../ui";
-import { GridIcon, SparklesIcon } from "../Icons";
+import { ChartBarIcon, GridIcon, SparklesIcon } from "../Icons";
 
 const has = (v) => v !== null && v !== undefined;
 const fmtPct = (v) => (has(v) ? `${v}%` : "—");
@@ -26,6 +26,7 @@ const KPI_ROWS = [
   { key: "zoomConversion", label: "Zoom Call 1", formula: "Calls completed / Calls scheduled", format: fmtPct },
   { key: "dataRoomCompletion", label: "Data Room Completion", formula: "Required categories uploaded / Required categories", format: fmtPct },
   { key: "ioiConversion", label: "IOI Signed", formula: "IOIs signed / IOIs generated", format: fmtPct },
+  { key: "zoomCall2Conversion", label: "Zoom Call 2", formula: "Leads with a 2nd call / Leads with IOI Signed", format: fmtPct },
   { key: "fieldVisitCompletion", label: "Field Visit", formula: "Visits completed / Visits planned", format: fmtPct },
   { key: "termSheetConversion", label: "Term Sheet Close", formula: "Term sheets issued / Leads reaching field visit", format: fmtPct },
   { key: "pipelineValue", label: "Pipeline Value", formula: "Sum of qualified IOI + term sheet value", format: fmtMoney },
@@ -97,6 +98,24 @@ export function ExecutiveDashboardModule() {
     }
   ];
 
+  // The four Executive Metrics rows that aren't a "count of leads at this
+  // stage" — a %, a currency total and a day count don't belong as bars
+  // next to Funnel Health's lead counts (a "75" bar would read as 75 leads,
+  // not a 75% rate), so they get their own chart instead, matching the
+  // same bar-chart visual language.
+  //
+  // Only Response Rate and Win Rate are real percentages that can honestly
+  // share a 0-100% bar height. Pipeline Value and Avg Deal Age have no
+  // natural upper bound to scale against, so their bars are drawn at full
+  // height on purpose — they carry the number, not a proportion — rather
+  // than inventing a fake target to compare them to.
+  const funnelExtras = [
+    { key: "responseRate", label: "Response Rate", value: fmtPct(kpis.responseRate), pct: has(kpis.responseRate) ? kpis.responseRate : 0, color: "#4c8bf5", proportional: true },
+    { key: "winRate", label: "Win Rate", value: fmtPct(kpis.winRate), pct: has(kpis.winRate) ? kpis.winRate : 0, color: "#2b9b60", proportional: true },
+    { key: "pipelineValue", label: "Pipeline Value", value: fmtMoney(kpis.pipelineValue), color: "#8b52d0", proportional: false },
+    { key: "avgDealAge", label: "Avg Deal Age", value: has(kpis.avgDealAge) ? `${kpis.avgDealAge} Days` : "—", color: "#f29c38", proportional: false }
+  ];
+
   return (
     <div className="space-y-6">
       <Header />
@@ -154,10 +173,38 @@ export function ExecutiveDashboardModule() {
           </div>
         ) : (
           <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
-            The funnel fills in as leads move through outreach, NDA, Zoom calls, the Data Room, IOIs, field visits and
-            term sheets.
+            The funnel fills in as leads move through outreach, NDA, Zoom Call 1, the Data Room, a signed IOI, Zoom
+            Call 2, field visits and term sheets.
           </p>
         )}
+      </Card>
+
+      <Card className="px-5 py-5">
+        <SectionTitle icon={ChartBarIcon} iconClass="text-[#2b9b60]" subtitle="Rate, value and speed metrics that don't fit a lead-count bar chart.">
+          Rate &amp; Value Snapshot
+        </SectionTitle>
+
+        <div className="mt-6 flex items-end gap-3 overflow-x-auto pb-1" style={{ height: 180 }}>
+          {funnelExtras.map((c) => (
+            <div key={c.key} className="flex min-w-[110px] flex-1 flex-col items-center justify-end gap-2" style={{ height: "100%" }}>
+              <span className="text-[15px] font-semibold text-[#102246]">{c.value}</span>
+              <div
+                className="w-full rounded-t-[8px]"
+                style={{
+                  height: c.proportional ? `${Math.max(4, c.pct)}%` : "100%",
+                  background: c.color,
+                  opacity: c.proportional ? 1 : 0.55
+                }}
+                title={c.proportional ? `${c.value} of a 0-100% scale` : `${c.value} — shown at full height, not a rate on the same scale as the other bars`}
+              />
+              <span className="text-center text-[11px] font-medium text-[#5c6b87]">{c.label}</span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-[12px] text-[#9aa6bd]">
+          Response Rate and Win Rate bars are drawn to their real 0–100% scale. Pipeline Value and Avg Deal Age have
+          no natural upper bound, so their bars are shown at full height (the number, not a proportion).
+        </p>
       </Card>
     </div>
   );

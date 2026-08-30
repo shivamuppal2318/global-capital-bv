@@ -14,12 +14,14 @@ const include = {
 };
 
 ioiRecordsRouter.get("/", asyncHandler(async (req, res) => {
-  const { status, industry, geography, q } = req.query;
+  const { status, industry, geography, q, leadId, owner } = req.query;
   const records = await prisma.ioiRecord.findMany({
     where: {
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(industry && industry !== "All" ? { industry: String(industry) } : {}),
       ...(geography && geography !== "All" ? { geography: String(geography) } : {}),
+      ...(leadId ? { leadId: String(leadId) } : {}),
+      ...(owner ? { owner: { contains: String(owner), mode: "insensitive" } } : {}),
       ...(q
         ? {
             OR: [
