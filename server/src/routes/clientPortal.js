@@ -271,42 +271,52 @@ function ndaSignFormHtml({ error, doeName, alreadySigned } = {}) {
     </div>`;
 }
 
-// The Data Room stage's real upload form — previously this stage's page
+// The Data Room stage's real upload UI — previously this stage's page
 // showed only "X of Y documents received" with no way for the client to
-// actually send one. Same shared Document model and upload pipeline as a
-// staff upload (see routes/documents.js) and the NDA upload above; the
-// category picker is the same REQUIRED_DOCUMENT_LABELS checklist the
-// received-count itself is computed from, so a client can only tag an
-// upload as one of the things actually being asked for.
+// actually send one, then (before this) a single dropdown that hid the
+// full checklist behind one collapsed select. Mirrors the admin Data
+// Room's own "Required documents checklist" (DataRoomModule.jsx) instead:
+// every item as its own row with a real tick once received, and its own
+// upload/replace control — so a client sees the whole list at a glance,
+// not just whichever one item the dropdown happened to have selected.
+// Same shared Document model and upload pipeline as a staff upload (see
+// routes/documents.js) and the NDA upload above; each row's category is
+// fixed to that exact REQUIRED_DOCUMENT_LABELS entry, so a client can't
+// tag an upload as something the checklist isn't actually asking for.
 function dataRoomUploadFormHtml({ error, uploadedCategories }) {
-  const options = REQUIRED_DOCUMENTS.map(
-    (doc) =>
-      `<option value="${escapeHtml(doc.label)}">${uploadedCategories.has(doc.label) ? "✓ " : ""}${escapeHtml(doc.label)}</option>`
-  ).join("");
+  const rows = REQUIRED_DOCUMENTS.map((doc) => {
+    const received = uploadedCategories.has(doc.label);
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid ${received ? "#c7ead8" : "#e7edf5"};background:${received ? "#f3fbf6" : "#fbfcfe"};border-radius:12px;padding:10px 14px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="display:grid;place-items:center;width:22px;height:22px;border-radius:999px;font-size:12px;font-weight:700;flex-shrink:0;background:${received ? "#2b9b60" : "#d6deea"};color:${received ? "#ffffff" : "#748096"};">${received ? "✓" : ""}</span>
+          <span style="font-size:13px;color:#102246;font-weight:500;">${escapeHtml(doc.label)}</span>
+        </div>
+        <form method="POST" action="/api/client-portal/documents/upload" enctype="multipart/form-data" style="margin:0;flex-shrink:0;">
+          <input type="hidden" name="category" value="${escapeHtml(doc.label)}" />
+          <label class="gc-btn-secondary" style="font-size:12px;padding:7px 16px;">
+            ${received ? "Replace" : "Upload"}
+            <input
+              type="file"
+              name="file"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+              required
+              class="gc-visually-hidden"
+              onchange="this.form.requestSubmit()"
+            />
+          </label>
+        </form>
+      </div>`;
+  }).join("");
 
   return `
     <div class="gc-sign-box">
       <p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">
-        Upload a document for one of the items on our request list. Already-received items are marked with a check —
+        Upload a document for each item on our request list. Already-received items are marked with a check —
         uploading again replaces it with your new file.
       </p>
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
-      <form method="POST" action="/api/client-portal/documents/upload" enctype="multipart/form-data" style="margin:0;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;">
-        <select name="category" required class="gc-input" style="width:auto;min-width:220px;">
-          ${options}
-        </select>
-        <label class="gc-btn-secondary">
-          Choose file to upload
-          <input
-            type="file"
-            name="file"
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-            required
-            class="gc-visually-hidden"
-            onchange="this.form.requestSubmit()"
-          />
-        </label>
-      </form>
+      <div>${rows}</div>
     </div>`;
 }
 
