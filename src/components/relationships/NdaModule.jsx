@@ -53,13 +53,21 @@ export function NdaModule() {
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState("All");
   const [query, setQuery] = useState("");
+  // Lead/Deal-owner search criteria — draft values live in the Search NDA
+  // panel and only take effect once "Search" is clicked (unlike statusFilter
+  // and query above, which apply immediately), matching how a search form
+  // with an explicit submit button should behave.
+  const [searchLeadId, setSearchLeadId] = useState("");
+  const [searchOwner, setSearchOwner] = useState("");
+  const [appliedLeadId, setAppliedLeadId] = useState("");
+  const [appliedOwner, setAppliedOwner] = useState("");
   const [editing, setEditing] = useState(null);
-  // "full" is the comprehensive editor (Search NDA button, and every
-  // per-record Edit) — every field, including status/signer/notes.
-  // "quick" is the lean creation form (Add NDA button) — just enough to
-  // kick a brand-new NDA off: Lead, DOE, Form Date, End Date, Attach NDA.
-  // Both write to the same `editing` state and the same save/send
-  // handlers below; only which fields are rendered differs.
+  // "edit" is the comprehensive editor (per-record Edit) — every field,
+  // including status/signer/notes. "quick" is the lean creation form (Add
+  // NDA button) — just enough to kick a brand-new NDA off: Lead, DOE, Form
+  // Date, End Date, Attach NDA. "search" is the Search NDA filter panel —
+  // not tied to any one record at all. Only "edit"/"quick" write to the
+  // `editing` state and the save/send handlers below.
   const [formMode, setFormMode] = useState(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -68,7 +76,10 @@ export function NdaModule() {
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([ndaApi.list({ status: statusFilter, q: query }), ndaApi.metrics()])
+    Promise.all([
+      ndaApi.list({ status: statusFilter, q: query, leadId: appliedLeadId, owner: appliedOwner }),
+      ndaApi.metrics()
+    ])
       .then(([rows, m]) => {
         setRecords(rows);
         setMetrics(m);
@@ -76,7 +87,7 @@ export function NdaModule() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [statusFilter, query]);
+  }, [statusFilter, query, appliedLeadId, appliedOwner]);
 
   useEffect(() => {
     const t = setTimeout(load, query ? 300 : 0);
@@ -101,18 +112,28 @@ export function NdaModule() {
     documentId: ""
   });
 
-  const startNew = () => {
-    setFormMode("full");
-    setEditing(blankRecord());
-  };
-
   const startQuickAdd = () => {
     setFormMode("quick");
     setEditing(blankRecord());
   };
 
+  const openSearch = () => {
+    setFormMode("search");
+    setSearchLeadId(appliedLeadId);
+    setSearchOwner(appliedOwner);
+  };
+
+  // Applies the panel's draft Lead/Deal-owner criteria and closes it —
+  // Status already applies immediately via the pills below, so it isn't
+  // duplicated as a separate draft here.
+  const applySearch = () => {
+    setAppliedLeadId(searchLeadId);
+    setAppliedOwner(searchOwner);
+    setFormMode(null);
+  };
+
   const startEdit = (r) => {
-    setFormMode("full");
+    setFormMode("edit");
     setEditing({
       id: r.id,
       leadId: r.lead?.id ?? "",
@@ -337,11 +358,11 @@ export function NdaModule() {
           iconClass="text-[#3046b2]"
           subtitle="One NDA per lead - saving the same lead again updates it rather than adding a duplicate."
           action={
-            editing ? (
+            formMode ? (
               <ActionButton label="Cancel" icon={XIcon} small onClick={closeForm} />
             ) : (
               <div className="flex flex-wrap gap-2">
-                <ActionButton label="Search NDA" small onClick={startNew} />
+                <ActionButton label="Search NDA" icon={SearchIcon} small onClick={openSearch} />
                 <ActionButton label="Add NDA" icon={PlusIcon} primary small onClick={startQuickAdd} />
               </div>
             )
@@ -349,6 +370,68 @@ export function NdaModule() {
         >
           NDA records
         </SectionTitle>
+
+        {formMode === "search" ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              applySearch();
+            }}
+            className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4"
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className={labelClass}>Lead</label>
+                <select className={inputClass} value={searchLeadId} onChange={(e) => setSearchLeadId(e.target.value)}>
+                  <option value="">Any lead</option>
+                  {leads.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} — {l.company}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Status</label>
+                <select className={inputClass} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  <option value="All">Any status</option>
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className={labelClass}>DOE</label>
+                <input
+                  className={inputClass}
+                  value={searchOwner}
+                  onChange={(e) => setSearchOwner(e.target.value)}
+                  placeholder="Filter by deal owner"
+                />
+              </div>
+            </div>
+            <p className="mt-3 text-[12px] text-[#8592ab]">
+              Looking for a signer or company name instead? Use the search box below the filters — it already
+              covers that.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ActionButton
+                label="Clear"
+                small
+                onClick={() => {
+                  setSearchLeadId("");
+                  setSearchOwner("");
+                  setStatusFilter("All");
+                  setAppliedLeadId("");
+                  setAppliedOwner("");
+                }}
+              />
+              <ActionButton label="Search" primary small onClick={applySearch} />
+            </div>
+          </form>
+        ) : null}
 
         {editing && formMode === "quick" ? (
           <form onSubmit={handleSave} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
@@ -433,7 +516,7 @@ export function NdaModule() {
           </form>
         ) : null}
 
-        {editing && formMode === "full" ? (
+        {editing && formMode === "edit" ? (
           <form onSubmit={handleSave} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
