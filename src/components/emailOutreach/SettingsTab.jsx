@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ActionButton } from "../ui.jsx";
 import { PlusIcon, CogIcon, ZapIcon, CheckCircleIcon, LinkIcon, CopyIcon, RefreshIcon } from "../Icons.jsx";
 import { api } from "../../lib/api.js";
+import { emailAccountsApi } from "../../lib/emailAccountsApi.js";
 
 export function SettingsTab({ mailing }) {
   const {
@@ -12,6 +13,20 @@ export function SettingsTab({ mailing }) {
   const [integrationError, setIntegrationError] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
   const [copied, setCopied] = useState(null);
+  // Per-mailbox SMTP test results, keyed by account id — the backend
+  // (POST /api/email-accounts/:id/test) and API client already existed;
+  // this is what was actually missing, a button in the UI to call them.
+  const [accountTestResults, setAccountTestResults] = useState({});
+
+  async function handleTestAccount(id) {
+    setAccountTestResults((current) => ({ ...current, [id]: { pending: true } }));
+    try {
+      const result = await emailAccountsApi.test(id);
+      setAccountTestResults((current) => ({ ...current, [id]: result }));
+    } catch (err) {
+      setAccountTestResults((current) => ({ ...current, [id]: { success: false, message: err.message } }));
+    }
+  }
 
   useEffect(() => {
     api
@@ -158,24 +173,43 @@ export function SettingsTab({ mailing }) {
 
         {emailAccounts.length ? (
           <div className="mt-4 space-y-2">
-            {emailAccounts.map((account) => (
-              <div key={account.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e7edf5] px-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-[14px] font-medium text-[#102246]">{account.label}</p>
-                  <p className="truncate text-[12px] text-[#6a7790]">{account.fromAddress} · {account.smtpHost} · {account.dailyLimit}/day</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${account.isActive ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#748096]"}`}>
-                    {account.isActive ? "Active" : "Inactive"}
-                  </span>
-                  {account.isActive ? (
-                    <button type="button" onClick={() => handleDeactivateAccount(account.id)} className="text-[12px] font-semibold text-[#5f6f89]">
-                      Deactivate
-                    </button>
+            {emailAccounts.map((account) => {
+              const testResult = accountTestResults[account.id];
+              return (
+                <div key={account.id} className="rounded-[12px] border border-[#e7edf5] px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[14px] font-medium text-[#102246]">{account.label}</p>
+                      <p className="truncate text-[12px] text-[#6a7790]">{account.fromAddress} · {account.smtpHost} · {account.dailyLimit}/day</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${account.isActive ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#748096]"}`}>
+                        {account.isActive ? "Active" : "Inactive"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleTestAccount(account.id)}
+                        disabled={testResult?.pending}
+                        className="text-[12px] font-semibold text-[#3046b2] disabled:opacity-50"
+                      >
+                        {testResult?.pending ? "Testing..." : "Test"}
+                      </button>
+                      {account.isActive ? (
+                        <button type="button" onClick={() => handleDeactivateAccount(account.id)} className="text-[12px] font-semibold text-[#5f6f89]">
+                          Deactivate
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  {testResult && !testResult.pending ? (
+                    <p className={`mt-1.5 flex items-start gap-1.5 text-[12px] ${testResult.success ? "text-[#2b9b60]" : "text-[#c94b6b]"}`}>
+                      {testResult.success ? <CheckCircleIcon className="mt-0.5 size-3.5 shrink-0" /> : null}
+                      {testResult.message}
+                    </p>
                   ) : null}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="mt-4 text-[13px] text-[#9aa6ba]">No mailboxes added yet.</p>
