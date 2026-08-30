@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   deriveNdaStage,
   deriveZoomStage,
+  deriveZoomStage2,
   deriveDataRoomStage,
   deriveIoiStage,
   deriveVisitStage,
@@ -57,6 +58,31 @@ test("deriveZoomStage: an upcoming scheduled call (no completed ones) is in_prog
 test("deriveZoomStage: only a cancelled call is not_started, not in_progress", () => {
   const s = deriveZoomStage([{ status: "Cancelled", startTime: daysAgo(5) }]);
   assert.equal(s.status, "not_started");
+});
+
+// --- Zoom call 2 ---------------------------------------------------------
+
+test("deriveZoomStage2: fewer than two meetings is not_started, even with one completed", () => {
+  assert.equal(deriveZoomStage2([]).status, "not_started");
+  assert.equal(deriveZoomStage2([{ status: "Completed", startTime: daysAgo(5) }]).status, "not_started");
+});
+
+test("deriveZoomStage2: reports on the chronologically SECOND meeting, not just any second entry", () => {
+  // Out of input order on purpose: the function must sort by date itself.
+  const s = deriveZoomStage2([
+    { status: "Completed", startTime: daysAgo(2) },
+    { status: "Completed", startTime: daysAgo(10) }
+  ]);
+  assert.equal(s.status, "completed");
+  assert.ok(s.detail.includes(new Date(daysAgo(2)).toLocaleDateString()), "the SECOND chronologically is the more recent one");
+});
+
+test("deriveZoomStage2: an upcoming second call is in_progress", () => {
+  const s = deriveZoomStage2([
+    { status: "Completed", startTime: daysAgo(10) },
+    { status: "Scheduled", startTime: daysFromNow(4) }
+  ]);
+  assert.equal(s.status, "in_progress");
 });
 
 // --- Data Room -----------------------------------------------------------
@@ -117,7 +143,7 @@ test("deriveDealStage: NOT_STARTED/ON_HOLD/IN_PROGRESS/COMPLETED/DECLINED map co
 
 // --- buildPortalStages ---------------------------------------------------
 
-test("buildPortalStages: returns all 7 stages in a fixed order, even with nothing but nulls", () => {
+test("buildPortalStages: returns all 8 stages in a fixed order, even with nothing but nulls", () => {
   const stages = buildPortalStages({
     nda: null,
     meetings: [],
@@ -127,7 +153,13 @@ test("buildPortalStages: returns all 7 stages in a fixed order, even with nothin
     fieldVisit: null,
     termSheet: null
   });
-  assert.equal(stages.length, 7);
+  assert.equal(stages.length, 8);
   assert.deepEqual(stages.map((s) => s.key), PORTAL_STAGES.map((s) => s.key));
   assert.ok(stages.every((s) => s.status === "not_started"));
+});
+
+test("buildPortalStages: Zoom Call 2 sits right after IOI, before Visit Planning", () => {
+  const keys = PORTAL_STAGES.map((s) => s.key);
+  assert.deepEqual(keys.slice(3, 5), ["ioi", "zoom2"]);
+  assert.equal(keys[5], "visitPlanning");
 });

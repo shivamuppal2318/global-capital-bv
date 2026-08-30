@@ -195,7 +195,7 @@ const STATUS_STYLE = {
 function stageRowHtml(stage, extraHtml = "") {
   const style = STATUS_STYLE[stage.status];
   return `
-    <div class="gc-stage-row">
+    <div class="gc-stage-row" id="stage-${escapeHtml(stage.key)}">
       <div class="gc-stage-dot" style="background:${stage.status === "not_started" ? "#d6deea" : style.fg};"></div>
       <div style="flex:1;min-width:0;">
         <div class="gc-stage-head">
@@ -312,11 +312,18 @@ clientPortalRouter.get(
       }
     ];
 
+    const sidebarStages = stages.map((s) => ({
+      key: s.key,
+      label: s.label,
+      dotColor: s.status === "not_started" ? "#5c6b9a" : STATUS_STYLE[s.status].fg
+    }));
+
     res.send(
       dashboardShell({
         title: "Your deal",
         clientName: req.clientUser.name,
         companyName: req.clientUser.lead.company,
+        stages: sidebarStages,
         bodyHtml: `
           <span class="gc-badge-pill">Your Deal</span>
           <h1 class="gc-heading">${escapeHtml(req.clientUser.lead.company)}</h1>
