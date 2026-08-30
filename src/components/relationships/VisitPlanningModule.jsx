@@ -238,10 +238,6 @@ export function VisitPlanningModule() {
   );
 
   const regionOptions = useMemo(() => (metrics?.regions ?? []).map((r) => r.region), [metrics]);
-  const maxRegionCount = useMemo(
-    () => (metrics?.regions ?? []).reduce((max, r) => Math.max(max, r.count), 0),
-    [metrics]
-  );
 
   // Month grid, Monday-first (European convention, matching where these
   // visits actually happen).
@@ -341,47 +337,6 @@ export function VisitPlanningModule() {
         </div>
       </Card>
 
-      <Card className="px-5 py-5">
-        <SectionTitle
-          icon={CheckCircleIcon}
-          iconClass="text-[#3046b2]"
-          subtitle="Where the travel is going. A region with only one visit is a dedicated trip; the taller bars are where clustering already works."
-        >
-          Visit density by region
-        </SectionTitle>
-
-        {metrics?.regions?.length ? (
-          <div className="mt-5 space-y-2">
-            {metrics.regions.map((r) => (
-              <div key={r.region} className="flex items-center gap-3">
-                <span className="w-40 shrink-0 truncate text-[13px] font-semibold text-[#334463]">{r.region}</span>
-                <div className="h-6 flex-1 overflow-hidden rounded-[8px] bg-[#f1f4f9]">
-                  <div
-                    className={`h-full rounded-[8px] ${r.count > 1 ? "bg-[#3046b2]" : "bg-[#c0cade]"}`}
-                    style={{ width: `${maxRegionCount ? (r.count / maxRegionCount) * 100 : 0}%` }}
-                  />
-                </div>
-                <span className="w-24 shrink-0 text-right text-[12px] text-[#5c6b87]">
-                  {r.count} visit{r.count === 1 ? "" : "s"}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
-            No visits recorded yet.
-          </p>
-        )}
-
-        {/* Being straight about what this is not: a real map and route
-            optimiser need a maps provider and an API key, which this app
-            does not have. */}
-        <p className="mt-4 rounded-[12px] border border-[#e7edf5] bg-[#fbfcfe] px-4 py-3 text-[12px] leading-5 text-[#5c6b87]">
-          Geographic clustering here is grouped by the region you enter, not by real coordinates. A map view and
-          automatic route optimisation would need a maps provider (Google Maps or Mapbox) and an API key — say the word
-          and that can be added.
-        </p>
-      </Card>
 
       <Card className="px-5 py-5">
         <SectionTitle
