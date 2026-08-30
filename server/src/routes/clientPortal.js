@@ -9,7 +9,7 @@ import { verifyClientInviteToken } from "../lib/clientPortalToken.js";
 import { requireClientAuth, setClientSessionCookie, clearClientSessionCookie } from "../middleware/requireClientAuth.js";
 import { authShell, dashboardShell, formField, primaryButton, errorBanner, noteText, escapeHtml } from "../lib/clientPortalPage.js";
 import { buildPortalStages, PORTAL_STAGES } from "../lib/clientPortalStages.js";
-import { REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
+import { REQUIRED_DOCUMENTS, REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
 import { extractText } from "../lib/documentText.js";
 import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
 
@@ -271,6 +271,45 @@ function ndaSignFormHtml({ error, doeName, alreadySigned } = {}) {
     </div>`;
 }
 
+// The Data Room stage's real upload form — previously this stage's page
+// showed only "X of Y documents received" with no way for the client to
+// actually send one. Same shared Document model and upload pipeline as a
+// staff upload (see routes/documents.js) and the NDA upload above; the
+// category picker is the same REQUIRED_DOCUMENT_LABELS checklist the
+// received-count itself is computed from, so a client can only tag an
+// upload as one of the things actually being asked for.
+function dataRoomUploadFormHtml({ error, uploadedCategories }) {
+  const options = REQUIRED_DOCUMENTS.map(
+    (doc) =>
+      `<option value="${escapeHtml(doc.label)}">${uploadedCategories.has(doc.label) ? "✓ " : ""}${escapeHtml(doc.label)}</option>`
+  ).join("");
+
+  return `
+    <div class="gc-sign-box">
+      <p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">
+        Upload a document for one of the items on our request list. Already-received items are marked with a check —
+        uploading again replaces it with your new file.
+      </p>
+      ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
+      <form method="POST" action="/api/client-portal/documents/upload" enctype="multipart/form-data" style="margin:0;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;">
+        <select name="category" required class="gc-input" style="width:auto;min-width:220px;">
+          ${options}
+        </select>
+        <label class="gc-btn-secondary">
+          Choose file to upload
+          <input
+            type="file"
+            name="file"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+            required
+            class="gc-visually-hidden"
+            onchange="this.form.requestSubmit()"
+          />
+        </label>
+      </form>
+    </div>`;
+}
+
 // Both /dashboard (the overview) and /stage/:key (one stage on its own
 // page) need the exact same underlying records and the same 8-stage
 // computation — the only difference is how much of it gets rendered.
@@ -299,7 +338,7 @@ async function loadPortalData(leadId) {
     termSheet
   });
 
-  return { nda, stages };
+  return { nda, stages, uploadedCategories };
 }
 
 function sidebarStagesFrom(stages) {
@@ -315,7 +354,7 @@ clientPortalRouter.get(
   requireClientAuth,
   asyncHandler(async (req, res) => {
     const leadId = req.clientUser.leadId;
-    const { nda, stages } = await loadPortalData(leadId);
+    const { nda, stages, uploadedCategories } = await loadPortalData(leadId);
 
     const completedCount = stages.filter((s) => s.status === "completed").length;
 
@@ -329,6 +368,7 @@ clientPortalRouter.get(
     // something the client should be able to override from the portal.
     const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
     const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
+    const docError = req.query.docError ? String(req.query.docError) : null;
 
     // Mirrors the SPA's own StatCard row (see e.g. MeetingsModule's five
     // cards) — a quick-read summary above the full stage-by-stage list,
@@ -379,14 +419,15 @@ clientPortalRouter.get(
             <p class="gc-card-subtitle">Every step of your deal with Global Capital BV, in order.</p>
             <div style="margin-top:8px;">
               ${stages
-                .map((s) =>
-                  stageRowHtml(
-                    s,
-                    s.key === "nda" && ndaActionable
-                      ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner, alreadySigned: nda.status === "SIGNED" })
-                      : ""
-                  )
-                )
+                .map((s) => {
+                  let extraHtml = "";
+                  if (s.key === "nda" && ndaActionable) {
+                    extraHtml = ndaSignFormHtml({ error: ndaError, doeName: nda.owner, alreadySigned: nda.status === "SIGNED" });
+                  } else if (s.key === "dataRoom") {
+                    extraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
+                  }
+                  return stageRowHtml(s, extraHtml);
+                })
                 .join("")}
             </div>
           </div>
@@ -407,11 +448,19 @@ clientPortalRouter.get(
     if (!stageMeta) return res.redirect("/api/client-portal/dashboard");
 
     const leadId = req.clientUser.leadId;
-    const { nda, stages } = await loadPortalData(leadId);
+    const { nda, stages, uploadedCategories } = await loadPortalData(leadId);
     const stage = stages.find((s) => s.key === stageMeta.key);
 
     const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
     const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
+    const docError = req.query.docError ? String(req.query.docError) : null;
+
+    let stageExtraHtml = "";
+    if (stage.key === "nda" && ndaActionable) {
+      stageExtraHtml = ndaSignFormHtml({ error: ndaError, doeName: nda.owner, alreadySigned: nda.status === "SIGNED" });
+    } else if (stage.key === "dataRoom") {
+      stageExtraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
+    }
 
     res.send(
       dashboardShell({
@@ -426,12 +475,7 @@ clientPortalRouter.get(
           <p class="gc-subheading">Part of your deal with ${escapeHtml(req.clientUser.lead.company)}.</p>
 
           <div class="gc-card">
-            ${stageRowHtml(
-              stage,
-              stage.key === "nda" && ndaActionable
-                ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner, alreadySigned: nda.status === "SIGNED" })
-                : ""
-            )}
+            ${stageRowHtml(stage, stageExtraHtml)}
           </div>
 
           <p style="margin-top:16px;">
@@ -548,6 +592,64 @@ clientPortalRouter.post(
         signedAt: new Date(),
         signerName: req.clientUser.name,
         signerEmail: req.clientUser.email
+      }
+    });
+
+    res.redirect("/api/client-portal/dashboard");
+  })
+);
+
+// --- Data Room upload (client-side) ---------------------------------------
+
+clientPortalRouter.post(
+  "/documents/upload",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    try {
+      await runUpload(req, res);
+    } catch (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? `That file is too large. The limit is ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`
+          : "Could not upload that file. Try again.";
+      return res.redirect(`/api/client-portal/dashboard?docError=${encodeURIComponent(message)}`);
+    }
+
+    if (!req.file) {
+      return res.redirect(`/api/client-portal/dashboard?docError=${encodeURIComponent("Choose a file to upload.")}`);
+    }
+
+    // Only one of the real checklist items — a client can't invent a
+    // category the Data Room stage isn't actually asking for, since
+    // deriveDataRoomStage's completion % only counts these labels anyway.
+    const category = REQUIRED_DOCUMENT_LABELS.includes(req.body?.category) ? req.body.category : null;
+    if (!category) {
+      return res.redirect(`/api/client-portal/dashboard?docError=${encodeURIComponent("Choose which document this is from the list.")}`);
+    }
+
+    const filePath = path.join(UPLOAD_DIR, req.file.filename);
+    // Extraction failures are captured as a note rather than thrown — a
+    // scanned PDF or a photo should still upload fine.
+    const { text, note } = await extractText(filePath, req.file.mimetype, req.file.originalname);
+
+    // Filed the same way a staff upload would be (see routes/documents.js)
+    // so it shows up in the Data Room and is searchable by the AI
+    // assistant like any other document — uploadedById is null because a
+    // ClientUser isn't a staff User, the two identity systems don't cross.
+    // The description is the only place this records WHO uploaded it (see
+    // schema note on the Document model — there's no per-lead relation),
+    // same convention the NDA upload above already uses.
+    await prisma.document.create({
+      data: {
+        originalName: req.file.originalname,
+        storedName: req.file.filename,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        category,
+        description: `Uploaded by ${req.clientUser.name} (${req.clientUser.lead.company}) via the client portal`,
+        extractedText: text,
+        extractionNote: note,
+        uploadedById: null
       }
     });
 
