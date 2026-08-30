@@ -44,6 +44,8 @@ import { marketIntelligenceRouter } from "./routes/marketIntelligence.js";
 import { emailLeadsRouter } from "./routes/emailLeads.js";
 import { emailCampaignsRouter } from "./routes/emailCampaigns.js";
 import { emailTemplatesRouter } from "./routes/emailTemplates.js";
+import { emailSegmentsRouter } from "./routes/emailSegments.js";
+import { emailAiAgentRouter } from "./routes/emailAiAgent.js";
 
 const app = express();
 
@@ -169,6 +171,10 @@ app.use(
 // EmailOutreachModule.jsx), not its own nav entry, so it shares MailX's
 // module id rather than needing one of its own.
 app.use("/api/email/templates", requireModule("cold-bulk-mailing"), emailTemplatesRouter);
+// Segments and AI Agent are tabs inside MailX too — same module id as
+// Templates & Cadences above, for the same reason.
+app.use("/api/email/segments", requireModule("cold-bulk-mailing"), emailSegmentsRouter);
+app.use("/api/email/ai-agent", requireModule("cold-bulk-mailing"), emailAiAgentRouter);
 // Not module-gated: everyone manages their own mailbox from Admin Panel →
 // My Account, and the router itself already scopes non-admins to the
 // mailboxes they own.

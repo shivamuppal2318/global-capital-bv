@@ -5,10 +5,15 @@ import { isFirecrawlConfigured } from "./sources/firecrawlSource.js";
 import { isGoogleNewsConfigured } from "./sources/googleNewsRssSource.js";
 
 // News/deal signals don't need minute-level freshness the way an inbound
-// email reply does — weekly matches Google News RSS's own "when:7d" scope
-// (see googleNewsRssSource.js) so each run picks up exactly what's new
-// since the last one. Tune via MARKET_INTELLIGENCE_INTERVAL_MS.
-const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+// email reply does, but a week between runs meant a "seeking funding"
+// signal could sit unprocessed for days before anyone saw it — daily is
+// the real-world cadence a deal-sourcing report needs. Google News RSS's
+// own "when:7d" scope (see googleNewsRssSource.js) is deliberately left
+// wider than the run interval, not narrowed to match it: that overlap is
+// a safety margin against a missed run (server restart, an outage), and
+// costs nothing extra since contentHash dedup already discards anything
+// already seen. Tune the cadence via MARKET_INTELLIGENCE_INTERVAL_MS.
+const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 // Google News needs no API key, so it alone is enough to make a scheduled
 // run worthwhile — without this, the scheduler stayed off in the (common)

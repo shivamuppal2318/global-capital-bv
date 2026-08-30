@@ -2,7 +2,7 @@
 // Qualification, Telephony & SMS, Companies, Contacts, Communications,
 // Deals and Pipeline are not shown — they were placeholders rendering an
 // empty page. Templates & Cadences isn't a top-level entry either, but
-// unlike those it IS reachable — as a tab inside MailX (see
+// unlike those it IS reachable — as a tab inside Email Automation (see
 // EmailOutreachModule.jsx) rather than its own nav item. Keep this in step
 // with server/src/lib/permissions.js — the ids there drive both the Admin
 // Panel checkboxes and the API's own access checks.
@@ -20,11 +20,11 @@ export const navSections = [
     title: "CRM & Outreach",
     items: [
       { id: "crm-workspace", label: "CRM Workspace", icon: "users" },
-      // "MailX" groups everything email-related — Campaigns, Leads, Replies,
-      // Automation (drip sequences), Templates, Settings — as tabs inside
-      // one module (see EmailOutreachModule.jsx), rather than Templates &
-      // Cadences living as its own separate top-level nav entry.
-      { id: "cold-bulk-mailing", label: "MailX", icon: "mailbox" },
+      // "Email Automation" groups everything email-related — Campaigns,
+      // Leads, Replies, Automation (drip sequences), Templates, Settings —
+      // as tabs inside one module (see EmailOutreachModule.jsx), rather than
+      // Templates & Cadences living as its own separate top-level nav entry.
+      { id: "cold-bulk-mailing", label: "Email Automation", icon: "mailbox" },
       { id: "whatsapp-business", label: "WhatsApp Business", icon: "message" }
     ]
   },

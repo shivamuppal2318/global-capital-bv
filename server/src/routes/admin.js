@@ -12,6 +12,7 @@ import { getAiConfig, getAiSettingsRow, saveAiSettings, clearAiSettings, testAiC
 import { AI_DATA_SOURCES, AI_DATA_SOURCE_IDS } from "../lib/aiDataSources.js";
 import { getProviderKey, getMarketIntelSettingsRow, saveMarketIntelSettings, clearProviderKey } from "../lib/marketIntelligenceSettings.js";
 import { testProviderConnection } from "../lib/marketIntelligenceProviderTest.js";
+import { getScoringCriteria, updateScoringCriterionPoints } from "../lib/scoringCriteria.js";
 import { appBaseUrl } from "../lib/appUrl.js";
 import { recordAudit } from "../lib/auditLog.js";
 
@@ -405,6 +406,28 @@ router.delete("/market-intelligence-settings/:provider", requireKnownProvider, a
   const { apiKey, source } = await getProviderKey(req.params.provider);
   await recordAudit({ req, action: "market_intel_settings.key_cleared", detail: `Provider: ${req.params.provider}` });
   res.json({ hasKey: Boolean(apiKey), keyPreview: apiKey ? `…${apiKey.slice(-4)}` : null, source });
+}));
+
+// --- Market signal scoring criteria ----------------------------------------
+// Admin-editable points behind Market Signal's relevanceScore (see
+// lib/scoringCriteria.js). Only `points` is ever writable here — the AI
+// prompt's factual questions (label text) stay fixed and tested; an admin
+// retunes how much each fact is worth, not what's being asked.
+
+router.get("/scoring-criteria", asyncHandler(async (_req, res) => {
+  res.json(await getScoringCriteria());
+}));
+
+const scoringCriterionUpdateSchema = z.object({ points: z.number().int().min(0).max(100) });
+
+router.patch("/scoring-criteria/:key", asyncHandler(async (req, res) => {
+  const parsed = scoringCriterionUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const updated = await updateScoringCriterionPoints(req.params.key, parsed.data.points).catch(() => null);
+  if (!updated) return res.status(404).json({ error: `Unknown scoring criterion "${req.params.key}".` });
+  await recordAudit({ req, action: "scoring_criteria.updated", detail: `${req.params.key} -> ${parsed.data.points} points` });
+  res.json(updated);
 }));
 
 // --- Audit log ------------------------------------------------------------

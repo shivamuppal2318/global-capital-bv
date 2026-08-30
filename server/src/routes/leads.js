@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
 import { sendSystemEmail, clientPortalInviteEmail } from "../lib/systemMailer.js";
-import { computeLeadPipeline } from "../lib/leadPipeline.js";
+import { computeLeadPipeline, computePipelineSummary, computeDealBoard } from "../lib/leadPipeline.js";
 
 const router = Router();
 
@@ -23,6 +23,29 @@ router.get("/", async (req, res, next) => {
   try {
     const leads = await prisma.lead.findMany({ orderBy: { createdAt: "desc" }, include: { clientUser: clientUserSelect } });
     res.json(leads);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// How many of ALL leads have reached each stage — CRM Workspace's own
+// company-wide summary, distinct from Executive Dashboard's fuller Funnel
+// Health chart (which also shows conversion rates between stages). Must be
+// registered before "/:id" below, or Express would match "pipeline-summary"
+// itself as an :id.
+router.get("/pipeline-summary", async (req, res, next) => {
+  try {
+    res.json(await computePipelineSummary());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Kanban board: one column per stage, one card per lead in its current
+// stage. Same "register before /:id" reasoning as pipeline-summary above.
+router.get("/deal-board", async (req, res, next) => {
+  try {
+    res.json(await computeDealBoard());
   } catch (err) {
     next(err);
   }
@@ -112,6 +135,30 @@ function toInitials(name) {
 
 const TONES = ["blue", "amber", "green", "violet", "sky"];
 
+// Shared by every path that creates a Lead (the external webhook below, and
+// the authenticated create/bulk-import routes) so the same defaults
+// (status, tone, engagementStage, initials) can never drift apart between
+// them.
+function buildLeadCreateData({ name, company, email, mobile, capitalAsk, owner, leadSource, territory, notes, rawPayload }) {
+  return {
+    initials: toInitials(name),
+    name,
+    company: company || "—",
+    email: email || null,
+    mobile: mobile || null,
+    capitalAsk: capitalAsk || "Not specified",
+    owner: owner || null,
+    leadSource: leadSource || "Manual entry",
+    territory: territory || null,
+    notes: notes || null,
+    status: "NEW",
+    qualified: false,
+    tone: TONES[Math.floor(Math.random() * TONES.length)],
+    engagementStage: "Initial outreach",
+    rawPayload: rawPayload ?? {}
+  };
+}
+
 // Any external platform (a website form, ad platform, Zapier, another CRM, a
 // custom script) POSTs here with an API key to create a lead directly.
 // Field names are matched loosely (see FIELD_ALIASES) since every platform
@@ -135,25 +182,90 @@ router.post("/inbound", async (req, res, next) => {
     if (!email && !mobile) return res.status(400).json({ error: "At least one contact method is required (email or mobile/phone)." });
 
     const lead = await prisma.lead.create({
-      data: {
-        initials: toInitials(name),
+      data: buildLeadCreateData({
         name,
-        company: pickField(flatBody, FIELD_ALIASES.company) ?? "—",
         email,
         mobile,
-        capitalAsk: pickField(flatBody, FIELD_ALIASES.capitalAsk) ?? "Not specified",
+        company: pickField(flatBody, FIELD_ALIASES.company),
+        capitalAsk: pickField(flatBody, FIELD_ALIASES.capitalAsk),
         leadSource: pickField(flatBody, FIELD_ALIASES.leadSource) ?? "API / Webhook",
         territory: pickField(flatBody, FIELD_ALIASES.territory),
         notes: pickField(flatBody, FIELD_ALIASES.notes),
-        status: "NEW",
-        qualified: false,
-        tone: TONES[Math.floor(Math.random() * TONES.length)],
-        engagementStage: "Initial outreach",
         rawPayload: req.body ?? {}
-      }
+      })
     });
 
     res.status(201).json(lead);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// The CRM Workspace screen's own "New record" button — a logged-in rep
+// creating a lead directly, as opposed to /inbound above (an external
+// platform, gated by its own webhook API key instead of a session).
+router.post("/", async (req, res, next) => {
+  try {
+    const { name, company, email, mobile, capitalAsk, owner, leadSource, territory, notes } = req.body ?? {};
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    if (!trimmedName) return res.status(400).json({ error: "Name is required." });
+    if (!email && !mobile) return res.status(400).json({ error: "At least one contact method is required (email or mobile)." });
+
+    const lead = await prisma.lead.create({
+      data: buildLeadCreateData({ name: trimmedName, company, email, mobile, capitalAsk, owner, leadSource, territory, notes })
+    });
+
+    res.status(201).json(lead);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// CSV import — "Import" button on the same screen. One bad row shouldn't
+// abort the whole batch (same "isolate each item" principle as the email
+// cold-outreach bulk-create route), so failures are collected and reported
+// rather than thrown.
+router.post("/bulk", async (req, res, next) => {
+  try {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (rows.length === 0) return res.status(400).json({ error: "No rows provided." });
+
+    let createdCount = 0;
+    let failedCount = 0;
+    const errors = [];
+
+    for (const row of rows) {
+      const name = typeof row?.name === "string" ? row.name.trim() : "";
+      const email = typeof row?.email === "string" ? row.email.trim() : "";
+      const mobile = typeof row?.mobile === "string" ? row.mobile.trim() : "";
+
+      if (!name || (!email && !mobile)) {
+        failedCount += 1;
+        errors.push(`Row missing a name or a contact method (email/mobile): ${JSON.stringify(row)}`);
+        continue;
+      }
+
+      try {
+        await prisma.lead.create({
+          data: buildLeadCreateData({
+            name,
+            email: email || null,
+            mobile: mobile || null,
+            company: row.company,
+            capitalAsk: row.capitalAsk,
+            owner: row.owner,
+            leadSource: row.leadSource || "CSV import",
+            territory: row.territory
+          })
+        });
+        createdCount += 1;
+      } catch (err) {
+        failedCount += 1;
+        errors.push(`Row for "${name}" failed: ${err.message}`);
+      }
+    }
+
+    res.status(201).json({ createdCount, failedCount, errors });
   } catch (err) {
     next(err);
   }

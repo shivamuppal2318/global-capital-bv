@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  AttachmentIcon,
-  CalendarIcon,
   FunnelIcon,
-  GridIcon,
   MailIcon,
-  NoteIcon,
   PencilIcon,
   PhoneIcon,
   PlusIcon,
@@ -15,9 +11,10 @@ import {
   UploadIcon,
   UserCheckIcon
 } from "../Icons";
-import { ActionButton, Card, noteToneClass, ProgressBar, SectionTitle, StatCard } from "../ui";
+import { ActionButton, Card, noteToneClass, SectionTitle, StatCard } from "../ui";
 import { leadsApi } from "../../lib/leadsApi";
 import { universalFiltersApi } from "../../lib/universalFiltersApi";
+import { parseCrmLeadsCsv } from "../../lib/csvCrmLeads";
 
 const avatarToneClass = {
   blue: "bg-[#dff1ff] text-[#2f96da]",
@@ -28,15 +25,6 @@ const avatarToneClass = {
 };
 
 const STATUS_LABEL = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified", NEGOTIATION: "Negotiation", CONVERTED: "Converted", LOST: "Lost" };
-
-const relatedIcons = {
-  Notes: NoteIcon,
-  Attachments: AttachmentIcon,
-  Emails: MailIcon,
-  Calls: PhoneIcon,
-  Meetings: CalendarIcon,
-  Cadences: SendIcon
-};
 
 const TEMPERATURE_OPTIONS = ["HOT", "WARM", "COLD"];
 
@@ -300,21 +288,107 @@ export function CrmWorkspaceModule() {
   // a near-duplicate like "Iberia solar partners"). A genuinely new value
   // can still just be typed; this never restricts input like a <select> would.
   const [facets, setFacets] = useState(null);
+  // Company-wide Kanban board: one column per pipeline stage, one card per
+  // lead in its current stage — distinct from `pipeline` above (one lead's
+  // own stage-by-stage detail, shown in the popup) and from Executive
+  // Dashboard's fuller Funnel Health chart (which also shows conversion
+  // rates between stages).
+  const [dealBoard, setDealBoard] = useState(null);
+  // "New record" — the header's create-lead modal.
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addForm, setAddForm] = useState({ name: "", company: "", email: "", mobile: "", capitalAsk: "", owner: "", territory: "" });
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState(null);
+  // "Import" — the header's CSV-paste modal.
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  // "Views" — a quick client-side status filter over the already-loaded
+  // leads list (New Enquiries table below); no new backend call needed
+  // since every lead's status is already in `leads`.
+  const [viewsOpen, setViewsOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("ALL");
+
+  function refreshLeads() {
+    return leadsApi
+      .list()
+      .then((data) => {
+        setLeads(data);
+        return data;
+      })
+      .catch((err) => setLoadError(err.message));
+  }
 
   useEffect(() => {
     universalFiltersApi.facets().then(setFacets).catch(() => {});
   }, []);
 
   useEffect(() => {
-    leadsApi
-      .list()
+    leadsApi.dealBoard().then(setDealBoard).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshLeads()
       .then((data) => {
-        setLeads(data);
-        if (data.length > 0) setSelectedId(data[0].id);
+        if (data?.length > 0) setSelectedId(data[0].id);
       })
-      .catch((err) => setLoadError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  async function handleAddLead() {
+    if (!addForm.name.trim()) {
+      setAddError("Name is required.");
+      return;
+    }
+    if (!addForm.email.trim() && !addForm.mobile.trim()) {
+      setAddError("At least one contact method is required (email or mobile).");
+      return;
+    }
+
+    setAddSaving(true);
+    setAddError(null);
+    try {
+      const created = await leadsApi.create({
+        name: addForm.name.trim(),
+        company: addForm.company.trim() || undefined,
+        email: addForm.email.trim() || undefined,
+        mobile: addForm.mobile.trim() || undefined,
+        capitalAsk: addForm.capitalAsk.trim() || undefined,
+        owner: addForm.owner.trim() || undefined,
+        territory: addForm.territory.trim() || undefined
+      });
+      await refreshLeads();
+      leadsApi.dealBoard().then(setDealBoard).catch(() => {});
+      setSelectedId(created.id);
+      setAddModalOpen(false);
+      setAddForm({ name: "", company: "", email: "", mobile: "", capitalAsk: "", owner: "", territory: "" });
+    } catch (err) {
+      setAddError(err.message);
+    } finally {
+      setAddSaving(false);
+    }
+  }
+
+  async function handleImportLeads() {
+    const { rows, errors: parseErrors } = parseCrmLeadsCsv(importText);
+    if (rows.length === 0) {
+      setImportResult({ createdCount: 0, failedCount: 0, errors: parseErrors.length ? parseErrors : ["No valid rows found."] });
+      return;
+    }
+
+    setImportBusy(true);
+    try {
+      const result = await leadsApi.bulkCreate(rows);
+      setImportResult({ ...result, errors: [...parseErrors, ...result.errors] });
+      await refreshLeads();
+      leadsApi.dealBoard().then(setDealBoard).catch(() => {});
+    } catch (err) {
+      setImportResult({ createdCount: 0, failedCount: rows.length, errors: [...parseErrors, err.message] });
+    } finally {
+      setImportBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!selectedId) {
@@ -380,6 +454,10 @@ export function CrmWorkspaceModule() {
       });
       setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
       setEditing(false);
+      // Status changed could move this lead's card to a different column —
+      // keep the board in sync rather than leaving it stale until the next
+      // full page load.
+      leadsApi.dealBoard().then(setDealBoard).catch(() => {});
     } catch (err) {
       setSaveError(err.message);
     } finally {
@@ -411,16 +489,6 @@ export function CrmWorkspaceModule() {
     { label: "Qualified", value: String(qualifiedCount), note: "Ready for outreach", noteTone: "cyan" }
   ];
 
-  // KPI Framework's lead-pipeline funnel — real counts per LeadStatus, not
-  // fabricated stage percentages. Kept in enum order so the funnel reads
-  // top-to-bottom the way a pipeline actually flows.
-  const pipelineByStage = Object.entries(STATUS_LABEL).map(([status, label]) => ({
-    status,
-    label,
-    count: leads.filter((l) => l.status === status).length
-  }));
-  const maxStageCount = Math.max(1, ...pipelineByStage.map((s) => s.count));
-
   const overview = selectedLead
     ? [
         ["Lead Owner", selectedLead.owner ?? "Unassigned"],
@@ -442,111 +510,127 @@ export function CrmWorkspaceModule() {
       ]
     : [];
 
-  const related = [
-    ["Notes", 0],
-    ["Attachments", 0],
-    ["Emails", 0],
-    ["Calls", 0],
-    ["Meetings", 0],
-    ["Cadences", 0]
-  ];
+  const visibleLeads = statusFilter === "ALL" ? leads : leads.filter((lead) => lead.status === statusFilter);
 
   return (
     <div className="space-y-6">
-      <Header stats={stats} />
+      <Header
+        stats={stats}
+        onNewRecord={() => setAddModalOpen(true)}
+        onImport={() => setImportModalOpen(true)}
+        viewsOpen={viewsOpen}
+        setViewsOpen={setViewsOpen}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+      />
 
-      {leads.length > 0 ? (
+      {dealBoard ? (
         <Card className="px-5 py-5">
-          <SectionTitle icon={FunnelIcon} iconClass="text-[#8b52d0]">
-            Lead pipeline by stage
+          <SectionTitle icon={RadarIcon} iconClass="text-[#2f96da]">
+            Deal pipeline
           </SectionTitle>
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {pipelineByStage.map((stage) => (
-              <div key={stage.status}>
-                <div className="mb-2 flex items-center justify-between gap-4">
-                  <p className="text-[14px] font-semibold text-[#12213a]">{stage.label}</p>
-                  <p className="text-[14px] text-[#5f6f89]">{stage.count}</p>
+          <div className="mt-5 overflow-x-auto">
+            <div className="flex gap-4" style={{ minWidth: "max-content" }}>
+              {dealBoard.map((column) => (
+                <div key={column.id} className="w-[260px] shrink-0 rounded-[16px] bg-[#f7f9fc] p-3">
+                  <div className="flex items-center justify-between px-1 pb-3">
+                    <p className="text-[13px] font-semibold text-[#12213a]">{column.label}</p>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[#5f6f89] shadow-[0_2px_6px_rgba(30,48,87,0.06)]">
+                      {column.deals.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2.5">
+                    {column.deals.length ? (
+                      column.deals.map((deal) => (
+                        <div
+                          key={deal.id}
+                          onClick={() => {
+                            setSelectedId(deal.id);
+                            setDetailOpen(true);
+                            setInviteResult(null);
+                          }}
+                          className="cursor-pointer rounded-[14px] border border-[#e7edf5] bg-white px-3 py-3 shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:border-[#c3cfe6]"
+                        >
+                          <p className="truncate text-[13.5px] font-semibold text-[#102246]">{deal.name}</p>
+                          <p className="mt-1 truncate text-[12px] text-[#5f6f89]">{deal.company}</p>
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <span className="truncate text-[12px] font-semibold text-[#3046b2]">{deal.capitalAsk}</span>
+                            <span className="shrink-0 text-[11px] text-[#8592ab]">{new Date(deal.updatedAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="px-1 text-[12px] text-[#8592ab]">No deals here</p>
+                    )}
+                  </div>
                 </div>
-                <ProgressBar width={`${Math.round((stage.count / maxStageCount) * 100)}%`} />
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </Card>
       ) : null}
 
-      <section className="flex flex-wrap items-start gap-4">
-        <Card className="w-full sm:w-[420px]">
-          <div className="border-b border-[#e7edf5] px-5 py-4">
-            <h2 className="text-[16px] font-semibold text-[#102246]">New Enquiries</h2>
-            <p className="mt-1 text-[14px] text-[#6a7790]">{leads.length} of {leads.length} records</p>
-          </div>
-          <div>
-            <table className="w-full table-fixed text-left text-[14px]">
-              <colgroup>
-                <col />
-                <col className="w-[84px]" />
-              </colgroup>
-              <tbody className="divide-y divide-[#e7edf5]">
-                {leads.map((lead) => (
-                  <tr
-                    key={lead.id}
-                    onClick={() => {
-                      setSelectedId(lead.id);
-                      setDetailOpen(true);
-                      setInviteResult(null);
-                    }}
-                    className={`cursor-pointer bg-white transition hover:bg-[#f8faff] ${lead.id === selectedId ? "bg-[#f5f8fd]" : ""}`}
-                  >
-                    <td className="px-5 py-4 align-top">
-                      <div className="flex items-start gap-3">
-                        <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-[13px] font-semibold ${avatarToneClass[lead.tone]}`}>
-                          {lead.initials}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-[15px] font-semibold text-[#102246]">{lead.name}</p>
-                          <p className="mt-1 truncate text-[13px] text-[#435471]">
-                            {lead.company} · {lead.capitalAsk}
-                          </p>
-                        </div>
+      <Card className="w-full">
+        <div className="border-b border-[#e7edf5] px-5 py-4">
+          <h2 className="text-[16px] font-semibold text-[#102246]">New Enquiries</h2>
+          <p className="mt-1 text-[14px] text-[#6a7790]">
+            {visibleLeads.length} of {leads.length} records
+            {statusFilter !== "ALL" ? ` · filtered to ${STATUS_LABEL[statusFilter]}` : ""}
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-[14px]">
+            <thead>
+              <tr className="bg-[#eef4fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8a8fe8]">
+                <th className="px-5 py-3">Lead</th>
+                <th className="px-4 py-3">Company</th>
+                <th className="px-4 py-3">Capital Ask</th>
+                <th className="px-4 py-3">Owner</th>
+                <th className="px-4 py-3 text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#e7edf5]">
+              {visibleLeads.map((lead) => (
+                <tr
+                  key={lead.id}
+                  onClick={() => {
+                    setSelectedId(lead.id);
+                    setDetailOpen(true);
+                    setInviteResult(null);
+                  }}
+                  className={`cursor-pointer bg-white transition hover:bg-[#f8faff] ${lead.id === selectedId ? "bg-[#f5f8fd]" : ""}`}
+                >
+                  <td className="px-5 py-4 align-top">
+                    <div className="flex items-center gap-3">
+                      <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-[13px] font-semibold ${avatarToneClass[lead.tone]}`}>
+                        {lead.initials}
                       </div>
-                    </td>
-                    <td className="px-3 py-4 align-top text-right">
-                      <span className={`inline-block rounded-full px-2 py-1 text-[10.5px] font-semibold leading-tight ${noteToneClass[lead.tone]}`}>
-                        {STATUS_LABEL[lead.status]}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {leads.length === 0 ? (
-                  <tr>
-                    <td colSpan={2} className="px-5 py-6 text-[14px] text-[#8592ab]">
-                      No leads yet — send one in via the webhook (Settings → Integrations & API) or wait for one to arrive from WhatsApp.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <Card className="w-full px-5 py-5 sm:w-[280px]">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.2em] text-[#53627d]">Related Lists</p>
-          <div className="mt-6 space-y-5">
-            {related.map(([label, count]) => {
-              const Icon = relatedIcons[label] ?? GridIcon;
-              return (
-                <div key={label} className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 text-[#102246]">
-                    <Icon className="size-4 text-[#5f6f89]" />
-                    <span className="text-[15px] font-medium">{label}</span>
-                  </div>
-                  <span className="rounded-full bg-[#edf2f7] px-2.5 py-1 text-[12px] font-semibold text-[#5f6f89]">{count}</span>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      </section>
+                      <p className="truncate text-[15px] font-semibold text-[#102246]">{lead.name}</p>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 align-top text-[#435471]">{lead.company}</td>
+                  <td className="px-4 py-4 align-top text-[#435471]">{lead.capitalAsk}</td>
+                  <td className="px-4 py-4 align-top text-[#435471]">{lead.owner || "Unassigned"}</td>
+                  <td className="px-4 py-4 align-top text-right">
+                    <span className={`inline-block rounded-full px-2 py-1 text-[10.5px] font-semibold leading-tight ${noteToneClass[lead.tone]}`}>
+                      {STATUS_LABEL[lead.status]}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {visibleLeads.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-6 text-[14px] text-[#8592ab]">
+                    {leads.length === 0
+                      ? "No leads yet — add one with \"New record\", import a CSV, send one in via the webhook (Settings → Integrations & API), or wait for one to arrive from WhatsApp."
+                      : `No leads with status "${STATUS_LABEL[statusFilter]}".`}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       {detailOpen ? (
         <LeadDetailModal
@@ -572,6 +656,35 @@ export function CrmWorkspaceModule() {
           inviting={inviting}
           inviteResult={inviteResult}
           onSendInvite={sendPortalInvite}
+        />
+      ) : null}
+
+      {addModalOpen ? (
+        <AddLeadModal
+          form={addForm}
+          setForm={setAddForm}
+          saving={addSaving}
+          error={addError}
+          onClose={() => {
+            setAddModalOpen(false);
+            setAddError(null);
+          }}
+          onSave={handleAddLead}
+        />
+      ) : null}
+
+      {importModalOpen ? (
+        <ImportLeadsModal
+          text={importText}
+          setText={setImportText}
+          busy={importBusy}
+          result={importResult}
+          onClose={() => {
+            setImportModalOpen(false);
+            setImportText("");
+            setImportResult(null);
+          }}
+          onImport={handleImportLeads}
         />
       ) : null}
     </div>
@@ -607,7 +720,17 @@ function EditField({ label, value, onChange, placeholder, list }) {
   );
 }
 
-function Header({ stats }) {
+const VIEW_OPTIONS = [
+  { value: "ALL", label: "All statuses" },
+  { value: "NEW", label: "New" },
+  { value: "CONTACTED", label: "Contacted" },
+  { value: "QUALIFIED", label: "Qualified" },
+  { value: "NEGOTIATION", label: "Negotiation" },
+  { value: "CONVERTED", label: "Converted" },
+  { value: "LOST", label: "Lost" }
+];
+
+function Header({ stats, onNewRecord, onImport, viewsOpen, setViewsOpen, statusFilter, setStatusFilter }) {
   return (
     <section>
       <div className="flex items-start justify-between gap-4">
@@ -616,14 +739,37 @@ function Header({ stats }) {
             Module
           </span>
           <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">CRM Workspace</h1>
-          <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
-            Zoho-style enquiry management: records, related lists, timelines and one-click outreach across email, WhatsApp and phone.
-          </p>
         </div>
-        <div className="flex flex-wrap justify-end gap-3 pt-1">
-          <ActionButton label="New record" icon={PlusIcon} primary />
-          <ActionButton label="Import" icon={UploadIcon} />
-          <ActionButton label="Views" icon={FunnelIcon} />
+        <div className="relative flex flex-wrap justify-end gap-3 pt-1">
+          <ActionButton label="New record" icon={PlusIcon} primary onClick={onNewRecord} />
+          <ActionButton label="Import" icon={UploadIcon} onClick={onImport} />
+          <ActionButton
+            label="Views"
+            icon={FunnelIcon}
+            active={Boolean(statusFilter && statusFilter !== "ALL")}
+            onClick={() => setViewsOpen?.((open) => !open)}
+          />
+
+          {viewsOpen ? (
+            <div className="absolute right-0 top-[52px] z-20 w-56 rounded-[14px] border border-[#d6deea] bg-white p-2 shadow-[0_12px_32px_rgba(15,31,61,0.14)]">
+              <p className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#8592ab]">Filter by status</p>
+              {VIEW_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    setStatusFilter?.(option.value);
+                    setViewsOpen?.(false);
+                  }}
+                  className={`block w-full rounded-[10px] px-3 py-2 text-left text-[13px] font-medium ${
+                    statusFilter === option.value ? "bg-[#eef2ff] text-[#3046b2]" : "text-[#435471] hover:bg-[#f7f9fc]"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -635,5 +781,118 @@ function Header({ stats }) {
         </div>
       ) : null}
     </section>
+  );
+}
+
+function AddLeadModal({ form, setForm, saving, error, onClose, onSave }) {
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0f1f3d]/40 px-4 py-10" onClick={onClose}>
+      <div
+        className="w-full max-w-[520px] rounded-[22px] border border-[#d6deea] bg-white shadow-[0_20px_60px_rgba(15,31,61,0.25)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-[#e7edf5] px-6 py-5">
+          <p className="text-[18px] font-semibold text-[#102246]">New record</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid size-8 place-items-center rounded-[10px] text-[#8592ab] transition hover:bg-[#f4f7fb] hover:text-[#102246]"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="space-y-3 px-6 py-5">
+          <EditField label="Name" value={form.name} onChange={(v) => setForm((c) => ({ ...c, name: v }))} placeholder="Full name" />
+          <EditField label="Company" value={form.company} onChange={(v) => setForm((c) => ({ ...c, company: v }))} />
+          <EditField label="Email" value={form.email} onChange={(v) => setForm((c) => ({ ...c, email: v }))} placeholder="name@company.com" />
+          <EditField label="Mobile" value={form.mobile} onChange={(v) => setForm((c) => ({ ...c, mobile: v }))} />
+          <EditField label="Capital Ask" value={form.capitalAsk} onChange={(v) => setForm((c) => ({ ...c, capitalAsk: v }))} placeholder="EUR 3M" />
+          <EditField label="Owner" value={form.owner} onChange={(v) => setForm((c) => ({ ...c, owner: v }))} />
+          <EditField label="Territory / Geography" value={form.territory} onChange={(v) => setForm((c) => ({ ...c, territory: v }))} />
+          <p className="text-[12px] text-[#8592ab]">At least one of Email or Mobile is required, along with Name.</p>
+          {error ? <p className="text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-[#e7edf5] px-6 py-4">
+          <ActionButton label="Cancel" small onClick={onClose} disabled={saving} />
+          <ActionButton label={saving ? "Saving…" : "Save"} primary small onClick={onSave} disabled={saving} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportLeadsModal({ text, setText, busy, result, onClose, onImport }) {
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0f1f3d]/40 px-4 py-10" onClick={onClose}>
+      <div
+        className="w-full max-w-[640px] rounded-[22px] border border-[#d6deea] bg-white shadow-[0_20px_60px_rgba(15,31,61,0.25)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-[#e7edf5] px-6 py-5">
+          <p className="text-[18px] font-semibold text-[#102246]">Import leads</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid size-8 place-items-center rounded-[10px] text-[#8592ab] transition hover:bg-[#f4f7fb] hover:text-[#102246]"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="space-y-3 px-6 py-5">
+          <p className="text-[13px] text-[#5f6f89]">
+            Paste CSV rows. Header required: <code className="rounded bg-[#f4f7fb] px-1.5 py-0.5 text-[12px]">name,company,email,mobile,capitalask,owner,territory</code>.
+            Each row needs a name and at least one of email/mobile.
+          </p>
+          <textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            rows={8}
+            placeholder={"name,company,email,mobile,capitalask,owner,territory\nJane Doe,Acme Corp,jane@acme.com,,EUR 2M,Rahul R,NL"}
+            className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-3 font-mono text-[13px] text-[#102246] outline-none"
+          />
+
+          {result ? (
+            <div className="rounded-[12px] border border-[#e7edf5] bg-[#f7f9fc] px-4 py-3 text-[13px]">
+              <p className="font-medium text-[#102246]">
+                {result.createdCount} created, {result.failedCount} failed.
+              </p>
+              {result.errors?.length ? (
+                <ul className="mt-2 max-h-32 list-disc space-y-1 overflow-y-auto pl-4 text-[12px] text-[#8592ab]">
+                  {result.errors.map((err, i) => (
+                    <li key={i}>{err}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-[#e7edf5] px-6 py-4">
+          <ActionButton label="Close" small onClick={onClose} disabled={busy} />
+          <ActionButton label={busy ? "Importing…" : "Import"} primary small onClick={onImport} disabled={busy || !text.trim()} />
+        </div>
+      </div>
+    </div>
   );
 }

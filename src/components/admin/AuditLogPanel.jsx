@@ -33,10 +33,11 @@ function formatWhen(dateString) {
 }
 
 // Real, append-only history of who did what — logins, admin actions
-// (employee/permission/credential changes), and MailX's higher-stakes
-// actions (campaigns, mailboxes, lead deletion). Written server-side (see
-// server/src/lib/auditLog.js); this panel is read-only by design — there's
-// no edit/delete here, since an audit trail you can rewrite isn't one.
+// (employee/permission/credential changes), and Email Automation's
+// higher-stakes actions (campaigns, mailboxes, lead deletion). Written
+// server-side (see server/src/lib/auditLog.js); this panel is read-only by
+// design — there's no edit/delete here, since an audit trail you can
+// rewrite isn't one.
 export function AuditLogPanel() {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -70,7 +71,7 @@ export function AuditLogPanel() {
     <Card className="px-5 py-5">
       <SectionTitle
         icon={ShieldIcon}
-        subtitle="Every login, admin change, and higher-stakes MailX action — read-only, written automatically as they happen."
+        subtitle="Every login, admin change, and higher-stakes Email Automation action — read-only, written automatically as they happen."
         action={
           <select
             value={actionFilter}

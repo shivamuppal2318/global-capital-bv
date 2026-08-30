@@ -100,6 +100,7 @@ async function processOneSignal(raw, defaultCampaignId, summary) {
             signalType: processed.signalType,
             relevanceScore: processed.relevanceScore,
             aiSummary: processed.summary,
+            isSeekingFunding: processed.isSeekingFunding,
             matchedLeadId: matchedLead.id
           }
         }),
@@ -124,6 +125,7 @@ async function processOneSignal(raw, defaultCampaignId, summary) {
           signalType: processed.signalType,
           relevanceScore: processed.relevanceScore,
           aiSummary: processed.summary,
+          isSeekingFunding: processed.isSeekingFunding,
           failureReason: "No matching lead and no defaultCampaignId provided for new-lead creation."
         }
       });
@@ -179,6 +181,7 @@ async function createLeadFromSignal(signal, processed, defaultCampaignId, summar
         signalType: processed.signalType,
         relevanceScore: processed.relevanceScore,
         aiSummary: processed.summary,
+        isSeekingFunding: processed.isSeekingFunding,
         createdLeadId: newLead.id
       }
     });
@@ -192,6 +195,7 @@ async function createLeadFromSignal(signal, processed, defaultCampaignId, summar
         signalType: processed.signalType,
         relevanceScore: processed.relevanceScore,
         aiSummary: processed.summary,
+        isSeekingFunding: processed.isSeekingFunding,
         failureReason: `Apollo lookup failed: ${apolloErr.message}`
       }
     });

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { adminApi } from "../../lib/adminApi";
 import { ActionButton, Badge, Card, SectionTitle } from "../ui";
 import { RadarIcon, XIcon, ZapIcon } from "../Icons";
+import { ScoringCriteriaPanel } from "./ScoringCriteriaPanel";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
@@ -177,6 +178,8 @@ export function MarketIntelSettingsPanel() {
       {PROVIDERS.map((provider) => (
         <ProviderCard key={provider.id} provider={provider} status={providers[provider.id]} onSaved={handleSaved} />
       ))}
+
+      <ScoringCriteriaPanel />
     </div>
   );
 }

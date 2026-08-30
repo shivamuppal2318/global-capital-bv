@@ -1,4 +1,4 @@
-import { test, before, after } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildProcessingPrompt, parseProcessingResponse, isAiProcessorConfigured } from "../src/lib/marketIntelligence/aiProcessor.js";
 
@@ -17,35 +17,70 @@ test("buildProcessingPrompt truncates very long content to 4000 chars", () => {
   assert.ok(xRunLength <= 4000);
 });
 
+test("buildProcessingPrompt asks for the four scoring flags, using the given criteria's labels", () => {
+  const criteria = [
+    { key: "HAS_CONCRETE_DETAIL", label: "States a real deal size" },
+    { key: "HAS_REAL_CONTENT", label: "Content beyond the headline" },
+    { key: "ENTITY_CLEARLY_NAMED", label: "Company is specifically named" },
+    { key: "SEEKING_FUNDING", label: "Company is currently raising" }
+  ];
+  const prompt = buildProcessingPrompt({ rawTitle: "T", rawContent: "C" }, criteria);
+  assert.match(prompt, /States a real deal size/);
+  assert.match(prompt, /Content beyond the headline/);
+  assert.match(prompt, /Company is specifically named/);
+  assert.match(prompt, /Company is currently raising/);
+  assert.match(prompt, /"hasConcreteDetail": boolean/);
+  assert.match(prompt, /"isSeekingFunding": boolean/);
+});
+
 test("parseProcessingResponse parses a well-formed JSON response", () => {
   const response = JSON.stringify({
     entityName: "Acme Corp",
     signalType: "FUNDING",
-    relevanceScore: 85,
+    hasConcreteDetail: true,
+    hasRealContent: true,
+    entityClearlyNamed: true,
+    isSeekingFunding: false,
     summary: "Acme raised a $50M Series B."
   });
   const result = parseProcessingResponse(response);
   assert.deepEqual(result, {
     entityName: "Acme Corp",
     signalType: "FUNDING",
-    relevanceScore: 85,
+    hasConcreteDetail: true,
+    hasRealContent: true,
+    entityClearlyNamed: true,
+    isSeekingFunding: false,
     summary: "Acme raised a $50M Series B."
   });
 });
 
 test("parseProcessingResponse strips markdown code fences some models wrap JSON in", () => {
-  const response = "```json\n" + JSON.stringify({ entityName: "Acme", signalType: "OTHER", relevanceScore: 10, summary: "x" }) + "\n```";
+  const response =
+    "```json\n" +
+    JSON.stringify({
+      entityName: "Acme",
+      signalType: "OTHER",
+      hasConcreteDetail: false,
+      hasRealContent: false,
+      entityClearlyNamed: true,
+      isSeekingFunding: false,
+      summary: "x"
+    }) +
+    "\n```";
   const result = parseProcessingResponse(response);
   assert.equal(result.entityName, "Acme");
 });
 
-test("parseProcessingResponse rounds a non-integer relevanceScore", () => {
-  const response = JSON.stringify({ entityName: "Acme", signalType: "OTHER", relevanceScore: 72.6, summary: "x" });
-  assert.equal(parseProcessingResponse(response).relevanceScore, 73);
-});
-
 test("parseProcessingResponse defaults summary to empty string when absent", () => {
-  const response = JSON.stringify({ entityName: "Acme", signalType: "OTHER", relevanceScore: 50 });
+  const response = JSON.stringify({
+    entityName: "Acme",
+    signalType: "OTHER",
+    hasConcreteDetail: false,
+    hasRealContent: false,
+    entityClearlyNamed: false,
+    isSeekingFunding: false
+  });
   assert.equal(parseProcessingResponse(response).summary, "");
 });
 
@@ -54,20 +89,63 @@ test("parseProcessingResponse throws on non-JSON text", () => {
 });
 
 test("parseProcessingResponse throws when entityName is missing", () => {
-  const response = JSON.stringify({ signalType: "OTHER", relevanceScore: 50, summary: "x" });
+  const response = JSON.stringify({
+    signalType: "OTHER",
+    hasConcreteDetail: false,
+    hasRealContent: false,
+    entityClearlyNamed: false,
+    isSeekingFunding: false,
+    summary: "x"
+  });
   assert.throws(() => parseProcessingResponse(response), /entityName/);
 });
 
 test("parseProcessingResponse throws on an invalid signalType", () => {
-  const response = JSON.stringify({ entityName: "Acme", signalType: "MADE_UP_TYPE", relevanceScore: 50, summary: "x" });
+  const response = JSON.stringify({
+    entityName: "Acme",
+    signalType: "MADE_UP_TYPE",
+    hasConcreteDetail: false,
+    hasRealContent: false,
+    entityClearlyNamed: false,
+    isSeekingFunding: false,
+    summary: "x"
+  });
   assert.throws(() => parseProcessingResponse(response), /invalid signalType/);
 });
 
-test("parseProcessingResponse throws when relevanceScore is out of 0-100 range", () => {
-  const tooHigh = JSON.stringify({ entityName: "Acme", signalType: "OTHER", relevanceScore: 150, summary: "x" });
-  const negative = JSON.stringify({ entityName: "Acme", signalType: "OTHER", relevanceScore: -5, summary: "x" });
-  assert.throws(() => parseProcessingResponse(tooHigh), /invalid relevanceScore/);
-  assert.throws(() => parseProcessingResponse(negative), /invalid relevanceScore/);
+test("parseProcessingResponse throws when a scoring flag is missing or not boolean", () => {
+  const missing = JSON.stringify({
+    entityName: "Acme",
+    signalType: "OTHER",
+    hasConcreteDetail: true,
+    hasRealContent: true,
+    entityClearlyNamed: true,
+    summary: "x"
+  });
+  const wrongType = JSON.stringify({
+    entityName: "Acme",
+    signalType: "OTHER",
+    hasConcreteDetail: "yes",
+    hasRealContent: true,
+    entityClearlyNamed: true,
+    isSeekingFunding: true,
+    summary: "x"
+  });
+  assert.throws(() => parseProcessingResponse(missing), /isSeekingFunding/);
+  assert.throws(() => parseProcessingResponse(wrongType), /hasConcreteDetail/);
+});
+
+test("parseProcessingResponse extracts isSeekingFunding distinctly from a completed funding signal type", () => {
+  const seeking = JSON.stringify({
+    entityName: "Acme",
+    signalType: "FUNDING",
+    hasConcreteDetail: false,
+    hasRealContent: true,
+    entityClearlyNamed: true,
+    isSeekingFunding: true,
+    summary: "Acme is in talks to raise a Series C."
+  });
+  assert.equal(parseProcessingResponse(seeking).isSeekingFunding, true);
 });
 
 // isAiProcessorConfigured is now async — credentials can come from the
