@@ -236,10 +236,15 @@ function statCardHtml(card) {
 // name — that's what the old cold-email NDA link needed, but this client
 // is already signed in), or upload their own signed copy, which counts as
 // acceptance in its own right and is kept as the record.
-function ndaSignFormHtml({ error, doeName } = {}) {
+function ndaSignFormHtml({ error, doeName, alreadySigned } = {}) {
   return `
     <div class="gc-sign-box">
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
+      ${
+        alreadySigned
+          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this NDA. You can still upload a copy for your own records, or accept again if needed.</p>`
+          : ""
+      }
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
       <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;">
         <form method="POST" action="/api/client-portal/nda/sign" style="margin:0;">
@@ -297,11 +302,15 @@ clientPortalRouter.get(
 
     const completedCount = stages.filter((s) => s.status === "completed").length;
 
-    // Only SENT/REMINDER_1/REMINDER_2 are actually awaiting the client's
-    // signature — DRAFT hasn't reached them yet, and SIGNED/DECLINED/
-    // EXPIRED are already resolved, so the form only appears in the one
-    // state where signing is a real, available action.
-    const ndaSignable = nda && ["SENT", "REMINDER_1", "REMINDER_2"].includes(nda.status);
+    // Available any time the NDA has actually been sent — DRAFT hasn't
+    // reached the client yet, so there's nothing to act on, but once it's
+    // out there the client can accept or (re-)upload their copy at any
+    // point, including after it's already marked SIGNED: they may want to
+    // attach their own signed PDF after clicking "I Am Accept It" earlier,
+    // or replace an upload with a better copy. DECLINED/EXPIRED stay
+    // excluded — those are a deliberate call made on the staff side, not
+    // something the client should be able to override from the portal.
+    const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
     const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
 
     // Mirrors the SPA's own StatCard row (see e.g. MeetingsModule's five
@@ -360,7 +369,12 @@ clientPortalRouter.get(
             <div style="margin-top:8px;">
               ${stages
                 .map((s) =>
-                  stageRowHtml(s, s.key === "nda" && ndaSignable ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner }) : "")
+                  stageRowHtml(
+                    s,
+                    s.key === "nda" && ndaActionable
+                      ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner, alreadySigned: nda.status === "SIGNED" })
+                      : ""
+                  )
                 )
                 .join("")}
             </div>
@@ -390,10 +404,11 @@ clientPortalRouter.post(
 
     const nda = await prisma.ndaRecord.findUnique({ where: { leadId } });
     // Re-checked server-side, not just hidden by the dashboard's own
-    // conditional rendering — someone could POST here directly after the
-    // NDA had already moved to SIGNED/DECLINED/EXPIRED in the meantime.
-    if (!nda || !["SENT", "REMINDER_1", "REMINDER_2"].includes(nda.status)) {
-      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA isn't awaiting a signature right now.")}`);
+    // conditional rendering. Allowed any time it's been sent, including
+    // re-accepting an already-SIGNED one — DECLINED/EXPIRED are the only
+    // states blocked, since those are a deliberate staff-side call.
+    if (!nda || !nda.sentAt || ["DECLINED", "EXPIRED"].includes(nda.status)) {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA isn't available to accept right now.")}`);
     }
 
     await prisma.ndaRecord.update({
@@ -423,8 +438,8 @@ clientPortalRouter.post(
   asyncHandler(async (req, res) => {
     const leadId = req.clientUser.leadId;
     const nda = await prisma.ndaRecord.findUnique({ where: { leadId } });
-    if (!nda || !["SENT", "REMINDER_1", "REMINDER_2"].includes(nda.status)) {
-      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA isn't awaiting a signature right now.")}`);
+    if (!nda || !nda.sentAt || ["DECLINED", "EXPIRED"].includes(nda.status)) {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA isn't available to accept right now.")}`);
     }
 
     try {
