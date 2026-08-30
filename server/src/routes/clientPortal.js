@@ -8,7 +8,7 @@ import { hashPassword, verifyPassword, signClientToken } from "../lib/auth.js";
 import { verifyClientInviteToken } from "../lib/clientPortalToken.js";
 import { requireClientAuth, setClientSessionCookie, clearClientSessionCookie } from "../middleware/requireClientAuth.js";
 import { authShell, dashboardShell, formField, primaryButton, errorBanner, noteText, escapeHtml } from "../lib/clientPortalPage.js";
-import { buildPortalStages } from "../lib/clientPortalStages.js";
+import { buildPortalStages, PORTAL_STAGES } from "../lib/clientPortalStages.js";
 import { REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
 import { extractText } from "../lib/documentText.js";
 import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
@@ -271,34 +271,51 @@ function ndaSignFormHtml({ error, doeName, alreadySigned } = {}) {
     </div>`;
 }
 
+// Both /dashboard (the overview) and /stage/:key (one stage on its own
+// page) need the exact same underlying records and the same 8-stage
+// computation — the only difference is how much of it gets rendered.
+// Kept in one place so the two routes can't quietly drift apart.
+async function loadPortalData(leadId) {
+  const [nda, meetings, ioi, visits, fieldVisit, termSheet, documentCategories] = await Promise.all([
+    prisma.ndaRecord.findUnique({ where: { leadId } }),
+    prisma.meeting.findMany({ where: { leadId } }),
+    prisma.ioiRecord.findUnique({ where: { leadId } }),
+    prisma.visitPlan.findMany({ where: { leadId } }),
+    prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "FIELD_VISIT" } } }),
+    prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "TERM_SHEET" } } }),
+    prisma.document.findMany({ select: { category: true }, distinct: ["category"] })
+  ]);
+
+  const uploadedCategories = new Set(documentCategories.map((d) => d.category));
+  const receivedCount = REQUIRED_DOCUMENT_LABELS.filter((label) => uploadedCategories.has(label)).length;
+
+  const stages = buildPortalStages({
+    nda,
+    meetings,
+    dataRoom: { receivedCount, totalRequired: REQUIRED_DOCUMENT_LABELS.length },
+    ioi,
+    visits,
+    fieldVisit,
+    termSheet
+  });
+
+  return { nda, stages };
+}
+
+function sidebarStagesFrom(stages) {
+  return stages.map((s) => ({
+    key: s.key,
+    label: s.label,
+    dotColor: s.status === "not_started" ? "#5c6b9a" : STATUS_STYLE[s.status].fg
+  }));
+}
+
 clientPortalRouter.get(
   "/dashboard",
   requireClientAuth,
   asyncHandler(async (req, res) => {
     const leadId = req.clientUser.leadId;
-
-    const [nda, meetings, ioi, visits, fieldVisit, termSheet, documentCategories] = await Promise.all([
-      prisma.ndaRecord.findUnique({ where: { leadId } }),
-      prisma.meeting.findMany({ where: { leadId } }),
-      prisma.ioiRecord.findUnique({ where: { leadId } }),
-      prisma.visitPlan.findMany({ where: { leadId } }),
-      prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "FIELD_VISIT" } } }),
-      prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "TERM_SHEET" } } }),
-      prisma.document.findMany({ select: { category: true }, distinct: ["category"] })
-    ]);
-
-    const uploadedCategories = new Set(documentCategories.map((d) => d.category));
-    const receivedCount = REQUIRED_DOCUMENT_LABELS.filter((label) => uploadedCategories.has(label)).length;
-
-    const stages = buildPortalStages({
-      nda,
-      meetings,
-      dataRoom: { receivedCount, totalRequired: REQUIRED_DOCUMENT_LABELS.length },
-      ioi,
-      visits,
-      fieldVisit,
-      termSheet
-    });
+    const { nda, stages } = await loadPortalData(leadId);
 
     const completedCount = stages.filter((s) => s.status === "completed").length;
 
@@ -338,18 +355,12 @@ clientPortalRouter.get(
       }
     ];
 
-    const sidebarStages = stages.map((s) => ({
-      key: s.key,
-      label: s.label,
-      dotColor: s.status === "not_started" ? "#5c6b9a" : STATUS_STYLE[s.status].fg
-    }));
-
     res.send(
       dashboardShell({
         title: "Your deal",
         clientName: req.clientUser.name,
         companyName: req.clientUser.lead.company,
-        stages: sidebarStages,
+        stages: sidebarStagesFrom(stages),
         bodyHtml: `
           <span class="gc-badge-pill">Your Deal</span>
           <h1 class="gc-heading">${escapeHtml(req.clientUser.lead.company)}</h1>
@@ -379,6 +390,53 @@ clientPortalRouter.get(
                 .join("")}
             </div>
           </div>
+        `
+      })
+    );
+  })
+);
+
+// One stage on its own page — reached from the sidebar's per-stage links.
+// Reuses stageRowHtml unchanged, so a stage looks identical here and on
+// the Overview; only how much of the page it takes up differs.
+clientPortalRouter.get(
+  "/stage/:key",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const stageMeta = PORTAL_STAGES.find((s) => s.key === req.params.key);
+    if (!stageMeta) return res.redirect("/api/client-portal/dashboard");
+
+    const leadId = req.clientUser.leadId;
+    const { nda, stages } = await loadPortalData(leadId);
+    const stage = stages.find((s) => s.key === stageMeta.key);
+
+    const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
+    const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
+
+    res.send(
+      dashboardShell({
+        title: stage.label,
+        clientName: req.clientUser.name,
+        companyName: req.clientUser.lead.company,
+        stages: sidebarStagesFrom(stages),
+        activeKey: stage.key,
+        bodyHtml: `
+          <span class="gc-badge-pill">Deal Stage</span>
+          <h1 class="gc-heading">${escapeHtml(stage.label)}</h1>
+          <p class="gc-subheading">Part of your deal with ${escapeHtml(req.clientUser.lead.company)}.</p>
+
+          <div class="gc-card">
+            ${stageRowHtml(
+              stage,
+              stage.key === "nda" && ndaActionable
+                ? ndaSignFormHtml({ error: ndaError, doeName: nda.owner, alreadySigned: nda.status === "SIGNED" })
+                : ""
+            )}
+          </div>
+
+          <p style="margin-top:16px;">
+            <a href="/api/client-portal/dashboard" style="font-size:13px;font-weight:600;color:#3046b2;text-decoration:none;">← Back to full overview</a>
+          </p>
         `
       })
     );

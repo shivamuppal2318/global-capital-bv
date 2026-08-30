@@ -75,6 +75,7 @@ function pageStyles() {
     .gc-sidebar-section-label { margin: 0 0 8px; padding: 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.22em; color: rgba(255,255,255,0.36); }
     .gc-sidebar-item { display: flex; width: 100%; align-items: center; gap: 10px; border-radius: 10px; padding: 9px 10px; margin-bottom: 2px; color: rgba(255,255,255,0.82); text-decoration: none; font-size: 13.5px; font-weight: 500; transition: background .15s, color .15s; }
     .gc-sidebar-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .gc-sidebar-item.active { background: rgba(255,255,255,0.14); color: #fff; }
     .gc-sidebar-item-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
     .gc-sidebar-spacer { flex: 1; }
     .gc-sidebar-tag { margin-top: 16px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.06); padding: 12px 16px; }
@@ -203,13 +204,14 @@ export function authShell({ title, subtitle, bodyHtml }) {
 // (see App.jsx's AppShell/TopBar/PageHeader and src/components/ui.jsx).
 //
 // `stages` (each { key, label, dotColor }) renders one nav item per deal
-// stage, anchored to that stage's row further down the same page — this
-// is still a single-page dashboard, not a multi-page app, so the sidebar
-// is a table of contents rather than real routing. dotColor is
-// precomputed by the caller (clientPortal.js already owns the
-// status-to-color mapping for the stage rows themselves) so this file
-// stays pure rendering with no status logic of its own.
-export function dashboardShell({ title, clientName, companyName, stages = [], bodyHtml }) {
+// stage, each a real page of its own (/stage/:key) plus an Overview link
+// back to the all-in-one dashboard — genuine navigation, not anchors into
+// one long page. `activeKey` highlights whichever page is current (null
+// on the Overview page itself). dotColor is precomputed by the caller
+// (clientPortal.js already owns the status-to-color mapping for the
+// stage rows themselves) so this file stays pure rendering with no
+// status logic of its own.
+export function dashboardShell({ title, clientName, companyName, stages = [], activeKey = null, bodyHtml }) {
   const initials =
     String(clientName ?? "")
       .trim()
@@ -238,10 +240,14 @@ export function dashboardShell({ title, clientName, companyName, stages = [], bo
           </div>
         </div>
         <p class="gc-sidebar-section-label">Deal Progress</p>
+        <a href="/api/client-portal/dashboard" class="gc-sidebar-item${activeKey ? "" : " active"}">
+          <span class="gc-sidebar-item-dot" style="background:#9aa6bd;"></span>
+          Overview
+        </a>
         ${stages
           .map(
             (s) => `
-          <a href="#stage-${escapeHtml(s.key)}" class="gc-sidebar-item">
+          <a href="/api/client-portal/stage/${escapeHtml(s.key)}" class="gc-sidebar-item${activeKey === s.key ? " active" : ""}">
             <span class="gc-sidebar-item-dot" style="background:${s.dotColor};"></span>
             ${escapeHtml(s.label)}
           </a>`
