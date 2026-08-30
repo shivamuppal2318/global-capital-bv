@@ -54,6 +54,13 @@ export function NdaModule() {
   const [statusFilter, setStatusFilter] = useState("All");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(null);
+  // "full" is the comprehensive editor (Search NDA button, and every
+  // per-record Edit) — every field, including status/signer/notes.
+  // "quick" is the lean creation form (Add NDA button) — just enough to
+  // kick a brand-new NDA off: Lead, DOE, Form Date, End Date, Attach NDA.
+  // Both write to the same `editing` state and the same save/send
+  // handlers below; only which fields are rendered differs.
+  const [formMode, setFormMode] = useState(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
   const [busyId, setBusyId] = useState(null);
@@ -81,21 +88,31 @@ export function NdaModule() {
     documentsApi.list().then(setDocuments).catch(() => {});
   }, []);
 
-  const startNew = () =>
-    setEditing({
-      leadId: "",
-      status: "DRAFT",
-      sentAt: "",
-      signedAt: "",
-      expiresAt: "",
-      signerName: "",
-      signerEmail: "",
-      owner: "",
-      notes: "",
-      documentId: ""
-    });
+  const blankRecord = () => ({
+    leadId: "",
+    status: "DRAFT",
+    sentAt: "",
+    signedAt: "",
+    expiresAt: "",
+    signerName: "",
+    signerEmail: "",
+    owner: "",
+    notes: "",
+    documentId: ""
+  });
 
-  const startEdit = (r) =>
+  const startNew = () => {
+    setFormMode("full");
+    setEditing(blankRecord());
+  };
+
+  const startQuickAdd = () => {
+    setFormMode("quick");
+    setEditing(blankRecord());
+  };
+
+  const startEdit = (r) => {
+    setFormMode("full");
     setEditing({
       id: r.id,
       leadId: r.lead?.id ?? "",
@@ -109,6 +126,12 @@ export function NdaModule() {
       notes: r.notes ?? "",
       documentId: r.document?.id ?? ""
     });
+  };
+
+  const closeForm = () => {
+    setEditing(null);
+    setFormMode(null);
+  };
 
   async function handleSave(e) {
     e?.preventDefault?.();
@@ -122,7 +145,7 @@ export function NdaModule() {
       body.documentId = body.documentId || null;
       if (editing.id) await ndaApi.update(editing.id, body);
       else await ndaApi.save(body);
-      setEditing(null);
+      closeForm();
       load();
     } catch (err) {
       setFormError(err.message);
@@ -145,7 +168,7 @@ export function NdaModule() {
       body.documentId = body.documentId || null;
       const record = editing.id ? await ndaApi.update(editing.id, body) : await ndaApi.save(body);
       const sent = await ndaApi.advance(record.id, "send");
-      setEditing(null);
+      closeForm();
       const who = record.lead?.company ?? "the client";
       if (sent.emailResult?.emailed) {
         setNotice(`Saved and emailed to ${who}.`);
@@ -314,18 +337,103 @@ export function NdaModule() {
           iconClass="text-[#3046b2]"
           subtitle="One NDA per lead - saving the same lead again updates it rather than adding a duplicate."
           action={
-            <ActionButton
-              label={editing ? "Cancel" : "Add NDA"}
-              icon={editing ? XIcon : PlusIcon}
-              small
-              onClick={() => (editing ? setEditing(null) : startNew())}
-            />
+            editing ? (
+              <ActionButton label="Cancel" icon={XIcon} small onClick={closeForm} />
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <ActionButton label="Search NDA" small onClick={startNew} />
+                <ActionButton label="Add NDA" icon={PlusIcon} primary small onClick={startQuickAdd} />
+              </div>
+            )
           }
         >
           NDA records
         </SectionTitle>
 
-        {editing ? (
+        {editing && formMode === "quick" ? (
+          <form onSubmit={handleSave} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className={labelClass}>Lead</label>
+                <select
+                  className={inputClass}
+                  value={editing.leadId}
+                  onChange={(e) => setEditing({ ...editing, leadId: e.target.value })}
+                >
+                  <option value="">Select a lead…</option>
+                  {leads.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} — {l.company}
+                    </option>
+                  ))}
+                </select>
+                {leads.length === 0 ? (
+                  <p className="mt-1 text-[12px] text-[#c47f1a]">No leads yet - add one in CRM Workspace first.</p>
+                ) : null}
+              </div>
+
+              <div>
+                <label className={labelClass}>DOE</label>
+                <input
+                  className={inputClass}
+                  value={editing.owner}
+                  onChange={(e) => setEditing({ ...editing, owner: e.target.value })}
+                  placeholder="Who owns this on our side"
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Form Date</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={editing.sentAt}
+                  onChange={(e) => setEditing({ ...editing, sentAt: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>End Date</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={editing.expiresAt}
+                  onChange={(e) => setEditing({ ...editing, expiresAt: e.target.value })}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className={labelClass}>Attach NDA</label>
+                <select
+                  className={inputClass}
+                  value={editing.documentId}
+                  onChange={(e) => setEditing({ ...editing, documentId: e.target.value })}
+                >
+                  <option value="">None</option>
+                  {documents.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.originalName}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[12px] text-[#8592ab]">Pulled from the Data Room - upload it there first.</p>
+              </div>
+            </div>
+
+            {formError ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{formError}</p> : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ActionButton label={saving ? "Saving…" : "Save"} small onClick={handleSave} disabled={saving} />
+              <ActionButton
+                label={saving ? "Sending…" : "Send"}
+                primary
+                small
+                onClick={handleSaveAndSend}
+                disabled={saving}
+              />
+            </div>
+          </form>
+        ) : null}
+
+        {editing && formMode === "full" ? (
           <form onSubmit={handleSave} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
