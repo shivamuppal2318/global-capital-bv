@@ -14,11 +14,13 @@ const include = {
 };
 
 visitPlansRouter.get("/", asyncHandler(async (req, res) => {
-  const { status, region, q } = req.query;
+  const { status, region, q, leadId, owner } = req.query;
   const plans = await prisma.visitPlan.findMany({
     where: {
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(region && region !== "All" ? { region: String(region) } : {}),
+      ...(leadId ? { leadId: String(leadId) } : {}),
+      ...(owner ? { owner: { contains: String(owner), mode: "insensitive" } } : {}),
       ...(q
         ? {
             OR: [
