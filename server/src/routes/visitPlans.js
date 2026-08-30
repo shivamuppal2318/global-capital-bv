@@ -46,14 +46,24 @@ visitPlansRouter.get("/metrics", asyncHandler(async (_req, res) => {
 // so the calendar doesn't have to pull every visit and bucket them itself.
 visitPlansRouter.get("/calendar", asyncHandler(async (req, res) => {
   const plans = await prisma.visitPlan.findMany({
-    where: { plannedFor: { not: null }, status: { not: "CANCELLED" } },
+    where: {
+      status: { not: "CANCELLED" },
+      OR: [{ plannedFor: { not: null } }, { completedAt: { not: null } }]
+    },
     include,
-    orderBy: { plannedFor: "asc" }
+    orderBy: [{ plannedFor: "asc" }, { completedAt: "asc" }]
   });
 
   const byDate = {};
   for (const p of plans) {
-    const key = p.plannedFor.toISOString().slice(0, 10);
+    // A completed visit's real-world date is when it happened -- plannedFor
+    // in the common case, falling back to completedAt for one logged after
+    // the fact with no planned date ever recorded. Without this fallback a
+    // visit marked Completed without a plannedFor never appeared on the
+    // calendar at all.
+    const date = p.plannedFor ?? p.completedAt;
+    if (!date) continue;
+    const key = date.toISOString().slice(0, 10);
     (byDate[key] ??= []).push({
       id: p.id,
       lead: p.lead ? `${p.lead.name} (${p.lead.company})` : null,

@@ -286,7 +286,7 @@ export function VisitPlanningModule() {
         <SectionTitle
           icon={CheckCircleIcon}
           iconClass="text-[#3046b2]"
-          subtitle="Planned and confirmed visits by date. Cancelled trips are left off."
+          subtitle="Planned, confirmed and completed visits by date. Cancelled trips are left off."
           action={
             <div className="flex items-center gap-2">
               <ActionButton small label="←" onClick={() => shiftMonth(-1)} />
