@@ -70,6 +70,17 @@ export async function pollOnce() {
     logger: false
   });
 
+  // ImapFlow emits 'error' as a plain EventEmitter event (separate from any
+  // promise rejection) whenever the underlying socket drops mid-session —
+  // a transient DNS blip or network hiccup, not just a bad poll. Node
+  // crashes the whole process on an unhandled 'error' event, and that's
+  // exactly what happened here: one flaky lookup took down the entire
+  // backend, not just this poll. A listener — even one that only logs —
+  // is what stops that from being fatal.
+  client.on("error", (err) => {
+    console.error("[imap-poller] connection error:", err.message);
+  });
+
   let processedCount = 0;
 
   await client.connect();
