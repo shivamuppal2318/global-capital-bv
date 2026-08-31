@@ -1,18 +1,45 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "../ui.jsx";
 import { RefreshIcon, CogIcon, InboxIcon, SearchIcon, PlusIcon } from "../Icons.jsx";
-
-function formatFetchTime() {
-  const now = new Date();
-  const pad = (value) => String(value).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-}
+import { emailAccountsApi } from "../../lib/emailAccountsApi.js";
 
 export function MailboxTab({ mailing, onNavigateTab }) {
   const { emailAccounts, repliedLeads, handleAddEmailAccount, newAccountForm, setNewAccountForm } = mailing;
   const [activeMailboxTab, setActiveMailboxTab] = useState("inbox");
   const [searchText, setSearchText] = useState("");
-  const [lastFetchAt, setLastFetchAt] = useState(() => formatFetchTime());
+  // Real IMAP poller status — replaces a client-side-only fake timestamp.
+  // Both "Fetch Now" and "Fetch Diagnostics" below are driven by this.
+  const [imapStatus, setImapStatus] = useState(null);
+  const [fetchBusy, setFetchBusy] = useState(false);
+  const [fetchNotice, setFetchNotice] = useState(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+
+  function refreshImapStatus() {
+    emailAccountsApi
+      .imapStatus()
+      .then(setImapStatus)
+      .catch(() => {
+        // Backend unreachable — leave whatever was already loaded.
+      });
+  }
+
+  useEffect(() => {
+    refreshImapStatus();
+  }, []);
+
+  async function handleFetchNow() {
+    setFetchBusy(true);
+    setFetchNotice(null);
+    try {
+      const result = await emailAccountsApi.fetchNow();
+      setFetchNotice(`Fetched just now — ${result.processedCount} real repl${result.processedCount === 1 ? "y" : "ies"} imported.`);
+    } catch (error) {
+      setFetchNotice(`Fetch failed: ${error.message}`);
+    } finally {
+      setFetchBusy(false);
+      refreshImapStatus();
+    }
+  }
 
   const inboxRows = useMemo(
     () =>
@@ -40,10 +67,11 @@ export function MailboxTab({ mailing, onNavigateTab }) {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setLastFetchAt(formatFetchTime())}
-            className="rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)]"
+            onClick={handleFetchNow}
+            disabled={fetchBusy || !imapStatus?.enabled}
+            className="rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)] disabled:opacity-50"
           >
-            Fetch Now
+            {fetchBusy ? "Fetching…" : "Fetch Now"}
           </button>
           <button
             type="button"
@@ -55,11 +83,11 @@ export function MailboxTab({ mailing, onNavigateTab }) {
           </button>
           <button
             type="button"
-            onClick={() => onNavigateTab?.("settings")}
+            onClick={() => setDiagnosticsOpen((open) => !open)}
             className="inline-flex items-center gap-2 rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#2d3553]"
           >
             <RefreshIcon className="size-4" />
-            Fetch Diagnostics
+            {diagnosticsOpen ? "Hide Diagnostics" : "Fetch Diagnostics"}
           </button>
         </div>
 
@@ -68,9 +96,38 @@ export function MailboxTab({ mailing, onNavigateTab }) {
         </span>
       </div>
 
+      {diagnosticsOpen ? (
+        <div className="rounded-[16px] border border-[#e7edf5] bg-[#f8faff] px-4 py-3 text-[13px]">
+          {imapStatus ? (
+            <>
+              <p className={imapStatus.enabled ? "text-[#2b9b60]" : "text-[#c94b6b]"}>
+                IMAP: {imapStatus.enabled ? `configured — watching ${imapStatus.watching} on ${imapStatus.host}` : "not configured (IMAP_HOST/SMTP_USER/SMTP_PASS)"}
+              </p>
+              {imapStatus.lastPoll ? (
+                <p className="mt-1.5 text-[#5f6f89]">
+                  Last poll: {new Date(imapStatus.lastPoll.at).toLocaleString()} —{" "}
+                  {imapStatus.lastPoll.error ? (
+                    <span className="text-[#c94b6b]">failed: {imapStatus.lastPoll.error}</span>
+                  ) : (
+                    `${imapStatus.lastPoll.processedCount} real repl${imapStatus.lastPoll.processedCount === 1 ? "y" : "ies"} imported`
+                  )}
+                </p>
+              ) : (
+                <p className="mt-1.5 text-[#8592ab]">No poll has run yet since the backend started.</p>
+              )}
+            </>
+          ) : (
+            <p className="text-[#8592ab]">Loading…</p>
+          )}
+        </div>
+      ) : null}
+
       <div className="rounded-[20px] border border-[#d7e7fb] bg-[linear-gradient(180deg,#f7fbff_0%,#f1f7ff_100%)] px-5 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         <p className="text-[13px] font-medium text-[#3867e8]">
-          Last fetch: {lastFetchAt} ({emailAccounts.length ? "all accounts" : "no accounts configured"}) - {rows.length} message(s) imported.
+          {fetchNotice ??
+            (imapStatus?.lastPoll
+              ? `Last real fetch: ${new Date(imapStatus.lastPoll.at).toLocaleString()} — ${imapStatus.lastPoll.processedCount} repl${imapStatus.lastPoll.processedCount === 1 ? "y" : "ies"} imported.`
+              : "No fetch has run yet.")}
         </p>
         <div className="mt-3 space-y-1 text-[13px]">
           {emailAccounts.length ? (

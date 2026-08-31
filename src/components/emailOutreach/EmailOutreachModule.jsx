@@ -44,9 +44,16 @@ const tabContent = {
 // sequence config, mailbox setup) instead of all four crammed onto one
 // screen. All tabs share one state hook (useEmailOutreachState) so
 // switching tabs never desyncs which campaign/lead is selected.
-export function EmailOutreachModule({ initialTab = "dashboard" }) {
+// visibleTabs optionally restricts which of the tabs above are shown/reachable
+// — omitted (the staff usage in App.jsx) shows all of them, unchanged. The
+// Channel Partner Portal (ChannelPartnerPortalApp.jsx) passes a short list
+// (dashboard/campaigns/leads/automation) since Segments/Templates/Mailbox/AI
+// Agent/Settings all talk to staff-only endpoints a partner's token can't
+// reach — hiding those tabs instead of leaving them clickable-but-broken.
+export function EmailOutreachModule({ initialTab = "dashboard", visibleTabs }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const mailing = useEmailOutreachState();
+  const shownTabs = visibleTabs ? tabs.filter((tab) => visibleTabs.includes(tab.id)) : tabs;
 
   // The sidebar's "Cold Bulk Mailing" and "Leads" entries both render this
   // same component at the same position in App.jsx's tree (just with a
@@ -56,12 +63,17 @@ export function EmailOutreachModule({ initialTab = "dashboard" }) {
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
-  const ActiveContent = tabContent[activeTab] ?? DashboardTab;
+  // Falls back to Dashboard for a tab hidden by visibleTabs too, not just an
+  // unknown id — a DashboardTab "Quick Action" shortcut (e.g. "Mailbox")
+  // calls onNavigateTab directly, bypassing the nav buttons shownTabs
+  // already filters, so this is the one place that restriction has to be
+  // enforced for it to actually hold.
+  const ActiveContent = shownTabs.some((tab) => tab.id === activeTab) ? tabContent[activeTab] ?? DashboardTab : DashboardTab;
 
   return (
     <div className="space-y-3">
       <nav className="flex flex-wrap gap-1.5 rounded-[16px] border border-[#d6deea] bg-white p-1.5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-        {tabs.map((tab) => {
+        {shownTabs.map((tab) => {
           const active = tab.id === activeTab;
           const badgeCount = tab.id === "replies" ? mailing.repliedLeads.length : null;
           return (

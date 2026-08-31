@@ -489,10 +489,47 @@ model ChannelPartner {
   commissionPct Float?
   status        ChannelPartnerStatus @default(ACTIVE)
   notes         String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+
+  // Same lightweight "clickwrap" e-signature as EmailLead's NDA flow (typed
+  // name + IP + timestamp, see routes/channelPartnerAgreement.js) — not a
+  // certified e-signature, but enough to record that whoever held the
+  // signed link asserted agreement to the standard Channel Partner
+  // Agreement.
+  agreementSignedAt   DateTime?
+  agreementSignedName String?
+  agreementSignedIp   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  portalUser     ChannelPartnerUser?
+  ownedCampaigns EmailCampaign[]
 
   @@index([status])
+}
+
+// A Channel Partner's own login to their portal (see routes/
+// channelPartnerAgreement.js and the frontend's separate portal SPA shell)
+// — created in the same step as signing the agreement, never before.
+// Mirrors ClientUser's shape (1:1 with its real-world record, email +
+// passwordHash, no role/permissions system — a partner always gets the
+// same fixed slice of the app, not a configurable one like staff).
+model ChannelPartnerUser {
+  id               String                   @id @default(cuid())
+  channelPartner   ChannelPartner           @relation(fields: [channelPartnerId], references: [id], onDelete: Cascade)
+  channelPartnerId String                   @unique
+  name             String
+  email            String                   @unique
+  passwordHash     String
+  status           ChannelPartnerUserStatus @default(ACTIVE)
+  lastLoginAt      DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+}
+
+enum ChannelPartnerUserStatus {
+  ACTIVE
+  SUSPENDED
 }
 
 enum ChannelPartnerStatus {
@@ -917,16 +954,32 @@ model EmailCampaign {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
+  // Where a lead's reply should land — set this when it needs to differ
+  // from the sending mailbox itself (e.g. routing replies to a shared
+  // team inbox instead of the individual account a campaign sends
+  // through). Null = replies just go to whichever mailbox actually sent
+  // the email, the normal email behavior with no header override.
+  replyTo String?
+
   // Which mailbox this campaign sends through. Null = fall back to the
   // single global EMAIL_PROVIDER/.env-configured provider.
   emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id])
   emailAccountId String?
+
+  // Null = an admin-owned campaign (all existing data, unchanged
+  // behavior). Set = created by a Channel Partner through their own
+  // portal (see lib/channelPartnerScope.js) — every list/create/dashboard
+  // query for that portal is scoped to this field, so a partner only ever
+  // sees their own campaigns (and, transitively, their own leads).
+  ownerChannelPartner   ChannelPartner? @relation(fields: [ownerChannelPartnerId], references: [id], onDelete: Cascade)
+  ownerChannelPartnerId String?
 
   leads        EmailLead[]
   cadenceSteps CadenceStep[]
   segments     EmailSegment[]
 
   @@index([status])
+  @@index([ownerChannelPartnerId])
 }
 
 model EmailAccount {

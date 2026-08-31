@@ -2,7 +2,9 @@ import express from "express";
 import cors from "cors";
 import authRouter from "./routes/auth.js";
 import adminRouter from "./routes/admin.js";
+import jwt from "jsonwebtoken";
 import { requireAuth } from "./middleware/requireAuth.js";
+import { requireChannelPartnerAuth } from "./middleware/requireChannelPartnerAuth.js";
 import { requireModule } from "./lib/permissions.js";
 import overviewRouter from "./routes/overview.js";
 import dashboardRouter from "./routes/dashboard.js";
@@ -25,6 +27,8 @@ import { ageingReportRouter } from "./routes/ageingReport.js";
 import { ndaRecordsRouter } from "./routes/ndaRecords.js";
 import { visitPlansRouter } from "./routes/visitPlans.js";
 import { channelPartnersRouter } from "./routes/channelPartners.js";
+import { channelPartnerAgreementRouter } from "./routes/channelPartnerAgreement.js";
+import { channelPartnerPortalAuthRouter } from "./routes/channelPartnerPortalAuth.js";
 import { ioiRecordsRouter } from "./routes/ioiRecords.js";
 import { executiveDashboardRouter } from "./routes/executiveDashboard.js";
 import { universalFiltersRouter } from "./routes/universalFilters.js";
@@ -70,7 +74,18 @@ app.use("/api/auth", authRouter);
 // Calendly/other external senders). Matches the app.js comment this
 // replaces — auth was deliberately deferred until it could be done as one
 // real pass instead of piecemeal.
-const PUBLIC_PREFIXES = ["/api/webhooks", "/api/unsubscribe", "/api/nda", "/api/track", "/api/client-portal"];
+const PUBLIC_PREFIXES = [
+  "/api/webhooks",
+  "/api/unsubscribe",
+  "/api/nda",
+  "/api/track",
+  "/api/client-portal",
+  "/api/channel-partner-agreement",
+  // The Channel Partner Portal's own login endpoint — unauthenticated by
+  // definition (it's what issues the channel-partner token in the first
+  // place). /me on the same router carries its own requireChannelPartnerAuth.
+  "/api/channel-partner-portal-auth"
+];
 const INBOUND_WEBHOOK_PATHS = ["/api/leads/inbound", "/api/email/leads/inbound"];
 // Matches the prefix itself or the prefix followed by "/" — a plain
 // startsWith would also match "/api/nda-records" against "/api/nda" (no
@@ -82,9 +97,44 @@ const INBOUND_WEBHOOK_PATHS = ["/api/leads/inbound", "/api/email/leads/inbound"]
 function matchesPublicPrefix(path, prefix) {
   return path === prefix || path.startsWith(`${prefix}/`);
 }
+// Email Automation is the one slice a Channel Partner's own portal reaches
+// (see ChannelPartnerPortalApp.jsx, reusing EmailOutreachModule unchanged) —
+// everything else in the app stays staff-only. A channel-partner bearer
+// token has no req.user a staff-shaped requireAuth could ever recognize, so
+// these two prefixes need their own branch rather than falling through to
+// the staff check below.
+const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = ["/api/email/campaigns", "/api/email/leads"];
 app.use((req, res, next) => {
   if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
   if (PUBLIC_PREFIXES.some((prefix) => matchesPublicPrefix(req.path, prefix))) return next();
+
+  // Peek at the token's own `type` claim (unverified — jwt.decode does no
+  // signature check) purely to route to the right check. The actual
+  // authentication still happens inside requireChannelPartnerAuth (which
+  // does verify the signature); a forged/garbage `type` claim just falls
+  // through to the normal staff requireAuth below and fails there, exactly
+  // as it always has.
+  const token = req.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const decoded = token ? jwt.decode(token) : null;
+
+  if (decoded?.type === "channel-partner") {
+    if (CHANNEL_PARTNER_ELIGIBLE_PREFIXES.some((prefix) => matchesPublicPrefix(req.path, prefix))) {
+      return requireChannelPartnerAuth(req, res, next);
+    }
+    // A genuinely authenticated Channel Partner session hitting a
+    // staff-only path — this MUST be 403 (wrong tier), never fall through
+    // to the staff requireAuth below. requireAuth would 401 it ("Account
+    // no longer exists", since a ChannelPartnerUser id isn't in the User
+    // table), and apiFetch.js on the frontend treats ANY 401 as "session
+    // expired" — clearing the partner's perfectly valid token and bouncing
+    // them back to the login screen just because one background prefetch
+    // (e.g. useEmailOutreachState's unconditional Templates prefetch) hit
+    // an out-of-scope endpoint. 403 leaves the session alone, which is the
+    // correct behavior here: the token isn't invalid, it's just the wrong
+    // tier for this one route.
+    return res.status(403).json({ error: "This area of the app is staff-only." });
+  }
+
   return requireAuth(req, res, next);
 });
 
@@ -140,6 +190,13 @@ app.use("/api/ageing-report", requireModule("ageing-report"), ageingReportRouter
 app.use("/api/nda-records", requireModule("nda"), ndaRecordsRouter);
 app.use("/api/visit-plans", requireModule("visit-planning"), visitPlansRouter);
 app.use("/api/channel-partners", requireModule("channel-partner"), channelPartnersRouter);
+// Public token-based signing page (same pattern as /api/nda) — not
+// "/api/channel-partners" plus a subpath, since that's the authenticated
+// admin CRUD router above.
+app.use("/api/channel-partner-agreement", channelPartnerAgreementRouter);
+// The portal's own login/me — see the PUBLIC_PREFIXES comment above for why
+// this path is unauthenticated at the global-gate level.
+app.use("/api/channel-partner-portal-auth", channelPartnerPortalAuthRouter);
 app.use("/api/ioi-records", requireModule("ioi"), ioiRecordsRouter);
 app.use("/api/executive-dashboard", requireModule("command-center"), executiveDashboardRouter);
 app.use("/api/universal-filters", requireModule("universal-filters"), universalFiltersRouter);
@@ -153,8 +210,17 @@ app.use("/api/meetings", requireModule("meetings"), meetingsRouter);
 // signing, tracking) — those are hit directly by external senders/leads,
 // never through the logged-in app UI.
 const outreach = requireModule("cold-bulk-mailing", "leads");
+// A request that already authenticated as a Channel Partner (req.channelPartner
+// set by the global gate's branch above) has no req.user/role for
+// requireModule's staff-permission check to run against — it's already been
+// authenticated at a different, real tier and is always granted exactly this
+// one slice, so the staff module gate is skipped for it rather than 403ing.
+function outreachOrChannelPartner(req, res, next) {
+  if (req.channelPartner) return next();
+  return outreach(req, res, next);
+}
 app.use("/api/outreach-doe", outreach, outreachDoeRouter);
-app.use("/api/email/campaigns", outreach, emailCampaignsRouter);
+app.use("/api/email/campaigns", outreachOrChannelPartner, emailCampaignsRouter);
 app.use(
   "/api/email/leads",
   (req, res, next) => {
@@ -163,7 +229,7 @@ app.use(
     // skip it too, or every external POST dies here with a 403 before ever
     // reaching the route's own x-api-key check.
     if (req.method === "POST" && req.path === "/inbound") return next();
-    return outreach(req, res, next);
+    return outreachOrChannelPartner(req, res, next);
   },
   emailLeadsRouter
 );

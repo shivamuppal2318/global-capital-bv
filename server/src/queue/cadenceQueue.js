@@ -114,7 +114,7 @@ export function startCadenceWorker() {
         throw new Error(`Daily send cap reached for mailbox "${resolvedAccount.label}".`);
       }
 
-      const { providerMessageId } = await emailProvider.send({ to: lead.email, subject, body });
+      const { providerMessageId } = await emailProvider.send({ to: lead.email, subject, body, replyTo: campaign.replyTo });
 
       await prisma.emailActivityLog.create({
         data: {

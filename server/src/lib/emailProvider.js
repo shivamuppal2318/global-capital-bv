@@ -30,10 +30,10 @@ function listUnsubscribeHeaders(unsubscribeUrl) {
 function devProvider() {
   return {
     name: "dev",
-    async send({ to, subject, body, html, unsubscribeUrl }) {
+    async send({ to, subject, body, html, unsubscribeUrl, replyTo }) {
       const providerMessageId = `dev-${Date.now()}`;
       console.log(
-        `[dev-email] -> ${to}\n  subject: ${subject}\n  body: ${body.slice(0, 200)}${body.length > 200 ? "…" : ""}\n  html: ${html ? `${html.length} chars` : "(none)"}\n  list-unsubscribe: ${unsubscribeUrl ?? "(none)"}\n  id: ${providerMessageId}`
+        `[dev-email] -> ${to}\n  subject: ${subject}\n  body: ${body.slice(0, 200)}${body.length > 200 ? "…" : ""}\n  html: ${html ? `${html.length} chars` : "(none)"}\n  list-unsubscribe: ${unsubscribeUrl ?? "(none)"}\n  reply-to: ${replyTo ?? "(none)"}\n  id: ${providerMessageId}`
       );
       return { providerMessageId };
     }
@@ -73,7 +73,7 @@ function getOrCreateTransporter(cacheKey, { host, port, secure, user, pass, dkim
 function smtpProviderFromCredentials(cacheKey, credentials) {
   return {
     name: "smtp",
-    async send({ to, subject, body, html, unsubscribeUrl }) {
+    async send({ to, subject, body, html, unsubscribeUrl, replyTo }) {
       const transporter = getOrCreateTransporter(cacheKey, credentials);
       const info = await transporter.sendMail({
         from: credentials.fromAddress,
@@ -81,7 +81,8 @@ function smtpProviderFromCredentials(cacheKey, credentials) {
         subject,
         text: body,
         headers: listUnsubscribeHeaders(unsubscribeUrl),
-        ...(html ? { html } : {})
+        ...(html ? { html } : {}),
+        ...(replyTo ? { replyTo } : {})
       });
       return { providerMessageId: info.messageId };
     }

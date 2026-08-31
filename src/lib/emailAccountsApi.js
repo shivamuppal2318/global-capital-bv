@@ -16,5 +16,9 @@ export const emailAccountsApi = {
   update: (id, body) => request(`/${id}`, { method: "PUT", body }),
   test: (id) => request(`/${id}/test`, { method: "POST" }),
   deactivate: (id) => request(`/${id}/deactivate`, { method: "POST" }),
-  remove: (id) => request(`/${id}`, { method: "DELETE" })
+  remove: (id) => request(`/${id}`, { method: "DELETE" }),
+  // Real IMAP poller status/trigger — backs the Mailbox tab's "Fetch Now"
+  // and "Fetch Diagnostics", both previously decorative.
+  imapStatus: () => request("/imap-status"),
+  fetchNow: () => request("/fetch-now", { method: "POST" })
 };
