@@ -115,6 +115,43 @@ channelPartnersRouter.get("/:id/agreement-link", asyncHandler(async (req, res) =
   });
 }));
 
+// Real Channel Partner Portal activity — distinct from withReferredLeads'
+// Lead.channelPartner free-text match above (CRM Workspace referrals this
+// partner brought in manually). This is the partner's own separate portal
+// data (EmailCampaign.ownerChannelPartnerId, see lib/channelPartnerScope.js)
+// — how much they've actually done with their own login, computed fresh
+// rather than a stored total that could drift.
+channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
+  const partner = await prisma.channelPartner.findUnique({
+    where: { id: req.params.id },
+    include: { portalUser: { select: { email: true, status: true, lastLoginAt: true, createdAt: true } } }
+  });
+  if (!partner) {
+    return res.status(404).json({ error: "Channel partner not found" });
+  }
+
+  const [campaignCount, leadCount, lastSent] = await Promise.all([
+    prisma.emailCampaign.count({ where: { ownerChannelPartnerId: partner.id } }),
+    prisma.emailLead.count({ where: { campaign: { ownerChannelPartnerId: partner.id } } }),
+    prisma.emailActivityLog.findFirst({
+      where: {
+        kind: { in: ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT"] },
+        lead: { campaign: { ownerChannelPartnerId: partner.id } }
+      },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true }
+    })
+  ]);
+
+  res.json({
+    hasPortalAccount: Boolean(partner.portalUser),
+    portalAccount: partner.portalUser,
+    campaignCount,
+    leadCount,
+    lastSentAt: lastSent?.createdAt ?? null
+  });
+}));
+
 const upsertSchema = z.object({
   name: z.string().min(1),
   contactName: z.string().nullable().optional(),

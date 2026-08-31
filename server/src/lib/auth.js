@@ -87,3 +87,25 @@ export function verifyClientToken(token) {
   if (payload.type !== "client") throw new Error("Not a client-portal token.");
   return payload;
 }
+
+// Channel Partner portal sessions (see routes/channelPartnerAgreement.js
+// and middleware/requireChannelPartnerAuth.js) — same signing key again,
+// `type: "channel-partner"` this time. Bearer-header, not a cookie: unlike
+// the client portal (server-rendered HTML), the partner portal is a real
+// SPA reusing EmailOutreachModule, so it follows the staff app's
+// Authorization-header convention instead.
+const CHANNEL_PARTNER_TOKEN_TTL = "30d";
+
+export function signChannelPartnerUserToken(channelPartnerUser) {
+  return jwt.sign(
+    { sub: channelPartnerUser.id, email: channelPartnerUser.email, type: "channel-partner" },
+    jwtSecret(),
+    { expiresIn: CHANNEL_PARTNER_TOKEN_TTL }
+  );
+}
+
+export function verifyChannelPartnerUserToken(token) {
+  const payload = jwt.verify(token, jwtSecret());
+  if (payload.type !== "channel-partner") throw new Error("Not a channel-partner-portal token.");
+  return payload;
+}

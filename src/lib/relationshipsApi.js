@@ -67,7 +67,11 @@ export const channelPartnersApi = {
   // Real signed link to the public agreement-signing page (routes/
   // channelPartnerAgreement.js) — copy it and send it to the partner
   // however you want; nothing auto-sends.
-  agreementLink: (id) => apiFetch(`${channelPartnersBase}/${id}/agreement-link`)
+  agreementLink: (id) => apiFetch(`${channelPartnersBase}/${id}/agreement-link`),
+  // What this partner has actually done with their own Channel Partner
+  // Portal login (separate from referredLeads above, which matches
+  // Lead.channelPartner by name) — see server/src/routes/channelPartners.js.
+  activity: (id) => apiFetch(`${channelPartnersBase}/${id}/activity`)
 };
 
 const meetingsBase = `${API_ROOT}/api/meetings`;

@@ -47,6 +47,34 @@ export function ChannelPartnerModule() {
   const [agreementBusyId, setAgreementBusyId] = useState(null);
   const [agreementNoticeId, setAgreementNoticeId] = useState(null);
   const [agreementNotice, setAgreementNotice] = useState(null);
+  // Real Channel Partner Portal activity — what a partner has actually done
+  // with their own login (own campaigns/leads, see channelPartnerScope.js),
+  // shown as an expandable section per partner, one open at a time, same
+  // pattern as the commission calculator above. Fetched on demand rather
+  // than for every partner up front, since most rows will never be opened.
+  const [activityOpenId, setActivityOpenId] = useState(null);
+  const [activityData, setActivityData] = useState(null);
+  const [activityBusy, setActivityBusy] = useState(false);
+  const [activityError, setActivityError] = useState(null);
+
+  async function toggleActivity(partner) {
+    if (activityOpenId === partner.id) {
+      setActivityOpenId(null);
+      return;
+    }
+    setActivityOpenId(partner.id);
+    setActivityData(null);
+    setActivityError(null);
+    setActivityBusy(true);
+    try {
+      const result = await channelPartnersApi.activity(partner.id);
+      setActivityData(result);
+    } catch (err) {
+      setActivityError(err.message);
+    } finally {
+      setActivityBusy(false);
+    }
+  }
 
   async function handleGetAgreementLink(partner) {
     setAgreementBusyId(partner.id);
@@ -383,6 +411,7 @@ export function ChannelPartnerModule() {
                   onClick={() => handleGetAgreementLink(p)}
                   disabled={agreementBusyId === p.id}
                 />
+                <ActionButton small label={activityOpenId === p.id ? "Hide portal activity" : "Portal activity"} onClick={() => toggleActivity(p)} />
                 <ActionButton small label="Delete" onClick={() => remove(p)} disabled={busyId === p.id} />
               </div>
 
@@ -420,6 +449,46 @@ export function ChannelPartnerModule() {
                         </span>{" "}
                         {calcResult.usedCustomRate ? "(this partner's custom rate)" : "(standard schedule tier)"}
                       </p>
+                    )
+                  ) : null}
+                </div>
+              ) : null}
+
+              {activityOpenId === p.id ? (
+                <div className="mt-3 rounded-[12px] border border-[#e7edf5] bg-[#fbfcfe] p-3">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-[#5f6f89]">Channel Partner Portal activity</p>
+                  {activityBusy ? <p className="mt-2 text-[13px] text-[#5c6b87]">Loading…</p> : null}
+                  {activityError ? <p className="mt-2 text-[13px] font-medium text-[#e0483f]">{activityError}</p> : null}
+                  {!activityBusy && !activityError && activityData ? (
+                    !activityData.hasPortalAccount ? (
+                      <p className="mt-2 text-[13px] text-[#8593ac]">
+                        No portal account yet — one is created automatically when this partner signs the agreement.
+                      </p>
+                    ) : (
+                      <div className="mt-2 space-y-1.5 text-[13px] text-[#334463]">
+                        <p>
+                          Portal login: <span className="font-semibold text-[#102246]">{activityData.portalAccount.email}</span>{" "}
+                          {activityData.portalAccount.status === "SUSPENDED" ? (
+                            <Badge tone="red">Suspended</Badge>
+                          ) : (
+                            <Badge tone="green">Active</Badge>
+                          )}
+                        </p>
+                        <p>
+                          {activityData.campaignCount} campaign{activityData.campaignCount === 1 ? "" : "s"},{" "}
+                          {activityData.leadCount} lead{activityData.leadCount === 1 ? "" : "s"} of their own
+                        </p>
+                        <p>
+                          Last sent:{" "}
+                          {activityData.lastSentAt ? new Date(activityData.lastSentAt).toLocaleString() : "Nothing sent yet"}
+                        </p>
+                        <p>
+                          Last logged in:{" "}
+                          {activityData.portalAccount.lastLoginAt
+                            ? new Date(activityData.portalAccount.lastLoginAt).toLocaleString()
+                            : "Never"}
+                        </p>
+                      </div>
                     )
                   ) : null}
                 </div>

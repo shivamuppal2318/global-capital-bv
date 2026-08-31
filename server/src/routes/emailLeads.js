@@ -8,6 +8,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { calculateLeadScore, deriveQualification } from "../lib/leadScoring.js";
 import { verifyEmailDeliverability, verifyEmailsDeliverability } from "../lib/emailValidation.js";
 import { recordAudit } from "../lib/auditLog.js";
+import { ownerWhereClause } from "../lib/channelPartnerScope.js";
 
 export const emailLeadsRouter = Router();
 
@@ -46,7 +47,10 @@ function attachScore(lead) {
 // ?campaignId= filter mirrors how the Cold Bulk Mailing page scopes leads
 // to whichever campaign is selected.
 emailLeadsRouter.get("/", asyncHandler(async (req, res) => {
-  const where = req.query.campaignId ? { campaignId: String(req.query.campaignId) } : {};
+  const where = {
+    ...(req.query.campaignId ? { campaignId: String(req.query.campaignId) } : {}),
+    campaign: ownerWhereClause(req)
+  };
   const leads = await prisma.emailLead.findMany({
     where,
     orderBy: { updatedAt: "desc" },
@@ -57,6 +61,19 @@ emailLeadsRouter.get("/", asyncHandler(async (req, res) => {
   });
   res.json(leads.map(attachScore));
 }));
+
+// Loads a lead only if the caller is allowed to see it — staff get
+// everything, a Channel Partner only leads in campaigns they own (a lead
+// has no owner field of its own; ownership is always via its campaign).
+// Mirrors loadOwnedCampaignOr404 in emailCampaigns.js.
+async function loadOwnedLeadOr404(req, res, id) {
+  const lead = await prisma.emailLead.findFirst({ where: { id, campaign: ownerWhereClause(req) } });
+  if (!lead) {
+    res.status(404).json({ error: "Lead not found" });
+    return null;
+  }
+  return lead;
+}
 
 const validateEmailsSchema = z.object({ emails: z.array(z.string()).min(1).max(1000) });
 
@@ -125,8 +142,8 @@ emailLeadsRouter.post("/", asyncHandler(async (req, res) => {
     return res.status(422).json({ error: `${parsed.data.email} looks undeliverable: ${deliverability.reason}` });
   }
 
-  const campaign = await prisma.emailCampaign.findUnique({
-    where: { id: parsed.data.campaignId },
+  const campaign = await prisma.emailCampaign.findFirst({
+    where: { id: parsed.data.campaignId, ...ownerWhereClause(req) },
     include: { cadenceSteps: { orderBy: { stepIndex: "asc" } } }
   });
   if (!campaign) {
@@ -280,8 +297,8 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const campaign = await prisma.emailCampaign.findUnique({
-    where: { id: parsed.data.campaignId },
+  const campaign = await prisma.emailCampaign.findFirst({
+    where: { id: parsed.data.campaignId, ...ownerWhereClause(req) },
     include: { cadenceSteps: { orderBy: { stepIndex: "asc" } } }
   });
   if (!campaign) {
@@ -359,6 +376,7 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
 }));
 
 emailLeadsRouter.get("/:id/activity", asyncHandler(async (req, res) => {
+  if (!(await loadOwnedLeadOr404(req, res, req.params.id))) return;
   const activity = await prisma.emailActivityLog.findMany({
     where: { leadId: req.params.id },
     orderBy: { createdAt: "desc" }
@@ -371,10 +389,8 @@ emailLeadsRouter.get("/:id/activity", asyncHandler(async (req, res) => {
 // child rows first since neither EmailActivityLog nor ReplyEvent cascade
 // on delete.
 emailLeadsRouter.delete("/:id", asyncHandler(async (req, res) => {
-  const lead = await prisma.emailLead.findUnique({ where: { id: req.params.id } });
-  if (!lead) {
-    return res.status(404).json({ error: "Lead not found" });
-  }
+  const lead = await loadOwnedLeadOr404(req, res, req.params.id);
+  if (!lead) return;
 
   await prisma.emailActivityLog.deleteMany({ where: { leadId: lead.id } });
   await prisma.replyEvent.deleteMany({ where: { leadId: lead.id } });
@@ -402,6 +418,7 @@ emailLeadsRouter.post("/:id/send", asyncHandler(async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  if (!(await loadOwnedLeadOr404(req, res, req.params.id))) return;
 
   try {
     const { activity, warnings } = await sendRawEmail(req.params.id, parsed.data);
@@ -424,6 +441,7 @@ emailLeadsRouter.post("/:id/send-template", asyncHandler(async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  if (!(await loadOwnedLeadOr404(req, res, req.params.id))) return;
 
   try {
     const { activity, warnings } = await sendTemplateEmail(req.params.id, parsed.data.templateKey);
@@ -455,10 +473,8 @@ emailLeadsRouter.post("/:id/simulate-reply", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const lead = await prisma.emailLead.findUnique({ where: { id: req.params.id } });
-  if (!lead) {
-    return res.status(404).json({ error: "Lead not found" });
-  }
+  const lead = await loadOwnedLeadOr404(req, res, req.params.id);
+  if (!lead) return;
 
   const { replyType, matchedRule, autoResponse } = await recordReply(lead, parsed.data.textBody);
   res.status(201).json({ leadId: lead.id, replyType, matchedRule: matchedRule?.id ?? null, autoResponse });
@@ -469,10 +485,8 @@ emailLeadsRouter.post("/:id/simulate-reply", asyncHandler(async (req, res) => {
 // a human confirming it, hence this manual endpoint rather than something
 // automatic.
 emailLeadsRouter.post("/:id/mark-call-completed", asyncHandler(async (req, res) => {
-  const lead = await prisma.emailLead.findUnique({ where: { id: req.params.id } });
-  if (!lead) {
-    return res.status(404).json({ error: "Lead not found" });
-  }
+  const lead = await loadOwnedLeadOr404(req, res, req.params.id);
+  if (!lead) return;
 
   const completedAt = new Date();
   await prisma.$transaction([
@@ -494,8 +508,8 @@ emailLeadsRouter.post("/:id/schedule-cadence", asyncHandler(async (req, res) => 
     return res.status(503).json({ error: "Cadence queue disabled: set REDIS_URL to enable scheduling." });
   }
 
-  const lead = await prisma.emailLead.findUnique({
-    where: { id: req.params.id },
+  const lead = await prisma.emailLead.findFirst({
+    where: { id: req.params.id, campaign: ownerWhereClause(req) },
     include: { campaign: { include: { cadenceSteps: { orderBy: { stepIndex: "asc" } } } } }
   });
   if (!lead) {

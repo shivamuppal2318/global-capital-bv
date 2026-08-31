@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { verifyChannelPartnerToken } from "../lib/channelPartnerSignToken.js";
+import { hashPassword } from "../lib/auth.js";
 
 export const channelPartnerAgreementRouter = Router();
 
@@ -214,10 +215,13 @@ channelPartnerAgreementRouter.get("/:partnerId/:token", requireValidToken, async
     signedDate: new Date().toDateString()
   });
 
+  const signError = req.query.error ? String(req.query.error) : null;
+
   res.send(
     pageShell(`
       <h1 style="font-size:18px;">Channel Partner Agreement — ${escapeHtml(partner.name)}</h1>
       <pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.6;color:#435471;background:#f8faff;border-radius:8px;padding:16px;max-height:480px;overflow-y:auto;">${escapeHtml(agreementText)}</pre>
+      ${signError ? `<p style="color:#e0483f;font-size:13px;margin:16px 0 0;">${escapeHtml(signError)}</p>` : ""}
       <form method="POST">
         <label style="display:block;margin:16px 0 8px;font-size:14px;">
           Type your full name to sign:
@@ -226,8 +230,23 @@ channelPartnerAgreementRouter.get("/:partnerId/:token", requireValidToken, async
         <label style="display:block;margin:16px 0;font-size:14px;">
           <input type="checkbox" name="agree" required /> I have read and agree to the terms of this Channel Partner Agreement
         </label>
+
+        <p style="margin:20px 0 8px;font-size:14px;font-weight:600;color:#334463;">Set up your portal login</p>
+        <p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">
+          Signing creates your Channel Partner Portal account, where you can add your own leads and run your own
+          outreach campaigns.
+        </p>
+        <label style="display:block;margin:0 0 12px;font-size:14px;">
+          Email
+          <input type="email" name="email" required style="display:block;margin-top:4px;width:100%;padding:8px;border:1px solid #d6deea;border-radius:8px;box-sizing:border-box;" />
+        </label>
+        <label style="display:block;margin:0 0 16px;font-size:14px;">
+          Password (at least 8 characters)
+          <input type="password" name="password" required minlength="8" style="display:block;margin-top:4px;width:100%;padding:8px;border:1px solid #d6deea;border-radius:8px;box-sizing:border-box;" />
+        </label>
+
         <button type="submit" style="background:#3046b2;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;cursor:pointer;">
-          Sign Agreement
+          Sign Agreement &amp; Create Portal Account
         </button>
       </form>
     `)
@@ -236,13 +255,22 @@ channelPartnerAgreementRouter.get("/:partnerId/:token", requireValidToken, async
 
 const signSchema = z.object({
   fullName: z.string().min(1),
-  agree: z.string().min(1)
+  agree: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(8)
 });
 
 channelPartnerAgreementRouter.post("/:partnerId/:token", requireValidToken, asyncHandler(async (req, res) => {
   const parsed = signSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).send(pageShell("<p>Please provide your name and agree to the terms.</p>"));
+    const message = parsed.error.issues.some((i) => i.path[0] === "password")
+      ? "Password must be at least 8 characters."
+      : parsed.error.issues.some((i) => i.path[0] === "email")
+        ? "Enter a valid email address."
+        : "Please provide your name and agree to the terms.";
+    return res.redirect(
+      `/api/channel-partner-agreement/${req.params.partnerId}/${req.params.token}?error=${encodeURIComponent(message)}`
+    );
   }
 
   const partner = await prisma.channelPartner.findUnique({ where: { id: req.params.partnerId } });
@@ -253,17 +281,39 @@ channelPartnerAgreementRouter.post("/:partnerId/:token", requireValidToken, asyn
     return res.send(pageShell("<p>This Channel Partner Agreement has already been signed.</p>"));
   }
 
+  // A ChannelPartnerUser's email is globally unique (see schema.prisma) —
+  // checked explicitly so a collision comes back as a normal form error
+  // instead of a raw 500 from the create() below.
+  const emailTaken = await prisma.channelPartnerUser.findUnique({ where: { email: parsed.data.email } });
+  if (emailTaken) {
+    return res.redirect(
+      `/api/channel-partner-agreement/${req.params.partnerId}/${req.params.token}?error=${encodeURIComponent("That email is already registered to a portal account.")}`
+    );
+  }
+
   const ip = (req.headers["x-forwarded-for"]?.toString().split(",")[0] ?? req.socket.remoteAddress ?? "unknown").trim();
   const signedAt = new Date();
+  const passwordHash = await hashPassword(parsed.data.password);
 
-  await prisma.channelPartner.update({
-    where: { id: partner.id },
-    data: { agreementSignedAt: signedAt, agreementSignedName: parsed.data.fullName, agreementSignedIp: ip }
-  });
+  // Signing the agreement and creating the portal login happen together,
+  // atomically — there's no separate invite-email step (see the plan's
+  // Phase 1 scope note: no established "send a real email to a channel
+  // partner contact" pathway exists yet), so this is the one moment a
+  // ChannelPartnerUser can ever be created.
+  await prisma.$transaction([
+    prisma.channelPartner.update({
+      where: { id: partner.id },
+      data: { agreementSignedAt: signedAt, agreementSignedName: parsed.data.fullName, agreementSignedIp: ip }
+    }),
+    prisma.channelPartnerUser.create({
+      data: { channelPartnerId: partner.id, name: parsed.data.fullName, email: parsed.data.email, passwordHash }
+    })
+  ]);
 
   res.send(
     pageShell(
-      `<p>Thanks, ${escapeHtml(parsed.data.fullName)} — your Channel Partner Agreement has been recorded. Our team will be in touch with next steps.</p>`
+      `<p>Thanks, ${escapeHtml(parsed.data.fullName)} — your Channel Partner Agreement has been recorded and your portal account is ready.</p>
+       <p style="margin-top:12px;"><a href="/partner/login" style="color:#3046b2;font-weight:600;">Log in to the Channel Partner Portal →</a></p>`
     )
   );
 }));
