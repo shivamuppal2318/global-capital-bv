@@ -32,6 +32,108 @@ export function ChannelPartnerModule() {
   const [formError, setFormError] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [notice, setNotice] = useState(null);
+  // The standard tiered incentive schedule (Clause 7.3) — fetched once,
+  // shown next to the custom-rate override field so it's clear what a
+  // blank commissionPct actually falls back to.
+  const [tiers, setTiers] = useState([]);
+  // A real per-deal commission calculator, one open at a time per partner.
+  const [calcOpenId, setCalcOpenId] = useState(null);
+  const [calcAmount, setCalcAmount] = useState("");
+  const [calcResult, setCalcResult] = useState(null);
+  const [calcBusy, setCalcBusy] = useState(false);
+  const [calcError, setCalcError] = useState(null);
+  // Real signed Channel Partner Agreement link, generated on demand per
+  // partner and copied to the clipboard — see channelPartnersApi.agreementLink.
+  const [agreementBusyId, setAgreementBusyId] = useState(null);
+  const [agreementNoticeId, setAgreementNoticeId] = useState(null);
+  const [agreementNotice, setAgreementNotice] = useState(null);
+  // Real Channel Partner Portal activity — what a partner has actually done
+  // with their own login (own campaigns/leads, see channelPartnerScope.js),
+  // shown as an expandable section per partner, one open at a time, same
+  // pattern as the commission calculator above. Fetched on demand rather
+  // than for every partner up front, since most rows will never be opened.
+  const [activityOpenId, setActivityOpenId] = useState(null);
+  const [activityData, setActivityData] = useState(null);
+  const [activityBusy, setActivityBusy] = useState(false);
+  const [activityError, setActivityError] = useState(null);
+
+  async function toggleActivity(partner) {
+    if (activityOpenId === partner.id) {
+      setActivityOpenId(null);
+      return;
+    }
+    setActivityOpenId(partner.id);
+    setActivityData(null);
+    setActivityError(null);
+    setActivityBusy(true);
+    try {
+      const result = await channelPartnersApi.activity(partner.id);
+      setActivityData(result);
+    } catch (err) {
+      setActivityError(err.message);
+    } finally {
+      setActivityBusy(false);
+    }
+  }
+
+  async function handleGetAgreementLink(partner) {
+    setAgreementBusyId(partner.id);
+    setAgreementNoticeId(null);
+    try {
+      const result = await channelPartnersApi.agreementLink(partner.id);
+      if (result.signed) {
+        setAgreementNotice(`Already signed by ${result.signedName} on ${new Date(result.signedAt).toLocaleDateString()}.`);
+      } else {
+        await navigator.clipboard.writeText(result.url);
+        setAgreementNotice(`Link copied to clipboard: ${result.url}`);
+      }
+      setAgreementNoticeId(partner.id);
+    } catch (err) {
+      setAgreementNotice(err.message);
+      setAgreementNoticeId(partner.id);
+    } finally {
+      setAgreementBusyId(null);
+    }
+  }
+
+  useEffect(() => {
+    channelPartnersApi
+      .commissionTiers()
+      .then(({ tiers: t }) => setTiers(t))
+      .catch(() => {
+        // Backend unreachable — the override field's help text just won't
+        // show the standard schedule; not fatal to the rest of the page.
+      });
+  }, []);
+
+  function toggleCalculator(partnerId) {
+    if (calcOpenId === partnerId) {
+      setCalcOpenId(null);
+      return;
+    }
+    setCalcOpenId(partnerId);
+    setCalcAmount("");
+    setCalcResult(null);
+    setCalcError(null);
+  }
+
+  async function runCalculator(partner) {
+    const amount = Number(calcAmount);
+    if (!calcAmount || !Number.isFinite(amount) || amount < 0) {
+      setCalcError("Enter a non-negative borrowing amount.");
+      return;
+    }
+    setCalcBusy(true);
+    setCalcError(null);
+    try {
+      const result = await channelPartnersApi.estimateCommission(partner.id, amount);
+      setCalcResult(result);
+    } catch (err) {
+      setCalcError(err.message);
+    } finally {
+      setCalcBusy(false);
+    }
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -188,7 +290,7 @@ export function ChannelPartnerModule() {
                 <input className={inputClass} value={editing.contactPhone} onChange={(e) => setEditing({ ...editing, contactPhone: e.target.value })} />
               </div>
               <div>
-                <label className={labelClass}>Commission %</label>
+                <label className={labelClass}>Custom Commission % (optional)</label>
                 <input
                   type="number"
                   min="0"
@@ -199,6 +301,23 @@ export function ChannelPartnerModule() {
                   onChange={(e) => setEditing({ ...editing, commissionPct: e.target.value })}
                   placeholder="e.g. 2.5"
                 />
+                <p className="mt-1.5 text-[12px] leading-5 text-[#8593ac]">
+                  Overrides the standard schedule
+                  {tiers.length
+                    ? ": " +
+                      tiers
+                        .map(
+                          (t) =>
+                            `${t.pct}% (${(t.minBorrowing / 1_000_000).toFixed(0)}M–${
+                              // Infinity serializes to null over JSON — checking finiteness
+                              // (not `=== Infinity`) is what actually works after the round-trip.
+                              Number.isFinite(t.maxBorrowing) ? `${(t.maxBorrowing / 1_000_000).toFixed(0)}M` : "+"
+                            })`
+                        )
+                        .join(", ")
+                    : ""}
+                  . Leave blank to use the standard schedule.
+                </p>
               </div>
               <div className="md:col-span-2">
                 <label className={labelClass}>Notes</label>
@@ -273,14 +392,107 @@ export function ChannelPartnerModule() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge tone="blue">{p.referredLeads} lead{p.referredLeads === 1 ? "" : "s"} referred</Badge>
+                  {p.maintenanceFeeEligible ? <Badge tone="violet">Maintenance fee eligible</Badge> : null}
+                  {p.agreementSignedAt ? (
+                    <Badge tone="green">Agreement signed {new Date(p.agreementSignedAt).toLocaleDateString()}</Badge>
+                  ) : (
+                    <Badge tone="slate">Agreement not signed</Badge>
+                  )}
                   <Badge tone={STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>
                 </div>
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <ActionButton small label="Edit" onClick={() => startEdit(p)} disabled={busyId === p.id} />
+                <ActionButton small label={calcOpenId === p.id ? "Hide calculator" : "Estimate commission"} onClick={() => toggleCalculator(p.id)} />
+                <ActionButton
+                  small
+                  label={agreementBusyId === p.id ? "Working…" : p.agreementSignedAt ? "View signed status" : "Get agreement link"}
+                  onClick={() => handleGetAgreementLink(p)}
+                  disabled={agreementBusyId === p.id}
+                />
+                <ActionButton small label={activityOpenId === p.id ? "Hide portal activity" : "Portal activity"} onClick={() => toggleActivity(p)} />
                 <ActionButton small label="Delete" onClick={() => remove(p)} disabled={busyId === p.id} />
               </div>
+
+              {agreementNoticeId === p.id && agreementNotice ? (
+                <p className="mt-2 break-all text-[13px] text-[#334463]">{agreementNotice}</p>
+              ) : null}
+
+              {calcOpenId === p.id ? (
+                <div className="mt-3 rounded-[12px] border border-[#e7edf5] bg-[#fbfcfe] p-3">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-[#5f6f89]">
+                    Estimate commission for a deal
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      className={`${inputClass} w-48`}
+                      value={calcAmount}
+                      onChange={(e) => setCalcAmount(e.target.value)}
+                      placeholder="Borrowing amount, e.g. 60000000"
+                    />
+                    <ActionButton small primary label={calcBusy ? "Calculating…" : "Calculate"} onClick={() => runCalculator(p)} disabled={calcBusy} />
+                  </div>
+                  {calcError ? <p className="mt-2 text-[13px] font-medium text-[#e0483f]">{calcError}</p> : null}
+                  {calcResult ? (
+                    calcResult.pct == null ? (
+                      <p className="mt-2 text-[13px] text-[#8593ac]">
+                        Below the standard schedule's 10M floor — no defined rate for this amount
+                        {has(p.commissionPct) ? "" : " (and this partner has no custom rate set)"}.
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-[13px] text-[#334463]">
+                        <span className="font-semibold text-[#102246]">
+                          {calcResult.pct}% = {calcResult.commissionAmount.toLocaleString()}
+                        </span>{" "}
+                        {calcResult.usedCustomRate ? "(this partner's custom rate)" : "(standard schedule tier)"}
+                      </p>
+                    )
+                  ) : null}
+                </div>
+              ) : null}
+
+              {activityOpenId === p.id ? (
+                <div className="mt-3 rounded-[12px] border border-[#e7edf5] bg-[#fbfcfe] p-3">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-[#5f6f89]">Channel Partner Portal activity</p>
+                  {activityBusy ? <p className="mt-2 text-[13px] text-[#5c6b87]">Loading…</p> : null}
+                  {activityError ? <p className="mt-2 text-[13px] font-medium text-[#e0483f]">{activityError}</p> : null}
+                  {!activityBusy && !activityError && activityData ? (
+                    !activityData.hasPortalAccount ? (
+                      <p className="mt-2 text-[13px] text-[#8593ac]">
+                        No portal account yet — one is created automatically when this partner signs the agreement.
+                      </p>
+                    ) : (
+                      <div className="mt-2 space-y-1.5 text-[13px] text-[#334463]">
+                        <p>
+                          Portal login: <span className="font-semibold text-[#102246]">{activityData.portalAccount.email}</span>{" "}
+                          {activityData.portalAccount.status === "SUSPENDED" ? (
+                            <Badge tone="red">Suspended</Badge>
+                          ) : (
+                            <Badge tone="green">Active</Badge>
+                          )}
+                        </p>
+                        <p>
+                          {activityData.campaignCount} campaign{activityData.campaignCount === 1 ? "" : "s"},{" "}
+                          {activityData.leadCount} lead{activityData.leadCount === 1 ? "" : "s"} of their own
+                        </p>
+                        <p>
+                          Last sent:{" "}
+                          {activityData.lastSentAt ? new Date(activityData.lastSentAt).toLocaleString() : "Nothing sent yet"}
+                        </p>
+                        <p>
+                          Last logged in:{" "}
+                          {activityData.portalAccount.lastLoginAt
+                            ? new Date(activityData.portalAccount.lastLoginAt).toLocaleString()
+                            : "Never"}
+                        </p>
+                      </div>
+                    )
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

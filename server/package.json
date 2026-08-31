@@ -13,7 +13,8 @@
     "db:seed": "node prisma/seed.js && node prisma/seedEmail.js && node prisma/ensureDefaults.js",
     "db:reset": "prisma migrate reset",
     "db:start": "node scripts/start-local-db.mjs start",
-    "db:stop": "node scripts/start-local-db.mjs stop"
+    "db:stop": "node scripts/start-local-db.mjs stop",
+    "redis:start": "node scripts/start-local-redis.mjs"
   },
   "prisma": {
     "seed": "node prisma/seed.js && node prisma/seedEmail.js && node prisma/ensureDefaults.js"
@@ -40,6 +41,7 @@
     "embedded-postgres": "^18.4.0-beta.17",
     "nodemon": "^3.1.4",
     "pg": "^8.23.0",
-    "prisma": "^6.2.1"
+    "prisma": "^6.2.1",
+    "redis-memory-server": "^0.17.1"
   }
 }

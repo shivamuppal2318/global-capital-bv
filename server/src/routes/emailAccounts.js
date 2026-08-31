@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { encryptSecret, decryptSecret } from "../lib/credentialCrypto.js";
 import { recordAudit } from "../lib/auditLog.js";
+import { getImapStatus, fetchNow } from "../lib/imapPoller.js";
 
 export const emailAccountsRouter = Router();
 
@@ -27,6 +28,22 @@ emailAccountsRouter.get("/", asyncHandler(async (req, res) => {
   const where = req.user.role === "ADMIN" ? {} : { ownerId: req.user.id };
   const accounts = await prisma.emailAccount.findMany({ where, orderBy: { label: "asc" } });
   res.json(accounts.map(redact));
+}));
+
+// Backs the Mailbox tab's real "Fetch Diagnostics" info and its "Fetch Now"
+// button's result — registered before /:id so Express doesn't treat these
+// literal paths as an account id.
+emailAccountsRouter.get("/imap-status", (_req, res) => {
+  res.json(getImapStatus());
+});
+
+emailAccountsRouter.post("/fetch-now", asyncHandler(async (_req, res) => {
+  try {
+    const result = await fetchNow();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(err.status ?? 500).json({ success: false, error: err.message });
+  }
 }));
 
 emailAccountsRouter.get("/:id", asyncHandler(async (req, res) => {

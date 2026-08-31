@@ -9,25 +9,21 @@ const campaignToneClass = {
   Draft: "bg-[#edf1f6] text-[#748096]"
 };
 
-const EMPTY_FORM = {
-  campaignName: "",
-  audience: "Renewables founders",
-  template: "Cold intro — Renewables founder",
-  delayDays: "3",
-  followUpCount: "3",
-  dailyLimit: "2000",
-  abTest: true,
-  autoPause: true,
-  replyType: "interested",
-  preferredPath: "nda-first"
-};
-
 export function CampaignsTab({ mailing }) {
   const {
-    campaigns, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
+    campaigns, selectedCampaignId, setSelectedCampaignId, setAutomationForm, startNewCampaign,
     selectedCampaign, emailAccounts, handleAssignAccountToCampaign, handleToggleCampaignStatus,
-    automationForm, handleFormChange, handleSaveAutomation, automationNotice
+    automationForm, handleFormChange, handleSaveAutomation, automationNotice, systemStatus
   } = mailing;
+
+  // The real "from" address this campaign will actually send as — its
+  // assigned mailbox if one is set, otherwise the single global
+  // env-configured provider. There's no separate "from name" anywhere in
+  // the real send pipeline (emailProvider.js's `from` is always a bare
+  // address, never a "Display Name <email>" pair), so this shows the one
+  // real value instead of a second, fictional field.
+  const assignedAccount = selectedCampaign?.emailAccountId ? emailAccounts.find((a) => a.id === selectedCampaign.emailAccountId) : null;
+  const resolvedFromAddress = assignedAccount?.fromAddress ?? systemStatus?.smtpFromAddress ?? "Not configured yet";
 
   const [viewMode, setViewMode] = useState("list");
   const [searchText, setSearchText] = useState("");
@@ -44,14 +40,28 @@ export function CampaignsTab({ mailing }) {
   });
 
   function openNewCampaign() {
-    setSelectedCampaignId(null);
-    setAutomationForm((current) => ({ ...current, ...EMPTY_FORM }));
+    startNewCampaign();
     setViewMode("composer");
   }
 
   function openCampaign(campaign) {
     setSelectedCampaignId(campaign.id);
-    setAutomationForm((current) => ({ ...current, campaignName: campaign.name }));
+    // Loads this campaign's own real saved settings into the form — previously
+    // only campaignName was set here, so Save could silently overwrite a
+    // campaign's real audience/dailyLimit/delayDays/followUpCount/abTest/
+    // autoPause/replyTo with whatever was left in the form from before.
+    setAutomationForm((current) => ({
+      ...current,
+      campaignName: campaign.name,
+      audience: campaign.audience,
+      template: campaign.template,
+      dailyLimit: campaign.dailyLimit,
+      delayDays: campaign.delayDays,
+      followUpCount: campaign.followUpCount,
+      abTest: campaign.abTest,
+      autoPause: campaign.autoPause,
+      replyTo: campaign.replyTo ?? ""
+    }));
     setViewMode("composer");
   }
 
@@ -87,66 +97,53 @@ export function CampaignsTab({ mailing }) {
                 />
               </Field>
 
-              <Field label="Subject">
+              <Field label="Template Label">
                 <input
                   value={automationForm.template}
                   onChange={(event) => handleFormChange("template", event.target.value)}
+                  list="template-label-options"
                   className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
                 />
+                <datalist id="template-label-options">
+                  <option value="Cold intro — Renewables founder" />
+                  <option value="Follow-up — Sector teaser" />
+                  <option value="Portfolio quarterly update" />
+                </datalist>
               </Field>
 
-              <Field label="Email Content">
-                <div className="rounded-[8px] border border-[#d8dfea] bg-white">
-                  <div className="flex flex-wrap items-center gap-3 border-b border-[#e7edf5] px-4 py-2 text-[11px] text-[#5f6f89]">
-                    <span>Normal</span>
-                    <span className="text-[11px]">↕</span>
-                    <span className="font-bold">B</span>
-                    <span className="italic">I</span>
-                    <span className="underline">U</span>
-                    <span className="text-[11px]">S</span>
-                    <span>A</span>
-                    <span>▤</span>
-                    <span>☰</span>
-                    <span>☷</span>
-                    <span>≡</span>
-                    <span>🔗</span>
-                    <span>🖼</span>
-                    <span>❞</span>
-                    <span>Tx</span>
-                  </div>
-                  <textarea
-                    rows={9}
-                    className="w-full resize-none rounded-b-[8px] bg-white px-4 py-3 text-[14px] leading-5 text-[#435471] outline-none"
-                  />
-                </div>
-                <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
-                  Format with the toolbar, or click the HTML button to edit raw HTML. Merge tags: `first_name`, `last_name`,
-                  `email`, `company`, `unsubscribe_url`
-                </p>
-              </Field>
+              <p className="rounded-[10px] bg-[#f7f9fc] px-4 py-3 text-[12px] leading-5 text-[#6a7790]">
+                A short descriptive name for this campaign's approach (not an email subject line, and not the email
+                body) — shown in campaign lists. Email bodies are edited per reply-type under the Templates tab; a
+                campaign sends whichever template matches how a lead replies, not a single fixed body typed here.
+              </p>
             </div>
           </div>
 
           <div className="rounded-[24px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
             <div className="space-y-3">
-              <Field label="From Name">
-                <input
-                  value="LockYourIdea Tech Pvt Ltd"
-                  readOnly
-                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none"
-                />
-              </Field>
-
               <Field label="From Email">
                 <input
-                  value="contact@lyicrm.com"
+                  value={resolvedFromAddress}
                   readOnly
                   className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none"
                 />
+                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                  From the mailbox assigned below — change it there, not here.
+                </p>
               </Field>
 
-              <Field label="Reply-To">
-                <input className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none" />
+              <Field label="Reply-To (optional)">
+                <input
+                  type="email"
+                  value={automationForm.replyTo}
+                  onChange={(event) => handleFormChange("replyTo", event.target.value)}
+                  placeholder="e.g. deals@globalcapitalbv.com"
+                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                />
+                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                  Leave blank to let replies land on the sending mailbox itself. Set this to route replies to a
+                  different inbox instead.
+                </p>
               </Field>
 
               <Field label="Send To">
@@ -162,40 +159,6 @@ export function CampaignsTab({ mailing }) {
                 </select>
               </Field>
 
-              <Field label="Select List">
-                <select
-                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none"
-                >
-                  <option />
-                </select>
-              </Field>
-
-              <Field label="Select Segment (optional)">
-                <select className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none">
-                  <option />
-                </select>
-              </Field>
-
-              <Field label="Load Template (optional)">
-                <select
-                  value={automationForm.template}
-                  onChange={(event) => handleFormChange("template", event.target.value)}
-                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none"
-                >
-                  <option> </option>
-                  <option>Cold intro — Renewables founder</option>
-                  <option>Follow-up — Sector teaser</option>
-                  <option>Portfolio quarterly update</option>
-                </select>
-              </Field>
-
-              <div>
-                <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">Send via SMTP server(s)</p>
-                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
-                  No SMTP servers added yet — this will use your global SMTP from Settings. Add servers to rotate sending across them.
-                  <span className="ml-1 font-semibold text-[#5b6ef3]">New SMTP Server →</span>
-                </p>
-              </div>
 
               <Field label="Schedule (leave empty to send now)">
                 <div className="flex items-center gap-2">
@@ -206,16 +169,17 @@ export function CampaignsTab({ mailing }) {
                 </div>
               </Field>
 
-              <Field label="Delay Between Emails (minutes)">
+              <Field label="Daily Send Limit">
                 <input
                   type="number"
                   value={automationForm.dailyLimit}
                   onChange={(event) => handleFormChange("dailyLimit", event.target.value)}
-                  placeholder="e.g. 1"
+                  placeholder="e.g. 2000"
                   className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
                 />
                 <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
-                  Optional. Minimum 1 minute between each email sent in this campaign.
+                  Maximum emails this campaign sends per day (subject to warm-up ramping — see Settings → System
+                  status).
                 </p>
               </Field>
 

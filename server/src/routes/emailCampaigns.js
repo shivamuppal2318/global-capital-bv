@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { isQueueEnabled } from "../queue/cadenceQueue.js";
 import { recordAudit } from "../lib/auditLog.js";
+import { ownerWhereClause, ownerIdForCreate } from "../lib/channelPartnerScope.js";
 
 export const emailCampaignsRouter = Router();
 
@@ -58,7 +59,12 @@ const createCampaignSchema = z.object({
   autoPause: z.boolean().default(true),
   // Optional — omit to fall back to the single global env-configured
   // provider, exactly as every campaign behaved before EmailAccount existed.
-  emailAccountId: z.string().optional()
+  emailAccountId: z.string().optional(),
+  // Optional — omit/null/blank to let replies land on whichever mailbox
+  // actually sent the email, the normal behavior with no header override.
+  // preprocess so a blank input field (an empty string, not omitted)
+  // normalizes to null instead of failing .email() validation.
+  replyTo: z.preprocess((val) => (val === "" ? null : val), z.string().trim().email().nullable().optional())
 });
 
 // Real open/click rates, computed from ActivityLog rows the tracking pixel
@@ -96,14 +102,30 @@ async function withEngagementRates(campaign) {
   };
 }
 
-emailCampaignsRouter.get("/", asyncHandler(async (_req, res) => {
+emailCampaignsRouter.get("/", asyncHandler(async (req, res) => {
   const campaigns = await prisma.emailCampaign.findMany({
+    where: ownerWhereClause(req),
     orderBy: { createdAt: "desc" },
     include: { _count: { select: { leads: true } } }
   });
   const withRates = await Promise.all(campaigns.map(withEngagementRates));
   res.json(withRates);
 }));
+
+// Loads a campaign only if the caller is allowed to see it — staff get
+// everything (ownerWhereClause is {}), a Channel Partner only their own.
+// Used by every :id route below instead of a bare findUnique, so a partner
+// can't act on another partner's (or admin's) campaign just by knowing its
+// id — the "own data" isolation the portal promises has to hold for
+// mutations, not just the list view.
+async function loadOwnedCampaignOr404(req, res, id) {
+  const campaign = await prisma.emailCampaign.findFirst({ where: { id, ...ownerWhereClause(req) } });
+  if (!campaign) {
+    res.status(404).json({ error: "Campaign not found" });
+    return null;
+  }
+  return campaign;
+}
 
 const SEND_KINDS = ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT"];
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -126,7 +148,7 @@ function bucketByDay(rows, days) {
 // in one call — real aggregates only, matching what's actually in
 // EmailActivityLog/EmailLead/EmailAccount, same principle as
 // withEngagementRates above (no formula-based/fabricated numbers).
-emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (_req, res) => {
+emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   const days = Array.from({ length: 7 }, (_, i) => {
@@ -137,14 +159,23 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (_req, res) =>
   const sevenDaysAgo = new Date(today);
   sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
 
+  // A Channel Partner's dashboard should only summarize their own leads —
+  // staff get {} (no filter, today's behavior unchanged). Mailbox
+  // performance is deliberately left global/unscoped: Phase 1 gives
+  // partners no mailboxes of their own (see channelPartnerScope.js's
+  // comment and the plan's "no new sending capability" note), so there's
+  // no per-partner mailbox data to scope it to.
+  const campaignFilter = ownerWhereClause(req);
+
   const [sentRows, openedRows, totalLeads, repliedLeads, interestedLeads, ndaSignedLeads, recentActivity, mailboxes] = await Promise.all([
-    prisma.emailActivityLog.findMany({ where: { kind: { in: SEND_KINDS }, createdAt: { gte: sevenDaysAgo } }, select: { createdAt: true } }),
-    prisma.emailActivityLog.findMany({ where: { kind: "EMAIL_OPENED", createdAt: { gte: sevenDaysAgo } }, select: { createdAt: true } }),
-    prisma.emailLead.count(),
-    prisma.emailLead.count({ where: { replyType: { not: "NO_REPLY" } } }),
-    prisma.emailLead.count({ where: { replyType: "INTERESTED" } }),
-    prisma.emailLead.count({ where: { ndaSignedAt: { not: null } } }),
+    prisma.emailActivityLog.findMany({ where: { kind: { in: SEND_KINDS }, createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
+    prisma.emailActivityLog.findMany({ where: { kind: "EMAIL_OPENED", createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
+    prisma.emailLead.count({ where: { campaign: campaignFilter } }),
+    prisma.emailLead.count({ where: { replyType: { not: "NO_REPLY" }, campaign: campaignFilter } }),
+    prisma.emailLead.count({ where: { replyType: "INTERESTED", campaign: campaignFilter } }),
+    prisma.emailLead.count({ where: { ndaSignedAt: { not: null }, campaign: campaignFilter } }),
     prisma.emailActivityLog.findMany({
+      where: { lead: { campaign: campaignFilter } },
       orderBy: { createdAt: "desc" },
       take: 8,
       include: { lead: { select: { name: true, campaign: { select: { name: true } } } } }
@@ -189,7 +220,9 @@ emailCampaignsRouter.post("/", asyncHandler(async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const campaign = await prisma.emailCampaign.create({ data: parsed.data });
+  const campaign = await prisma.emailCampaign.create({
+    data: { ...parsed.data, ownerChannelPartnerId: ownerIdForCreate(req) }
+  });
   await recordAudit({ req, action: "campaign.created", entityType: "EmailCampaign", entityId: campaign.id, detail: campaign.name });
   res.status(201).json(campaign);
 }));
@@ -200,8 +233,8 @@ emailCampaignsRouter.post("/", asyncHandler(async (req, res) => {
 // campaign with real leads/activity attached should be paused, not deleted
 // — deleting it would cascade-orphan or block on its Lead/ActivityLog rows.
 emailCampaignsRouter.delete("/:id", asyncHandler(async (req, res) => {
-  const campaign = await prisma.emailCampaign.findUnique({
-    where: { id: req.params.id },
+  const campaign = await prisma.emailCampaign.findFirst({
+    where: { id: req.params.id, ...ownerWhereClause(req) },
     include: { _count: { select: { leads: true } } }
   });
   if (!campaign) {
@@ -222,7 +255,8 @@ const updateCampaignSchema = z.object({
   delayDays: z.number().int().positive().optional(),
   followUpCount: z.number().int().min(0).optional(),
   abTest: z.boolean().optional(),
-  autoPause: z.boolean().optional()
+  autoPause: z.boolean().optional(),
+  replyTo: z.preprocess((val) => (val === "" ? null : val), z.string().trim().email().nullable().optional())
 });
 
 // Edits an existing campaign's settings in place. Added because the "Save
@@ -238,6 +272,7 @@ emailCampaignsRouter.patch("/:id", asyncHandler(async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  if (!(await loadOwnedCampaignOr404(req, res, req.params.id))) return;
   const campaign = await prisma.emailCampaign.update({
     where: { id: req.params.id },
     data: parsed.data
@@ -246,6 +281,7 @@ emailCampaignsRouter.patch("/:id", asyncHandler(async (req, res) => {
 }));
 
 emailCampaignsRouter.post("/:id/pause", asyncHandler(async (req, res) => {
+  if (!(await loadOwnedCampaignOr404(req, res, req.params.id))) return;
   const campaign = await prisma.emailCampaign.update({
     where: { id: req.params.id },
     data: { status: "SCHEDULED" }
@@ -255,6 +291,7 @@ emailCampaignsRouter.post("/:id/pause", asyncHandler(async (req, res) => {
 }));
 
 emailCampaignsRouter.post("/:id/resume", asyncHandler(async (req, res) => {
+  if (!(await loadOwnedCampaignOr404(req, res, req.params.id))) return;
   const campaign = await prisma.emailCampaign.update({
     where: { id: req.params.id },
     data: { status: "SENDING" }
@@ -268,6 +305,14 @@ const assignAccountSchema = z.object({
 });
 
 emailCampaignsRouter.post("/:id/email-account", asyncHandler(async (req, res) => {
+  // Phase 1 gives Channel Partners no mailboxes of their own — their
+  // campaigns always fall back to the shared global env-configured sender
+  // (see channelPartnerScope.js's comment), so assigning one of the real
+  // company mailboxes to a partner's campaign isn't offered at all.
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Channel Partner campaigns use the shared default sender — mailbox assignment is staff-only." });
+  }
+
   const parsed = assignAccountSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -295,4 +340,73 @@ emailCampaignsRouter.post("/:id/email-account", asyncHandler(async (req, res) =>
     detail: `${campaign.name} → ${parsed.data.emailAccountId ?? "default (global env provider)"}`
   });
   res.json(campaign);
+}));
+
+// A campaign's real, per-step follow-up sequence — read by
+// scheduleCadenceSteps (routes/emailLeads.js) whenever a lead is added to
+// this campaign. Until these routes existed, nothing anywhere could create
+// a CadenceStep row outside the seed script, so delayDays/followUpCount on
+// the campaign itself only ever drove a cosmetic preview
+// (useEmailOutreachState.js's buildAutomationSteps) — no real campaign a
+// user created ever actually had a follow-up scheduled.
+const cadenceStepSchema = z.object({
+  title: z.string().min(1),
+  bodyTemplate: z.string().min(1),
+  delayDays: z.number().int().min(0)
+});
+
+emailCampaignsRouter.get("/:id/cadence-steps", asyncHandler(async (req, res) => {
+  if (!(await loadOwnedCampaignOr404(req, res, req.params.id))) return;
+  const steps = await prisma.cadenceStep.findMany({ where: { campaignId: req.params.id }, orderBy: { stepIndex: "asc" } });
+  res.json(steps);
+}));
+
+// stepIndex is assigned here, not accepted from the client — a new step
+// always goes at the end of the sequence; reordering isn't supported yet,
+// only add/edit/delete.
+emailCampaignsRouter.post("/:id/cadence-steps", asyncHandler(async (req, res) => {
+  const parsed = cadenceStepSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const campaign = await loadOwnedCampaignOr404(req, res, req.params.id);
+  if (!campaign) return;
+
+  const lastStep = await prisma.cadenceStep.findFirst({ where: { campaignId: req.params.id }, orderBy: { stepIndex: "desc" } });
+  const stepIndex = (lastStep?.stepIndex ?? -1) + 1;
+
+  const step = await prisma.cadenceStep.create({ data: { campaignId: req.params.id, stepIndex, ...parsed.data } });
+  await recordAudit({ req, action: "campaign.cadence_step_added", entityType: "EmailCampaign", entityId: campaign.id, detail: `Step ${stepIndex}: ${step.title}` });
+  res.status(201).json(step);
+}));
+
+const updateCadenceStepSchema = cadenceStepSchema.partial();
+
+emailCampaignsRouter.put("/:id/cadence-steps/:stepId", asyncHandler(async (req, res) => {
+  const parsed = updateCadenceStepSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  if (!(await loadOwnedCampaignOr404(req, res, req.params.id))) return;
+  const existing = await prisma.cadenceStep.findUnique({ where: { id: req.params.stepId } });
+  if (!existing || existing.campaignId !== req.params.id) {
+    return res.status(404).json({ error: "Step not found" });
+  }
+
+  const step = await prisma.cadenceStep.update({ where: { id: req.params.stepId }, data: parsed.data });
+  res.json(step);
+}));
+
+emailCampaignsRouter.delete("/:id/cadence-steps/:stepId", asyncHandler(async (req, res) => {
+  if (!(await loadOwnedCampaignOr404(req, res, req.params.id))) return;
+  const existing = await prisma.cadenceStep.findUnique({ where: { id: req.params.stepId } });
+  if (!existing || existing.campaignId !== req.params.id) {
+    return res.status(404).json({ error: "Step not found" });
+  }
+
+  await prisma.cadenceStep.delete({ where: { id: req.params.stepId } });
+  await recordAudit({ req, action: "campaign.cadence_step_removed", entityType: "EmailCampaign", entityId: req.params.id, detail: existing.title });
+  res.status(204).end();
 }));

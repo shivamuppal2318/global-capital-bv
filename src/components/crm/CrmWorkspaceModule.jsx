@@ -833,6 +833,8 @@ function AddLeadModal({ form, setForm, saving, error, onClose, onSave }) {
 }
 
 function ImportLeadsModal({ text, setText, busy, result, onClose, onImport }) {
+  const [fileName, setFileName] = useState(null);
+
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === "Escape") onClose();
@@ -840,6 +842,18 @@ function ImportLeadsModal({ text, setText, busy, result, onClose, onImport }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
+
+  function handleFileChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => setText(String(reader.result ?? ""));
+    reader.readAsText(file);
+    // Lets picking the same file again re-trigger onChange (e.g. after
+    // editing it on disk and re-selecting it).
+    event.target.value = "";
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0f1f3d]/40 px-4 py-10" onClick={onClose}>
@@ -861,9 +875,20 @@ function ImportLeadsModal({ text, setText, busy, result, onClose, onImport }) {
 
         <div className="space-y-3 px-6 py-5">
           <p className="text-[13px] text-[#5f6f89]">
-            Paste CSV rows. Header required: <code className="rounded bg-[#f4f7fb] px-1.5 py-0.5 text-[12px]">name,company,email,mobile,capitalask,owner,territory</code>.
+            Upload a .csv file or paste rows below. Header required:{" "}
+            <code className="rounded bg-[#f4f7fb] px-1.5 py-0.5 text-[12px]">name,company,email,mobile,capitalask,owner,territory</code>.
             Each row needs a name and at least one of email/mobile.
           </p>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-[12px] border border-[#d6deea] bg-white px-4 py-2.5 text-[14px] font-semibold text-[#2d3553] transition hover:bg-[#f7f9fc]">
+              <UploadIcon className="size-4" />
+              Choose CSV file
+              <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
+            </label>
+            {fileName ? <span className="truncate text-[13px] text-[#5f6f89]">{fileName}</span> : null}
+          </div>
+
           <textarea
             value={text}
             onChange={(event) => setText(event.target.value)}

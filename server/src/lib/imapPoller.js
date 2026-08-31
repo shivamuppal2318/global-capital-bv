@@ -17,6 +17,43 @@ export function isImapPollerEnabled() {
 
 let intervalHandle = null;
 
+// Last poll's outcome, whether it ran on the automatic interval or was
+// triggered manually (see fetchNow()) — this is what backs a real "Fetch
+// Diagnostics" view instead of a button that just navigates away with
+// nothing to show.
+let lastPollResult = null;
+
+export function getImapStatus() {
+  return {
+    enabled: isImapPollerEnabled(),
+    host: process.env.IMAP_HOST ?? null,
+    watching: process.env.SMTP_USER ?? null,
+    lastPoll: lastPollResult
+  };
+}
+
+async function pollAndRecord() {
+  try {
+    const { processedCount } = await pollOnce();
+    lastPollResult = { at: new Date().toISOString(), processedCount, error: null };
+    return { processedCount };
+  } catch (err) {
+    lastPollResult = { at: new Date().toISOString(), processedCount: 0, error: err.message };
+    throw err;
+  }
+}
+
+// The real action behind the Mailbox tab's "Fetch Now" button — previously
+// that button only updated a client-side timestamp and never called the
+// backend at all. Runs the exact same pollOnce() the automatic interval
+// below uses, just on demand instead of waiting up to a minute for it.
+export async function fetchNow() {
+  if (!isImapPollerEnabled()) {
+    throw Object.assign(new Error("IMAP is not configured (IMAP_HOST/SMTP_USER/SMTP_PASS)."), { status: 409 });
+  }
+  return pollAndRecord();
+}
+
 export function startImapPoller() {
   if (!isImapPollerEnabled()) {
     console.log("[imap-poller] IMAP_HOST/SMTP_USER/SMTP_PASS not fully set — poller not started.");
@@ -41,7 +78,7 @@ export function startImapPoller() {
 
   const runPoll = () => {
     Promise.race([
-      pollOnce(),
+      pollAndRecord(),
       new Promise((_, reject) => setTimeout(() => reject(new Error(`poll timed out after ${POLL_TIMEOUT_MS}ms`)), POLL_TIMEOUT_MS))
     ]).catch((err) => console.error("[imap-poller] poll failed:", err.message));
   };
@@ -68,6 +105,17 @@ export async function pollOnce() {
     secure: process.env.IMAP_SECURE !== "false",
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
     logger: false
+  });
+
+  // ImapFlow emits 'error' as a plain EventEmitter event (separate from any
+  // promise rejection) whenever the underlying socket drops mid-session —
+  // a transient DNS blip or network hiccup, not just a bad poll. Node
+  // crashes the whole process on an unhandled 'error' event, and that's
+  // exactly what happened here: one flaky lookup took down the entire
+  // backend, not just this poll. A listener — even one that only logs —
+  // is what stops that from being fatal.
+  client.on("error", (err) => {
+    console.error("[imap-poller] connection error:", err.message);
   });
 
   let processedCount = 0;
