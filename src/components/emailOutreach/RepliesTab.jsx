@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ActionButton, noteToneClass } from "../ui.jsx";
-import { UsersIcon, MailIcon, TagIcon, SearchIcon, InboxIcon, ClockIcon, WorkflowIcon } from "../Icons.jsx";
+import { UsersIcon, MailIcon, TagIcon, SearchIcon, InboxIcon, ClockIcon, WorkflowIcon, UserCheckIcon } from "../Icons.jsx";
 import { replyRules } from "./useEmailOutreachState.js";
 
 const callStatusToneClass = {
@@ -29,7 +29,7 @@ function initialsOf(name) {
 // last reply), everything else (email, campaign, every badge, the full
 // reply text, activity history) lives here instead of being crammed into
 // the row or the narrower inline panel next to the table.
-function LeadDetailModal({ lead, timeline, onClose }) {
+function LeadDetailModal({ lead, timeline, onClose, converting, convertResult, onConvert }) {
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === "Escape") onClose();
@@ -73,7 +73,7 @@ function LeadDetailModal({ lead, timeline, onClose }) {
         </div>
 
         <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${replyTypeToneClass[lead.replyType] ?? noteToneClass.amber}`}>
               {lead.replyType}
             </span>
@@ -92,7 +92,43 @@ function LeadDetailModal({ lead, timeline, onClose }) {
                 Call {lead.callStatus}
               </span>
             ) : null}
+            <span className="ml-auto" />
+            {lead.convertedToLeadId ? (
+              <span className="rounded-full bg-[#eef1ff] px-2.5 py-1 text-[11px] font-semibold text-[#4766cc]">Converted to CRM Lead</span>
+            ) : (
+              <ActionButton
+                label={converting ? "Converting…" : "Convert to Lead"}
+                icon={UserCheckIcon}
+                onClick={() => onConvert(lead)}
+                disabled={converting}
+              />
+            )}
           </div>
+
+          {!lead.convertedToLeadId ? (
+            <p className="mt-2 text-[12px] text-[#8592ab]">
+              Creates a tracked CRM deal for {lead.company} and emails them the client portal registration link.
+            </p>
+          ) : null}
+
+          {convertResult ? (
+            <div className="mt-3 rounded-[12px] border border-[#e7edf5] bg-[#f7f9fc] px-4 py-3 text-[13px]">
+              {convertResult.ok ? (
+                convertResult.sent ? (
+                  <p className="text-[#2a9c60]">Converted to a CRM lead — portal invite emailed to {lead.email}.</p>
+                ) : (
+                  <div>
+                    <p className="text-[#c47f1a]">Converted to a CRM lead, but the invite wasn't emailed — {convertResult.reason} Copy the link below and send it manually:</p>
+                    <p className="mt-1.5 break-all rounded-[8px] bg-white px-3 py-2 font-mono text-[12px] text-[#3046b2]">
+                      {convertResult.inviteUrl}
+                    </p>
+                  </div>
+                )
+              ) : (
+                <p className="text-[#e0483f]">{convertResult.error}</p>
+              )}
+            </div>
+          ) : null}
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <div>
@@ -159,7 +195,8 @@ export function RepliesTab({ mailing }) {
     repliedLeads, selectedLeadId, selectedLead, selectedLeadTimeline, loadLeadIntoWorkflow, handleDeleteLead,
     automationForm, activeReplyRule, handleApplyRule, replyAction, handleTemplateDraftChange,
     handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, previewHtml, setPreviewHtml,
-    simulateIncomingReply, workflowSteps
+    simulateIncomingReply, workflowSteps,
+    convertingLeadId, convertResults, handleConvertToLead
   } = mailing;
 
   // Just a "which row is the popup open for" flag — the popup's actual
@@ -464,7 +501,14 @@ export function RepliesTab({ mailing }) {
       </div>
 
       {detailOpenId ? (
-        <LeadDetailModal lead={selectedLead} timeline={selectedLeadTimeline} onClose={() => setDetailOpenId(null)} />
+        <LeadDetailModal
+          lead={selectedLead}
+          timeline={selectedLeadTimeline}
+          onClose={() => setDetailOpenId(null)}
+          converting={selectedLead && convertingLeadId === selectedLead.id}
+          convertResult={selectedLead ? convertResults[selectedLead.id] : null}
+          onConvert={handleConvertToLead}
+        />
       ) : null}
     </section>
   );

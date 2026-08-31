@@ -3,6 +3,7 @@ import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
 import { emailLeadsApi } from "../../lib/emailLeadsApi.js";
 import { emailTemplatesApi } from "../../lib/emailTemplatesApi.js";
 import { emailAccountsApi } from "../../lib/emailAccountsApi.js";
+import { leadsApi } from "../../lib/leadsApi.js";
 import { parseLeadsCsv } from "../../lib/csvLeads.js";
 
 const SEED_CAMPAIGNS = [
@@ -262,6 +263,11 @@ export function useEmailOutreachState() {
   // it replied, which read as "nothing happened" even though the backend
   // had genuinely saved it.
   const [allLeads, setAllLeads] = useState([]);
+  // Keyed by EmailLead id — tracks the in-flight/last "Convert to Lead"
+  // outcome per lead, same shape/pattern as CrmWorkspaceModule's
+  // inviteResult (ok/sent/reason/inviteUrl or ok:false/error).
+  const [convertingLeadId, setConvertingLeadId] = useState(null);
+  const [convertResults, setConvertResults] = useState({});
   // null while loading — lets the UI show nothing rather than a wrong
   // "sending is off" banner for the split second before this resolves.
   const [systemStatus, setSystemStatus] = useState(null);
@@ -397,6 +403,7 @@ export function useEmailOutreachState() {
             bounced: lead.bounced,
             unsubscribed: lead.unsubscribed,
             ndaSignedAt: lead.ndaSignedAt,
+            convertedToLeadId: lead.convertedToLeadId,
             callStatus: lead.callCanceledAt
               ? "canceled"
               : lead.callCompletedAt
@@ -586,6 +593,27 @@ export function useEmailOutreachState() {
       setAutomationNotice(`${lead.name} (${lead.company}) deleted.`);
     } catch (error) {
       setAutomationNotice(`Could not delete ${lead.name} (${error.message}).`);
+    }
+  }
+
+  // Turns this cold-outreach reply into a real CRM Lead and, in the same
+  // step, sends them the client portal registration link — see
+  // POST /api/leads/from-email-lead/:emailLeadId. The portal invite only
+  // fires here, not on the original cold email, since there's no deal to
+  // show progress on until a Lead (and its deal stages) actually exists.
+  async function handleConvertToLead(lead) {
+    setConvertingLeadId(lead.id);
+    setConvertResults((current) => ({ ...current, [lead.id]: null }));
+    try {
+      const result = await leadsApi.convertFromEmailLead(lead.id);
+      setConvertResults((current) => ({ ...current, [lead.id]: { ok: true, ...result } }));
+      setRepliedLeads((current) =>
+        current.map((l) => (l.id === lead.id ? { ...l, convertedToLeadId: result.lead.id } : l))
+      );
+    } catch (error) {
+      setConvertResults((current) => ({ ...current, [lead.id]: { ok: false, error: error.message } }));
+    } finally {
+      setConvertingLeadId(null);
     }
   }
 
@@ -1071,6 +1099,7 @@ export function useEmailOutreachState() {
     emailAccounts, newAccountForm, setNewAccountForm,
     selectedCampaign, selectedLead, selectedLeadTimeline, activeReplyRule,
     liveSteps, workflowSteps, replyAction,
+    convertingLeadId, convertResults, handleConvertToLead,
     handleFormChange, handleTemplateDraftChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
     handleToggleCampaignStatus, handleAddLead, handleImportCsv, handleAddEmailAccount,
     handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation,

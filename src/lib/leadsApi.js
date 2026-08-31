@@ -14,6 +14,9 @@ export const leadsApi = {
   bulkCreate: (rows) => request("/bulk", { method: "POST", body: { rows } }),
   patch: (id, body) => request(`/${id}`, { method: "PATCH", body }),
   sendPortalInvite: (id) => request(`/${id}/portal-invite`, { method: "POST" }),
+  // Converts a cold-outreach EmailLead into a real CRM Lead and fires the
+  // portal invite on it in the same step — see server/src/routes/leads.js.
+  convertFromEmailLead: (emailLeadId) => request(`/from-email-lead/${emailLeadId}`, { method: "POST" }),
   // This one lead's real progress across the full deal lifecycle — see
   // server/src/lib/leadPipeline.js.
   pipeline: (id) => request(`/${id}/pipeline`),

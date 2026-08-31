@@ -271,6 +271,27 @@ router.post("/bulk", async (req, res, next) => {
   }
 });
 
+// Shared by the manual "Send Portal Invite" button and the from-email-lead
+// conversion route below — same token/email logic either way, just a
+// different trigger. Returns a plain result object rather than touching
+// `res` directly so both callers can shape their own response.
+async function sendPortalInviteForLead(lead) {
+  if (lead.clientUser) {
+    return { ok: false, status: 400, error: `${lead.company} already has a portal account (${lead.clientUser.email}).` };
+  }
+  if (!lead.email) {
+    return { ok: false, status: 400, error: "This lead has no email address on file — add one before inviting them." };
+  }
+
+  const token = signClientInviteToken(lead.id);
+  const inviteUrl = `${apiBaseUrl()}/api/client-portal/register/${token}`;
+
+  const { subject, html, text } = clientPortalInviteEmail({ contactName: lead.name, company: lead.company, registerUrl: inviteUrl });
+  const result = await sendSystemEmail({ to: lead.email, subject, html, text });
+
+  return { ok: true, inviteUrl, sent: result.sent, reason: result.sent ? undefined : result.reason };
+}
+
 // Deliberately triggered per-lead by a rep, not auto-sent to every cold
 // contact: the client portal only means something once there's a real
 // deal underway to show progress on, and most cold-email recipients never
@@ -283,20 +304,51 @@ router.post("/:id/portal-invite", async (req, res, next) => {
   try {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: true } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
-    if (lead.clientUser) {
-      return res.status(400).json({ error: `${lead.company} already has a portal account (${lead.clientUser.email}).` });
+
+    const result = await sendPortalInviteForLead(lead);
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
+
+    res.json({ inviteUrl: result.inviteUrl, sent: result.sent, reason: result.reason });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Turns a cold-outreach EmailLead into a real CRM Lead and immediately
+// fires the portal invite on it — the actual trigger point the team wants
+// (see the note above): a cold contact only gets a portal invite once
+// they're converted into a tracked deal, not on the first cold email.
+router.post("/from-email-lead/:emailLeadId", async (req, res, next) => {
+  try {
+    const emailLead = await prisma.emailLead.findUnique({ where: { id: req.params.emailLeadId } });
+    if (!emailLead) return res.status(404).json({ error: "Email lead not found" });
+    if (emailLead.convertedToLeadId) {
+      return res.status(400).json({ error: "This contact has already been converted to a CRM lead." });
     }
-    if (!lead.email) {
-      return res.status(400).json({ error: "This lead has no email address on file — add one before inviting them." });
-    }
 
-    const token = signClientInviteToken(lead.id);
-    const inviteUrl = `${apiBaseUrl()}/api/client-portal/register/${token}`;
+    const lead = await prisma.lead.create({
+      data: buildLeadCreateData({
+        name: emailLead.name,
+        company: emailLead.company,
+        email: emailLead.email,
+        owner: emailLead.owner,
+        leadSource: "Cold outreach reply"
+      })
+    });
 
-    const { subject, html, text } = clientPortalInviteEmail({ contactName: lead.name, company: lead.company, registerUrl: inviteUrl });
-    const result = await sendSystemEmail({ to: lead.email, subject, html, text });
+    await prisma.emailLead.update({
+      where: { id: emailLead.id },
+      data: { convertedToLeadId: lead.id, convertedAt: new Date() }
+    });
 
-    res.json({ inviteUrl, sent: result.sent, reason: result.sent ? undefined : result.reason });
+    const invite = await sendPortalInviteForLead(lead);
+
+    res.status(201).json({
+      lead,
+      inviteUrl: invite.ok ? invite.inviteUrl : undefined,
+      sent: invite.ok ? invite.sent : false,
+      reason: invite.ok ? invite.reason : invite.error
+    });
   } catch (err) {
     next(err);
   }
