@@ -96,6 +96,34 @@ export function welcomeEmail({ name, email, temporaryPassword, appUrl }) {
   };
 }
 
+export function zoomMeetingInviteEmail({ contactName, company, topic, startTime, durationMinutes, joinUrl, hostName }) {
+  const when = new Date(startTime).toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short"
+  });
+  return {
+    subject: `Zoom call scheduled — ${topic}`,
+    text: `Hi ${contactName},\n\n${hostName} has scheduled a Zoom call with you.\n\nTopic: ${topic}\nWhen: ${when}\nDuration: ${durationMinutes} minutes\n\nJoin: ${joinUrl}`,
+    html: shell(
+      "Zoom call scheduled",
+      `<p style="font-size:15px;color:#334463;line-height:1.6">Hi ${contactName},</p>
+       <p style="font-size:15px;color:#334463;line-height:1.6">${hostName} has scheduled a Zoom call with you${company ? ` regarding ${company}` : ""}.</p>
+       <table style="font-size:15px;color:#334463;border-collapse:collapse;margin:18px 0">
+         <tr><td style="padding:6px 16px 6px 0;color:#8592ab">Topic</td><td><strong>${topic}</strong></td></tr>
+         <tr><td style="padding:6px 16px 6px 0;color:#8592ab">When</td><td><strong>${when}</strong></td></tr>
+         <tr><td style="padding:6px 16px 6px 0;color:#8592ab">Duration</td><td><strong>${durationMinutes} minutes</strong></td></tr>
+       </table>
+       <p style="margin:24px 0"><a href="${joinUrl}" style="background:#3046b2;color:#fff;text-decoration:none;padding:12px 22px;border-radius:12px;font-weight:600;display:inline-block">Join Zoom call</a></p>
+       <p style="font-size:13px;color:#8592ab;line-height:1.6">If the button doesn't work, paste this into your browser:<br><span style="word-break:break-all">${joinUrl}</span></p>`
+    )
+  };
+}
+
 export function clientPortalInviteEmail({ contactName, company, registerUrl }) {
   return {
     subject: `${company} — set up your Global Capital BV client portal`,
