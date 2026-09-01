@@ -15,14 +15,19 @@ import { injectTrackingPixel, wrapLinksForClickTracking } from "./emailTracking.
 // autoRespond.js), which fires when a reply is classified — not just when
 // a human clicks a button in the UI.
 
+// unsubscribeRouter/ndaRouter are both mounted at /api/unsubscribe and
+// /api/nda (see app.js) — these links previously omitted /api entirely, so
+// every real recipient who clicked "unsubscribe" or the NDA-sign link in an
+// actual sent email hit the global auth gate instead of the real public
+// route and got a bare 401, with no way to unsubscribe or sign at all.
 export function unsubscribeUrlFor(leadId) {
   const base = process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 8787}`;
-  return `${base}/unsubscribe/${leadId}/${signUnsubscribeToken(leadId)}`;
+  return `${base}/api/unsubscribe/${leadId}/${signUnsubscribeToken(leadId)}`;
 }
 
 export function ndaSignUrlFor(leadId) {
   const base = process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 8787}`;
-  return `${base}/nda/${leadId}/${signNdaToken(leadId)}`;
+  return `${base}/api/nda/${leadId}/${signNdaToken(leadId)}`;
 }
 
 function httpError(status, message) {

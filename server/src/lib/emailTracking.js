@@ -4,12 +4,17 @@ function trackingBaseUrl() {
   return process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 8787}`;
 }
 
+// trackingRouter is mounted at /api/track (see app.js) — these previously
+// omitted /api, so every open-tracking pixel and click-tracked link in a
+// real sent email hit the global auth gate (401) instead of the actual
+// public route: opens were never recorded, and a clicked link never
+// redirected the recipient anywhere.
 export function trackingPixelUrl(activityLogId) {
-  return `${trackingBaseUrl()}/track/open/${activityLogId}/${signTrackingToken(activityLogId)}`;
+  return `${trackingBaseUrl()}/api/track/open/${activityLogId}/${signTrackingToken(activityLogId)}`;
 }
 
 export function trackingClickUrl(activityLogId, destinationUrl) {
-  return `${trackingBaseUrl()}/track/click/${activityLogId}/${signTrackingToken(activityLogId)}?url=${encodeURIComponent(destinationUrl)}`;
+  return `${trackingBaseUrl()}/api/track/click/${activityLogId}/${signTrackingToken(activityLogId)}?url=${encodeURIComponent(destinationUrl)}`;
 }
 
 // Appends a 1x1 invisible tracking pixel just before </body> (or at the end
