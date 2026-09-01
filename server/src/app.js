@@ -53,6 +53,11 @@ import { emailAiAgentRouter } from "./routes/emailAiAgent.js";
 
 const app = express();
 
+// Needed for the login rate limiters below to key on the real client IP
+// instead of a reverse proxy's — safe to set even when there's no proxy in
+// front of this process (Express just falls back to the raw socket address).
+app.set("trust proxy", 1);
+
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(",") ?? true }));
 // `verify` stashes the exact raw bytes on req.rawBody before JSON-parsing —
 // needed by the Calendly webhook's signature check, which has to hash the
