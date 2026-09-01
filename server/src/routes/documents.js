@@ -26,14 +26,20 @@ function publicDocument(doc) {
     verified: doc.verified,
     verifiedAt: doc.verifiedAt,
     verifiedBy: doc.verifiedBy ? { id: doc.verifiedBy.id, name: doc.verifiedBy.name } : null,
+    leadId: doc.leadId,
     createdAt: doc.createdAt
   };
 }
 
+// leadId is optional everywhere below — omitting it preserves the existing
+// company-wide library view untouched (null leadId documents plus every
+// deal-scoped one all show up together, exactly like before this field
+// existed); passing it scopes strictly to that one deal's Data Room.
 documentsRouter.get("/", asyncHandler(async (req, res) => {
-  const { category, q } = req.query;
+  const { category, q, leadId } = req.query;
   const docs = await prisma.document.findMany({
     where: {
+      ...(leadId ? { leadId: String(leadId) } : {}),
       ...(category && category !== "All" ? { category } : {}),
       ...(q
         ? {
@@ -51,8 +57,13 @@ documentsRouter.get("/", asyncHandler(async (req, res) => {
   res.json(docs.map(publicDocument));
 }));
 
-documentsRouter.get("/categories", asyncHandler(async (_req, res) => {
-  const grouped = await prisma.document.groupBy({ by: ["category"], _count: { category: true } });
+documentsRouter.get("/categories", asyncHandler(async (req, res) => {
+  const { leadId } = req.query;
+  const grouped = await prisma.document.groupBy({
+    by: ["category"],
+    where: leadId ? { leadId: String(leadId) } : {},
+    _count: { category: true }
+  });
   res.json(grouped.map((g) => ({ category: g.category, count: g._count.category })).sort((a, b) => a.category.localeCompare(b.category)));
 }));
 
@@ -65,9 +76,10 @@ documentsRouter.get("/required-documents", (_req, res) => res.json(REQUIRED_DOCU
 // reviewed) — both are surfaced since the framework's own status flow
 // (Requested → Received → Verified) treats them as genuinely different
 // milestones, not just two names for the same thing.
-documentsRouter.get("/kpis", asyncHandler(async (_req, res) => {
+documentsRouter.get("/kpis", asyncHandler(async (req, res) => {
+  const { leadId } = req.query;
   const docs = await prisma.document.findMany({
-    where: { category: { in: REQUIRED_DOCUMENT_LABELS } },
+    where: { category: { in: REQUIRED_DOCUMENT_LABELS }, ...(leadId ? { leadId: String(leadId) } : {}) },
     select: { category: true, verified: true }
   });
 
@@ -112,6 +124,12 @@ documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) =
       ? (await classifyDocumentCategory({ filename: req.file.originalname, text })) ?? requestedCategory
       : requestedCategory;
 
+  const leadId = req.body?.leadId ? String(req.body.leadId).trim() : null;
+  if (leadId) {
+    const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { id: true } });
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+  }
+
   const doc = await prisma.document.create({
     data: {
       originalName: req.file.originalname,
@@ -122,7 +140,8 @@ documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) =
       description: req.body?.description?.trim() || null,
       extractedText: text,
       extractionNote: note,
-      uploadedById: req.user?.id ?? null
+      uploadedById: req.user?.id ?? null,
+      leadId
     },
     include: { uploadedBy: { select: { id: true, name: true } }, verifiedBy: { select: { id: true, name: true } } }
   });
@@ -135,8 +154,10 @@ documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) =
 // required-documents checklist — see lib/documentClassifier.js. Read-only:
 // nothing here is stored, it's recomputed fresh on every call so it always
 // reflects the current Data Room.
-documentsRouter.post("/gap-check", asyncHandler(async (_req, res) => {
+documentsRouter.post("/gap-check", asyncHandler(async (req, res) => {
+  const { leadId } = req.body ?? {};
   const documents = await prisma.document.findMany({
+    where: leadId ? { leadId: String(leadId) } : {},
     orderBy: { createdAt: "desc" },
     select: { id: true, originalName: true, category: true, description: true, extractedText: true }
   });

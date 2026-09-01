@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { documentsApi } from "../../lib/documentsApi";
+import { leadsApi } from "../../lib/leadsApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
 import {
   AttachmentIcon,
@@ -44,6 +45,16 @@ export function DataRoomModule() {
   const [requiredDocuments, setRequiredDocuments] = useState([]);
   const [activeCategory, setActiveCategory] = useState("All");
   const [query, setQuery] = useState("");
+
+  // "" = the company-wide library (every document, exactly like before this
+  // existed). Set to a lead's id to scope everything below to that one
+  // deal's own Data Room instead — same picker convention as NdaModule.
+  const [leads, setLeads] = useState([]);
+  const [selectedLeadId, setSelectedLeadId] = useState("");
+  useEffect(() => {
+    leadsApi.list().then(setLeads).catch(() => {});
+  }, []);
+  const selectedLead = leads.find((l) => l.id === selectedLeadId) ?? null;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -70,19 +81,28 @@ export function DataRoomModule() {
   const [gapGeneratedAt, setGapGeneratedAt] = useState(null);
   const [gapLoading, setGapLoading] = useState(false);
   const [gapMessage, setGapMessage] = useState(null);
+  // A gap check run for one lead (or the company library) is meaningless
+  // once the picker switches scope — cleared rather than shown stale.
+  useEffect(() => {
+    setGapResults(null);
+    setGapMessage(null);
+  }, [selectedLeadId]);
 
   // Real numbers for the Data Room KPI framework's completion formula
   // (Verified ÷ Requested × 100) — refetched after anything that could
   // change them (upload, delete, verify toggle).
   const [kpis, setKpis] = useState(null);
   const loadKpis = useCallback(() => {
-    documentsApi.kpis().then(setKpis).catch(() => {});
-  }, []);
+    documentsApi.kpis(selectedLeadId || undefined).then(setKpis).catch(() => {});
+  }, [selectedLeadId]);
   useEffect(loadKpis, [loadKpis]);
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([documentsApi.list({ category: activeCategory, q: query }), documentsApi.categories()])
+    Promise.all([
+      documentsApi.list({ category: activeCategory, q: query, leadId: selectedLeadId || undefined }),
+      documentsApi.categories(selectedLeadId || undefined)
+    ])
       .then(([docs, cats]) => {
         setDocuments(docs);
         setCategories(cats);
@@ -90,7 +110,7 @@ export function DataRoomModule() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [activeCategory, query]);
+  }, [activeCategory, query, selectedLeadId]);
 
   // Debounced so typing in the search box doesn't fire a request per key.
   useEffect(() => {
@@ -106,7 +126,7 @@ export function DataRoomModule() {
     setGapLoading(true);
     setGapMessage(null);
     try {
-      const result = await documentsApi.gapCheck();
+      const result = await documentsApi.gapCheck(selectedLeadId || undefined);
       if (!result.configured) {
         setGapMessage(result.message);
         setGapResults(null);
@@ -130,7 +150,7 @@ export function DataRoomModule() {
     const results = [];
     for (const file of files) {
       try {
-        const doc = await documentsApi.upload(file, { category: uploadCategory, description: uploadDescription });
+        const doc = await documentsApi.upload(file, { category: uploadCategory, description: uploadDescription, leadId: selectedLeadId || undefined });
         results.push(doc);
       } catch (err) {
         setUploadError(`${file.name}: ${err.message}`);
@@ -165,7 +185,7 @@ export function DataRoomModule() {
     const results = [];
     for (const file of files) {
       try {
-        const doc = await documentsApi.upload(file, { category: item.label, description: "" });
+        const doc = await documentsApi.upload(file, { category: item.label, description: "", leadId: selectedLeadId || undefined });
         results.push(doc);
       } catch (err) {
         setUploadError(`${file.name}: ${err.message}`);
@@ -221,11 +241,30 @@ export function DataRoomModule() {
           <AttachmentIcon className="size-4" />
           Data Room
         </span>
-        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Company documents</h1>
+        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">
+          {selectedLead ? `${selectedLead.company}'s Data Room` : "Company documents"}
+        </h1>
         <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
-          Contracts, reports, decks and images in one place. Text-based files are read on upload so the AI Assistant can
-          answer questions from them and cite the file it used.
+          {selectedLead
+            ? `Documents and checklist status for ${selectedLead.name} at ${selectedLead.company} — scoped to this deal only.`
+            : "Contracts, reports, decks and images in one place. Text-based files are read on upload so the AI Assistant can answer questions from them and cite the file it used."}
         </p>
+
+        <div className="mt-5 max-w-sm">
+          <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Deal</label>
+          <select
+            className="w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+            value={selectedLeadId}
+            onChange={(e) => setSelectedLeadId(e.target.value)}
+          >
+            <option value="">Company library (all documents)</option>
+            {leads.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name} — {l.company}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-3">
           <StatCard card={{ label: "Documents", value: String(total), note: "In the data room", noteTone: "blue" }} />
@@ -248,7 +287,9 @@ export function DataRoomModule() {
           subtitle={
             gapResults
               ? `AI gap check ran ${new Date(gapGeneratedAt).toLocaleString()} — verdicts below are based on real document content, not just category tags.`
-              : "The standard due-diligence request list — upload a file tagged with one of these categories to mark it received (leave Category as \"General\" and the AI will try to tag it for you). Reference only, not tied to a specific deal."
+              : selectedLead
+                ? `The standard due-diligence request list, checked against ${selectedLead.company}'s own uploads only — upload a file tagged with one of these categories to mark it received.`
+                : "The standard due-diligence request list — upload a file tagged with one of these categories to mark it received (leave Category as \"General\" and the AI will try to tag it for you). Reference only, not tied to a specific deal — pick a deal above to check one lead's own documents."
           }
           action={
             <ActionButton

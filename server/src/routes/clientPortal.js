@@ -479,7 +479,11 @@ async function loadPortalData(leadId) {
     prisma.visitPlan.findMany({ where: { leadId } }),
     prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "FIELD_VISIT" } } }),
     prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "TERM_SHEET" } } }),
-    prisma.document.findMany({ select: { category: true }, distinct: ["category"] })
+    // Scoped to this lead's own uploads — unscoped before, which meant any
+    // client's portal could show a checklist item "received" just because
+    // some OTHER lead's (or an unrelated admin general-library) document
+    // happened to share that category tag.
+    prisma.document.findMany({ where: { leadId }, select: { category: true }, distinct: ["category"] })
   ]);
 
   const uploadedCategories = new Set(documentCategories.map((d) => d.category));
@@ -805,7 +809,8 @@ clientPortalRouter.post(
         description: `Uploaded by ${req.clientUser.name} via the client portal`,
         extractedText: text,
         extractionNote: note,
-        uploadedById: null
+        uploadedById: null,
+        leadId: req.clientUser.leadId
       }
     });
 
@@ -864,9 +869,10 @@ clientPortalRouter.post(
     // so it shows up in the Data Room and is searchable by the AI
     // assistant like any other document — uploadedById is null because a
     // ClientUser isn't a staff User, the two identity systems don't cross.
-    // The description is the only place this records WHO uploaded it (see
-    // schema note on the Document model — there's no per-lead relation),
-    // same convention the NDA upload above already uses.
+    // leadId scopes it to this client's own deal (previously there was no
+    // structured lead link at all — description was the only place WHO
+    // uploaded it was recorded, which is how a different lead's upload
+    // could silently count toward this lead's checklist).
     await prisma.document.create({
       data: {
         originalName: req.file.originalname,
@@ -877,7 +883,8 @@ clientPortalRouter.post(
         description: `Uploaded by ${req.clientUser.name} (${req.clientUser.lead.company}) via the client portal`,
         extractedText: text,
         extractionNote: note,
-        uploadedById: null
+        uploadedById: null,
+        leadId: req.clientUser.leadId
       }
     });
 

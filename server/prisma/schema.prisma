@@ -261,6 +261,15 @@ model Document {
   uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   uploadedById String?
 
+  // Which deal this document belongs to. Null = the general company-wide
+  // library (company profile, standard terms, etc. — not deal-specific,
+  // used to ground the AI Assistant generally), same "null means legacy/
+  // unscoped" convention as EmailCampaign.ownerChannelPartnerId. SetNull
+  // rather than Cascade so deleting a Lead doesn't delete/orphan-on-disk a
+  // real uploaded file — it just falls back into the unscoped library.
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  leadId String?
+
   // Data Room KPI framework's status flow is Requested → Received →
   // Verified (see KPI Framework doc) — a document is "Received" the moment
   // it's uploaded, but only counts toward the completion % once someone
@@ -281,6 +290,7 @@ model Document {
 
   @@index([category])
   @@index([createdAt])
+  @@index([leadId])
 }
 
 // The deal progression a lead moves through: NDA -> Zoom call -> Data Room
@@ -442,6 +452,7 @@ model Lead {
   visitPlans VisitPlan[]
   ioiRecord  IoiRecord?
   clientUser ClientUser?
+  documents  Document[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
