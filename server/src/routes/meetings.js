@@ -62,6 +62,11 @@ router.post("/", async (req, res, next) => {
     try {
       zoomMeeting = await createZoomMeeting({
         ...settings,
+        // Each employee schedules as their own licensed Zoom user when one
+        // is assigned (Admin Panel -> Employees), so their meetings run
+        // concurrently under separate hosts instead of all landing on the
+        // one global fallback account.
+        hostEmail: req.user.zoomHostEmail || settings.hostEmail,
         topic,
         startTime,
         durationMinutes: durationMinutes ?? 30

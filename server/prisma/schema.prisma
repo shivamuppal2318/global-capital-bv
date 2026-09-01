@@ -126,6 +126,12 @@ model User {
   // an admin's access means demoting them first.
   permissions String[] @default([])
 
+  // The Zoom user this employee schedules meetings as (must be a licensed
+  // user under the account tied to ZoomSettings' Server-to-Server app).
+  // Null falls back to ZoomSettings.hostEmail, so meetings keep working for
+  // employees no one has assigned a Zoom seat to yet.
+  zoomHostEmail String?
+
   // Personal SMTP mailboxes this employee owns (see EmailAccount.ownerId).
   emailAccounts EmailAccount[]
   passwordResets PasswordResetToken[]
