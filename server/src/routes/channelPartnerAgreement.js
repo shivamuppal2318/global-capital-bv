@@ -23,16 +23,56 @@ function escapeHtml(str) {
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+// Matches the real app's own branding (LoginPage.jsx's split-screen shell:
+// green circle badge + "Global Capital BV", #1b295f accents) — this page is
+// a channel partner's first real contact with the product, before they've
+// ever seen the SPA itself, so it shouldn't look like a bare unstyled form.
 function pageShell(body) {
   return `<!doctype html>
 <html>
-  <head><meta charset="utf-8" /><title>Channel Partner Agreement</title></head>
-  <body style="font-family:'Segoe UI',Arial,sans-serif;background:#f4f7fb;padding:40px;margin:0;">
-    <div style="max-width:760px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px;">
-      ${body}
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Channel Partner Agreement</title>
+  </head>
+  <body style="font-family:'Segoe UI',Arial,sans-serif;background:#f7f9fc;padding:48px 20px;margin:0;color:#12213a;">
+    <div style="max-width:760px;margin:0 auto;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+        <div style="width:44px;height:44px;border-radius:16px;background:#ebf6ef;display:flex;align-items:center;justify-content:center;">
+          <div style="width:28px;height:28px;border-radius:999px;background:#ffffff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#2b9b60;">GC</div>
+        </div>
+        <p style="font-size:14px;font-weight:600;color:#102246;margin:0;">Global Capital BV</p>
+      </div>
+      <div style="background:#ffffff;border:1px solid #e7edf5;border-radius:16px;padding:32px;box-shadow:0 4px 16px rgba(30,48,87,0.06);">
+        ${body}
+      </div>
     </div>
   </body>
 </html>`;
+}
+
+// A short, centered confirmation card (success, already-signed, or an
+// error) — distinct from the wide agreement/form layout above, since these
+// have no long document or fields to fit.
+function noticeCard({ icon, iconBg, iconColor, title, body }) {
+  return `
+    <div style="text-align:center;padding:12px 0;">
+      <div style="width:56px;height:56px;border-radius:999px;background:${iconBg};display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:26px;color:${iconColor};">${icon}</div>
+      <h1 style="font-size:20px;font-weight:600;color:#102246;margin:0 0 12px;">${title}</h1>
+      <div style="font-size:14px;line-height:1.7;color:#4f6181;">${body}</div>
+    </div>`;
+}
+
+function unknownRecipientNotice() {
+  return pageShell(
+    noticeCard({
+      icon: "!",
+      iconBg: "#fdeceb",
+      iconColor: "#e0483f",
+      title: "Unknown recipient",
+      body: "This link doesn't match any channel partner on file. Ask whoever sent it for a fresh link."
+    })
+  );
 }
 
 // The real Channel Partner Agreement text (from "Channel Partner(Boutique
@@ -198,13 +238,19 @@ Name: ${partnerLine}`;
 channelPartnerAgreementRouter.get("/:partnerId/:token", requireValidToken, asyncHandler(async (req, res) => {
   const partner = await prisma.channelPartner.findUnique({ where: { id: req.params.partnerId } });
   if (!partner) {
-    return res.status(404).send(pageShell("<p>Unknown recipient.</p>"));
+    return res.status(404).send(unknownRecipientNotice());
   }
 
   if (partner.agreementSignedAt) {
     return res.send(
       pageShell(
-        `<p>This Channel Partner Agreement was already signed by ${escapeHtml(partner.agreementSignedName)} on ${partner.agreementSignedAt.toDateString()}. No further action is needed.</p>`
+        noticeCard({
+          icon: "✓",
+          iconBg: "#dff5e7",
+          iconColor: "#2b9b60",
+          title: "Already signed",
+          body: `This Channel Partner Agreement was already signed by <strong>${escapeHtml(partner.agreementSignedName)}</strong> on ${partner.agreementSignedAt.toDateString()}. No further action is needed.`
+        })
       )
     );
   }
@@ -217,35 +263,47 @@ channelPartnerAgreementRouter.get("/:partnerId/:token", requireValidToken, async
 
   const signError = req.query.error ? String(req.query.error) : null;
 
+  const inputStyle =
+    "display:block;margin-top:6px;width:100%;padding:10px 12px;border:1px solid #d6deea;border-radius:10px;box-sizing:border-box;font-size:14px;color:#102246;font-family:inherit;";
+  const labelStyle = "display:block;margin:0 0 14px;font-size:13px;font-weight:600;color:#334463;";
+
   res.send(
     pageShell(`
-      <h1 style="font-size:18px;">Channel Partner Agreement — ${escapeHtml(partner.name)}</h1>
-      <pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.6;color:#435471;background:#f8faff;border-radius:8px;padding:16px;max-height:480px;overflow-y:auto;">${escapeHtml(agreementText)}</pre>
-      ${signError ? `<p style="color:#e0483f;font-size:13px;margin:16px 0 0;">${escapeHtml(signError)}</p>` : ""}
+      <span style="display:inline-block;background:#eef2ff;color:#3046b2;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:5px 12px;border-radius:999px;">Channel Partner Agreement</span>
+      <h1 style="font-size:24px;font-weight:600;color:#102246;margin:14px 0 4px;letter-spacing:-0.01em;">${escapeHtml(partner.name)}</h1>
+      <p style="font-size:13px;color:#8592ab;margin:0 0 20px;">Review the agreement below, then sign it and set up your portal login.</p>
+
+      <pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.6;color:#435471;background:#f8faff;border:1px solid #e7edf5;border-radius:12px;padding:18px;max-height:420px;overflow-y:auto;margin:0 0 24px;">${escapeHtml(agreementText)}</pre>
+
+      ${signError ? `<p style="background:#fdeceb;color:#e0483f;font-size:13px;font-weight:500;padding:10px 14px;border-radius:10px;margin:0 0 16px;">${escapeHtml(signError)}</p>` : ""}
+
       <form method="POST">
-        <label style="display:block;margin:16px 0 8px;font-size:14px;">
-          Type your full name to sign:
-          <input name="fullName" required style="display:block;margin-top:4px;width:100%;padding:8px;border:1px solid #d6deea;border-radius:8px;box-sizing:border-box;" />
+        <label style="${labelStyle}">
+          Type your full name to sign
+          <input name="fullName" required style="${inputStyle}font-weight:400;" />
         </label>
-        <label style="display:block;margin:16px 0;font-size:14px;">
-          <input type="checkbox" name="agree" required /> I have read and agree to the terms of this Channel Partner Agreement
-        </label>
-
-        <p style="margin:20px 0 8px;font-size:14px;font-weight:600;color:#334463;">Set up your portal login</p>
-        <p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">
-          Signing creates your Channel Partner Portal account, where you can add your own leads and run your own
-          outreach campaigns.
-        </p>
-        <label style="display:block;margin:0 0 12px;font-size:14px;">
-          Email
-          <input type="email" name="email" required style="display:block;margin-top:4px;width:100%;padding:8px;border:1px solid #d6deea;border-radius:8px;box-sizing:border-box;" />
-        </label>
-        <label style="display:block;margin:0 0 16px;font-size:14px;">
-          Password (at least 8 characters)
-          <input type="password" name="password" required minlength="8" style="display:block;margin-top:4px;width:100%;padding:8px;border:1px solid #d6deea;border-radius:8px;box-sizing:border-box;" />
+        <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 24px;font-size:13px;color:#4f6181;font-weight:400;">
+          <input type="checkbox" name="agree" required style="margin-top:2px;" />
+          I have read and agree to the terms of this Channel Partner Agreement
         </label>
 
-        <button type="submit" style="background:#3046b2;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;cursor:pointer;">
+        <div style="border-top:1px solid #e7edf5;padding-top:20px;">
+          <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#102246;">Set up your portal login</p>
+          <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#8592ab;">
+            Signing creates your Channel Partner Portal account, where you can add your own leads and run your own
+            outreach campaigns.
+          </p>
+          <label style="${labelStyle}">
+            Email
+            <input type="email" name="email" required style="${inputStyle}font-weight:400;" placeholder="you@partner.com" />
+          </label>
+          <label style="${labelStyle.replace("margin:0 0 14px", "margin:0 0 24px")}">
+            Password (at least 8 characters)
+            <input type="password" name="password" required minlength="8" style="${inputStyle}font-weight:400;" placeholder="••••••••" />
+          </label>
+        </div>
+
+        <button type="submit" style="width:100%;background:#1b295f;color:#fff;border:none;border-radius:12px;padding:14px 20px;font-size:15px;font-weight:600;cursor:pointer;">
           Sign Agreement &amp; Create Portal Account
         </button>
       </form>
@@ -275,10 +333,20 @@ channelPartnerAgreementRouter.post("/:partnerId/:token", requireValidToken, asyn
 
   const partner = await prisma.channelPartner.findUnique({ where: { id: req.params.partnerId } });
   if (!partner) {
-    return res.status(404).send(pageShell("<p>Unknown recipient.</p>"));
+    return res.status(404).send(unknownRecipientNotice());
   }
   if (partner.agreementSignedAt) {
-    return res.send(pageShell("<p>This Channel Partner Agreement has already been signed.</p>"));
+    return res.send(
+      pageShell(
+        noticeCard({
+          icon: "✓",
+          iconBg: "#dff5e7",
+          iconColor: "#2b9b60",
+          title: "Already signed",
+          body: "This Channel Partner Agreement has already been signed. No further action is needed."
+        })
+      )
+    );
   }
 
   // A ChannelPartnerUser's email is globally unique (see schema.prisma) —
@@ -312,8 +380,14 @@ channelPartnerAgreementRouter.post("/:partnerId/:token", requireValidToken, asyn
 
   res.send(
     pageShell(
-      `<p>Thanks, ${escapeHtml(parsed.data.fullName)} — your Channel Partner Agreement has been recorded and your portal account is ready.</p>
-       <p style="margin-top:12px;"><a href="/partner/login" style="color:#3046b2;font-weight:600;">Log in to the Channel Partner Portal →</a></p>`
+      noticeCard({
+        icon: "✓",
+        iconBg: "#dff5e7",
+        iconColor: "#2b9b60",
+        title: "You're all set",
+        body: `Thanks, ${escapeHtml(parsed.data.fullName)} — your Channel Partner Agreement has been recorded and your portal account is ready.
+          <a href="/partner/login" style="display:inline-block;margin-top:20px;background:#1b295f;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 24px;border-radius:12px;">Log in to the Channel Partner Portal →</a>`
+      })
     )
   );
 }));
