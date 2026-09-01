@@ -48,7 +48,8 @@ const PIPELINE_STATUS_STYLE = {
 function LeadDetailModal({
   lead, overview, pipeline, pipelineLoading, onClose,
   editing, editForm, setEditForm, saving, saveError, startEdit, setEditing, saveEdit,
-  activeTab, setActiveTab, facets, inviting, inviteResult, onSendInvite
+  activeTab, setActiveTab, facets, inviting, inviteResult, onSendInvite,
+  resettingPassword, resetResult, onResetPassword, previewLoading, previewError, onViewClientDashboard
 }) {
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -111,7 +112,63 @@ function LeadDetailModal({
           </div>
 
           {lead.clientUser ? (
-            <p className="mt-2 text-[12px] text-[#8592ab]">Portal account already active — {lead.clientUser.email}</p>
+            <div className="mt-4 rounded-[14px] border border-[#e7edf5] bg-[#f8faff] px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-[13px] font-semibold text-[#102246]">Client Portal Account</p>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                    lead.clientUser.status === "SUSPENDED" ? noteToneClass.amber : noteToneClass.green
+                  }`}
+                >
+                  {lead.clientUser.status === "SUSPENDED" ? "Suspended" : "Active"}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 text-[13px] text-[#435471] sm:grid-cols-2">
+                <p>
+                  <span className="text-[#8592ab]">Login ID (email)</span>
+                  <br />
+                  <span className="font-medium text-[#102246]">{lead.clientUser.email}</span>
+                </p>
+                <p>
+                  <span className="text-[#8592ab]">Last login</span>
+                  <br />
+                  <span className="font-medium text-[#102246]">
+                    {lead.clientUser.lastLoginAt ? new Date(lead.clientUser.lastLoginAt).toLocaleString() : "Never"}
+                  </span>
+                </p>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <ActionButton
+                  label={resettingPassword ? "Resetting…" : "Reset Password"}
+                  icon={SendIcon}
+                  onClick={onResetPassword}
+                  disabled={resettingPassword}
+                />
+                <ActionButton
+                  label={previewLoading ? "Opening…" : "View Client Dashboard"}
+                  icon={RadarIcon}
+                  onClick={onViewClientDashboard}
+                  disabled={previewLoading}
+                />
+              </div>
+              {resetResult ? (
+                <div className="mt-3 rounded-[10px] border border-[#e7edf5] bg-white px-3 py-2.5 text-[12.5px]">
+                  {resetResult.ok ? (
+                    <div>
+                      <p className="text-[#2a9c60]">
+                        New password for {resetResult.email} — share it with them directly, it won't be shown again:
+                      </p>
+                      <p className="mt-1.5 break-all rounded-[8px] bg-[#f7f9fc] px-3 py-2 font-mono text-[12px] text-[#3046b2]">
+                        {resetResult.temporaryPassword}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-[#e0483f]">{resetResult.error}</p>
+                  )}
+                </div>
+              ) : null}
+              {previewError ? <p className="mt-2 text-[12.5px] text-[#e0483f]">{previewError}</p> : null}
+            </div>
           ) : null}
 
           {inviteResult ? (
@@ -279,6 +336,10 @@ export function CrmWorkspaceModule() {
   const [saveError, setSaveError] = useState(null);
   const [inviting, setInviting] = useState(false);
   const [inviteResult, setInviteResult] = useState(null);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [resetResult, setResetResult] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
   const [pipeline, setPipeline] = useState(null);
   const [pipelineLoading, setPipelineLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -478,6 +539,32 @@ export function CrmWorkspaceModule() {
     }
   };
 
+  const resetClientPassword = async () => {
+    setResettingPassword(true);
+    setResetResult(null);
+    try {
+      const result = await leadsApi.resetClientPassword(selectedLead.id);
+      setResetResult({ ok: true, ...result });
+    } catch (err) {
+      setResetResult({ ok: false, error: err.message });
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
+  const viewClientDashboard = async () => {
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const result = await leadsApi.clientPortalPreviewLink(selectedLead.id);
+      window.open(result.previewUrl, "_blank", "noopener");
+    } catch (err) {
+      setPreviewError(err.message);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const unassigned = leads.filter((l) => !l.owner).length;
   const convertedPct = leads.length ? ((leads.filter((l) => l.status === "CONVERTED").length / leads.length) * 100).toFixed(1) : "0.0";
   const qualifiedCount = leads.filter((l) => l.qualified).length;
@@ -656,6 +743,12 @@ export function CrmWorkspaceModule() {
           inviting={inviting}
           inviteResult={inviteResult}
           onSendInvite={sendPortalInvite}
+          resettingPassword={resettingPassword}
+          resetResult={resetResult}
+          onResetPassword={resetClientPassword}
+          previewLoading={previewLoading}
+          previewError={previewError}
+          onViewClientDashboard={viewClientDashboard}
         />
       ) : null}
 

@@ -458,6 +458,23 @@ model ClientUser {
   lastLoginAt  DateTime?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
+
+  passwordResets ClientPasswordResetToken[]
+}
+
+// Mirrors PasswordResetToken (staff) — kept as its own model rather than a
+// shared/polymorphic table since ClientUser and User already have no other
+// shared relations anywhere in this schema.
+model ClientPasswordResetToken {
+  id           String     @id @default(cuid())
+  clientUser   ClientUser @relation(fields: [clientUserId], references: [id], onDelete: Cascade)
+  clientUserId String
+  tokenHash    String     @unique
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([clientUserId])
 }
 
 enum ClientUserStatus {

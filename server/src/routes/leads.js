@@ -1,6 +1,9 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { prisma } from "../db.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
+import { signStaffPreviewToken } from "../lib/staffPreviewToken.js";
+import { hashPassword } from "../lib/auth.js";
 import { sendSystemEmail, clientPortalInviteEmail } from "../lib/systemMailer.js";
 import { computeLeadPipeline, computePipelineSummary, computeDealBoard } from "../lib/leadPipeline.js";
 
@@ -15,9 +18,10 @@ function apiBaseUrl() {
   return process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
 }
 
-// clientUser select is deliberately id/email only — never the password
-// hash, which has no reason to leave this route at all.
-const clientUserSelect = { select: { id: true, email: true } };
+// clientUser select is deliberately never the password hash, which has no
+// reason to leave this route at all — status/lastLoginAt/createdAt are
+// what the CRM Workspace lead panel's "Client Portal" card shows staff.
+const clientUserSelect = { select: { id: true, email: true, status: true, lastLoginAt: true, createdAt: true } };
 
 router.get("/", async (req, res, next) => {
   try {
@@ -349,6 +353,49 @@ router.post("/from-email-lead/:emailLeadId", async (req, res, next) => {
       sent: invite.ok ? invite.sent : false,
       reason: invite.ok ? invite.reason : invite.error
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Resets a client's portal password to a new random one, returned once —
+// the admin-driven counterpart to the client's own forgot-password flow
+// (routes/clientPortal.js), for when they can't receive that email
+// themselves. Mirrors POST /api/admin/employees/:id/reset-password.
+function generateClientPassword() {
+  return crypto.randomBytes(9).toString("base64url");
+}
+
+router.post("/:id/client-portal/reset-password", async (req, res, next) => {
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: true } });
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+    if (!lead.clientUser) return res.status(400).json({ error: "This lead doesn't have a client portal account yet." });
+
+    const temporaryPassword = generateClientPassword();
+    await prisma.clientUser.update({
+      where: { id: lead.clientUser.id },
+      data: { passwordHash: await hashPassword(temporaryPassword) }
+    });
+
+    res.json({ email: lead.clientUser.email, temporaryPassword });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// A short-lived, read-only link staff can open in a new tab to see exactly
+// what this lead's client sees on their own portal dashboard — see
+// routes/clientPortal.js's GET /preview/:leadId and lib/staffPreviewToken.js
+// for why this needs its own token rather than the normal Bearer session.
+router.post("/:id/client-portal/preview-link", async (req, res, next) => {
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: true } });
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+    if (!lead.clientUser) return res.status(400).json({ error: "This lead doesn't have a client portal account yet." });
+
+    const token = signStaffPreviewToken(lead.id);
+    res.json({ previewUrl: `${apiBaseUrl()}/api/client-portal/preview/${lead.id}?token=${token}` });
   } catch (err) {
     next(err);
   }

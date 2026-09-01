@@ -9,6 +9,7 @@ import { liveModules } from "../lib/permissions.js";
 import { appBaseUrl } from "../lib/appUrl.js";
 import { recordAudit } from "../lib/auditLog.js";
 import { loginRateLimit, forgotPasswordRateLimit } from "../middleware/authRateLimit.js";
+import { hashResetToken } from "../lib/resetTokenHash.js";
 
 const router = Router();
 
@@ -24,8 +25,6 @@ function publicUser(user) {
     permissions: liveModules(user.permissions)
   };
 }
-
-const hashToken = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 
 router.post("/login", loginRateLimit, asyncHandler(async (req, res) => {
   const email = String(req.body?.email ?? "").trim().toLowerCase();
@@ -107,7 +106,7 @@ router.post("/forgot-password", forgotPasswordRateLimit, asyncHandler(async (req
   await prisma.passwordResetToken.create({
     data: {
       userId: user.id,
-      tokenHash: hashToken(rawToken),
+      tokenHash: hashResetToken(rawToken),
       expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000)
     }
   });
@@ -134,7 +133,7 @@ router.post("/reset-password", asyncHandler(async (req, res) => {
   }
 
   const record = await prisma.passwordResetToken.findUnique({
-    where: { tokenHash: hashToken(rawToken) },
+    where: { tokenHash: hashResetToken(rawToken) },
     include: { user: true }
   });
 
