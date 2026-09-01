@@ -5,6 +5,7 @@ import { useEmailOutreachState } from "./useEmailOutreachState.js";
 import { DashboardTab } from "./DashboardTab.jsx";
 import { CampaignsTab } from "./CampaignsTab.jsx";
 import { LeadsTab } from "./LeadsTab.jsx";
+import { RepliesTab } from "./RepliesTab.jsx";
 import { AutomationTab } from "./AutomationTab.jsx";
 import { SettingsTab } from "./SettingsTab.jsx";
 import { MailboxTab } from "./MailboxTab.jsx";
@@ -16,6 +17,7 @@ const tabs = [
   { id: "dashboard", label: "Dashboard", icon: GridIcon },
   { id: "campaigns", label: "Campaigns", icon: MailIcon },
   { id: "leads", label: "Leads", icon: UsersIcon },
+  { id: "replies", label: "Replies", icon: InboxIcon },
   { id: "automation", label: "Automation", icon: WorkflowIcon },
   { id: "segments", label: "Segments", icon: UsersIcon },
   { id: "templates", label: "Templates", icon: TagIcon },
@@ -28,6 +30,7 @@ const tabContent = {
   dashboard: DashboardTab,
   campaigns: CampaignsTab,
   leads: LeadsTab,
+  replies: RepliesTab,
   automation: AutomationTab,
   segments: SegmentsTab,
   // Self-contained (fetches its own templates via emailTemplatesApi) — takes

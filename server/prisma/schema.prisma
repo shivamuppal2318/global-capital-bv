@@ -1067,8 +1067,16 @@ model EmailLead {
   callScheduledFor DateTime?
   callCanceledAt   DateTime?
   callCompletedAt  DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  // Set once a rep converts this cold-outreach contact into a real CRM Lead
+  // (POST /api/leads/from-email-lead/:emailLeadId) — a plain id, not a
+  // formal relation, so the "already converted" guard still holds even if
+  // that Lead is later deleted. The portal invite only fires at this point,
+  // not on the original cold email: there's no deal to show progress on
+  // until a Lead exists (see the onDelete/relation note on ClientUser).
+  convertedToLeadId String?
+  convertedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   replyEvents      ReplyEvent[]
   activityLog      EmailActivityLog[]
