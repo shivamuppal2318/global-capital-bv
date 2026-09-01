@@ -7,6 +7,7 @@ import { isAccountUnderDailyCap } from "./accountSendCap.js";
 import { resolveEmailAccount } from "./accountRouting.js";
 import { signUnsubscribeToken } from "./unsubscribeToken.js";
 import { signNdaToken } from "./ndaSignToken.js";
+import { signInterestToken } from "./interestToken.js";
 import { injectTrackingPixel, wrapLinksForClickTracking } from "./emailTracking.js";
 
 // Extracted from routes/leads.js so the same send logic (suppression
@@ -28,6 +29,36 @@ export function unsubscribeUrlFor(leadId) {
 export function ndaSignUrlFor(leadId) {
   const base = process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 8787}`;
   return `${base}/api/nda/${leadId}/${signNdaToken(leadId)}`;
+}
+
+// The one-click "I'm Interested" link (see routes/interested.js) — a
+// clicked button is an unambiguous signal, unlike classifyReply.js's
+// keyword match against a free-text reply, which only fires if the lead
+// happens to type a matching word.
+export function interestUrlFor(leadId) {
+  const base = process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 8787}`;
+  return `${base}/api/interested/${leadId}/${signInterestToken(leadId)}`;
+}
+
+// A real, styled call-to-action button, appended to the outgoing HTML
+// right before the unsubscribe footer — not just a bare link, since a
+// button is what actually gets clicked in practice.
+export function interestButtonHtml(leadId) {
+  const url = interestUrlFor(leadId);
+  return `<p style="margin:24px 0;"><a href="${url}" style="display:inline-block;background:#1b295f;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 24px;border-radius:8px;">I'm Interested →</a></p>`;
+}
+
+// Cadence-step bodies (see queue/cadenceQueue.js) are plain text, merged
+// from CadenceStep.bodyTemplate — this is the minimal conversion needed to
+// get real HTML worth tracking/adding a button to, not a full markdown-style
+// renderer.
+export function plainTextToHtml(text) {
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const paragraphs = escaped.split(/\n{2,}/).map((p) => `<p style="margin:0 0 16px;">${p.replace(/\n/g, "<br>")}</p>`);
+  return `<div style="font-family:'Segoe UI',Arial,sans-serif;font-size:14px;color:#12213a;line-height:1.6;">${paragraphs.join("")}</div>`;
 }
 
 function httpError(status, message) {
