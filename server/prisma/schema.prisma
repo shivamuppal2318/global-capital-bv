@@ -931,6 +931,12 @@ enum ReplyType {
   INTERESTED
   ZOOM_REQUEST
   INFO_REQUEST
+  // A genuine reply that classifyReply.js's keyword rules don't recognize
+  // (e.g. a plain "Ok") -- distinct from NO_REPLY, which means no reply has
+  // arrived at all. Conflating the two meant a lead who *did* reply, just
+  // not with a recognized keyword, still showed up everywhere ("no reply
+  // yet") as if they'd never responded.
+  OTHER
   NO_REPLY
 }
 

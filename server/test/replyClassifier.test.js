@@ -40,7 +40,8 @@ test("classifyReply maps matched rule to its replyType", () => {
   assert.equal(classifyReply("send the deck"), "INFO_REQUEST");
 });
 
-test("classifyReply falls back to NO_REPLY when nothing matches", () => {
-  assert.equal(classifyReply("no thanks"), "NO_REPLY");
-  assert.equal(classifyReply(""), "NO_REPLY");
+test("classifyReply falls back to OTHER when nothing matches -- a real reply happened, so NO_REPLY would be a lie", () => {
+  assert.equal(classifyReply("no thanks"), "OTHER");
+  assert.equal(classifyReply("Ok"), "OTHER");
+  assert.equal(classifyReply(""), "OTHER");
 });
