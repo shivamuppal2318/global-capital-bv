@@ -290,6 +290,23 @@ export function DataRoomModule() {
             const status = gapVerdict?.status ?? (categories.find((c) => c.category === item.label)?.count ? "covered" : "missing");
             const style = gapStatusStyle[status] ?? gapStatusStyle.missing;
             const matchCount = categories.find((c) => c.category === item.label)?.count ?? 0;
+            // Who actually put this checklist item's file(s) in place — the
+            // admin needs to see this at a glance here, not just in the full
+            // document list further down the page. Most-recent upload wins
+            // when more than one file has landed under this category.
+            // uploadedBy is only ever set for a staff upload — a client
+            // upload always has uploadedById: null (ClientUser isn't a
+            // staff User) and instead names the uploader in `description`
+            // (see routes/clientPortal.js), which already reads naturally
+            // ("Uploaded by X via the client portal") so it's shown as-is.
+            const matchingDocs = documents
+              .filter((d) => d.category === item.label)
+              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            const latestUploader = matchingDocs[0]
+              ? matchingDocs[0].uploadedBy?.name
+                ? `Uploaded by ${matchingDocs[0].uploadedBy.name}`
+                : (matchingDocs[0].description ?? null)
+              : null;
 
             return (
               <div
@@ -306,6 +323,7 @@ export function DataRoomModule() {
                     <p className="mt-0.5 text-[12px] text-[#8592ab]">
                       {gapVerdict ? gapVerdict.reason : matchCount ? `${matchCount} file(s) uploaded` : "Not yet uploaded"}
                     </p>
+                    {latestUploader ? <p className="mt-0.5 text-[11px] text-[#5f6f89]">{latestUploader}</p> : null}
                     {gapVerdict?.matchedFilenames?.length ? (
                       <p className="mt-1 text-[11px] text-[#5f6f89]">From: {gapVerdict.matchedFilenames.join(", ")}</p>
                     ) : null}
