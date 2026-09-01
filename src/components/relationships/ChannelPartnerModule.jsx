@@ -82,6 +82,37 @@ export function ChannelPartnerModule() {
     }
   }
 
+  // navigator.clipboard doesn't exist at all (not even as a rejectable
+  // promise) outside a secure context — HTTPS or localhost. On a plain-HTTP
+  // deployment (e.g. an internal test box), reading .writeText off it throws
+  // a synchronous TypeError instead of failing gracefully, which previously
+  // surfaced as a raw "Cannot read properties of undefined" error message.
+  // Falls back to the legacy execCommand approach, which still works over
+  // plain HTTP.
+  async function copyToClipboard(text) {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
   async function handleGetAgreementLink(partner) {
     setAgreementBusyId(partner.id);
     setAgreementNoticeId(null);
@@ -92,10 +123,7 @@ export function ChannelPartnerModule() {
       if (result.signed) {
         setAgreementNotice(`Already signed by ${result.signedName} on ${new Date(result.signedAt).toLocaleDateString()}.`);
       } else {
-        await navigator.clipboard.writeText(result.url).then(
-          () => setLinkCopied(true),
-          () => {} // clipboard permission denied — the link is still shown below, just not auto-copied
-        );
+        setLinkCopied(await copyToClipboard(result.url));
         setAgreementNotice(null);
         setAgreementLinkUrl(result.url);
       }
@@ -109,7 +137,7 @@ export function ChannelPartnerModule() {
   }
 
   async function handleCopyAgreementLink() {
-    await navigator.clipboard.writeText(agreementLinkUrl).then(() => setLinkCopied(true));
+    setLinkCopied(await copyToClipboard(agreementLinkUrl));
   }
 
   useEffect(() => {
