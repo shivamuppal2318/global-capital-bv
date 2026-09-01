@@ -1,18 +1,31 @@
 import { Router } from "express";
 import multer from "multer";
 import path from "node:path";
+import crypto from "node:crypto";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { hashPassword, verifyPassword, signClientToken } from "../lib/auth.js";
 import { verifyClientInviteToken } from "../lib/clientPortalToken.js";
+import { hashResetToken } from "../lib/resetTokenHash.js";
 import { requireClientAuth, setClientSessionCookie, clearClientSessionCookie } from "../middleware/requireClientAuth.js";
 import { authShell, dashboardShell, formField, primaryButton, errorBanner, noteText, escapeHtml } from "../lib/clientPortalPage.js";
 import { buildPortalStages, PORTAL_STAGES } from "../lib/clientPortalStages.js";
 import { REQUIRED_DOCUMENTS, REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
 import { extractText } from "../lib/documentText.js";
 import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
-import { loginRateLimit } from "../middleware/authRateLimit.js";
+import { loginRateLimit, forgotPasswordRateLimit } from "../middleware/authRateLimit.js";
+import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
+
+// Same idiom as routes/leads.js and routes/ndaRecords.js — the client
+// portal is server-rendered by this API, not the frontend SPA, so its own
+// links (like the reset-password link mailed out below) point at this
+// API's own base URL, not the frontend's CORS_ORIGIN.
+function apiBaseUrl() {
+  return process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
+}
+
+const RESET_TTL_MINUTES = 60;
 
 export const clientPortalRouter = Router();
 
@@ -148,6 +161,9 @@ function loginFormHtml({ error } = {}) {
           ${formField({ label: "Password", name: "password", type: "password" })}
           ${primaryButton("Sign in")}
         </form>
+        <p style="margin:14px 0 0;text-align:center;">
+          <a href="/api/client-portal/forgot-password" style="font-size:13px;font-weight:600;color:#3046b2;text-decoration:none;">Forgot password?</a>
+        </p>
         ${noteText("Received an invite email? Use the link in that email to set up your account first.")}
       </div>
     `
@@ -185,6 +201,134 @@ clientPortalRouter.get("/logout", (_req, res) => {
   clearClientSessionCookie(res);
   res.redirect("/api/client-portal/login");
 });
+
+// --- Password reset (public — no session, same reasoning as the staff
+// flow in routes/auth.js: this has to work for someone who's locked out) --
+
+function forgotPasswordFormHtml({ sent } = {}) {
+  return authShell({
+    title: "Reset your password",
+    subtitle: "Enter the email you signed up with and we'll send you a reset link.",
+    bodyHtml: sent
+      ? `
+        <div style="margin-top:24px;">
+          <p style="margin:0;font-size:14px;color:#5c6b87;line-height:1.7;">If that email has an account, a reset link is on its way — check your inbox.</p>
+          ${noteText(`<a href="/api/client-portal/login">Back to sign in</a>`)}
+        </div>`
+      : `
+        <div style="margin-top:24px;">
+          <form method="POST">
+            ${formField({ label: "Email", name: "email", type: "email" })}
+            ${primaryButton("Send reset link")}
+          </form>
+          ${noteText(`<a href="/api/client-portal/login">Back to sign in</a>`)}
+        </div>`
+  });
+}
+
+clientPortalRouter.get("/forgot-password", (_req, res) => res.send(forgotPasswordFormHtml()));
+
+const forgotPasswordSchema = z.object({ email: z.string().trim().email() });
+
+clientPortalRouter.post(
+  "/forgot-password",
+  forgotPasswordRateLimit,
+  asyncHandler(async (req, res) => {
+    const parsed = forgotPasswordSchema.safeParse(req.body);
+    // Always the same "sent" response whether the parse fails, the email
+    // doesn't exist, or the account is suspended — same no-enumeration
+    // reasoning as the staff flow (routes/auth.js).
+    if (!parsed.success) return res.send(forgotPasswordFormHtml({ sent: true }));
+
+    const clientUser = await prisma.clientUser.findUnique({ where: { email: parsed.data.email } });
+    if (clientUser && clientUser.status !== "SUSPENDED") {
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      await prisma.clientPasswordResetToken.create({
+        data: {
+          clientUserId: clientUser.id,
+          tokenHash: hashResetToken(rawToken),
+          expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000)
+        }
+      });
+
+      const resetUrl = `${apiBaseUrl()}/api/client-portal/reset-password/${rawToken}`;
+      const mail = passwordResetEmail({ name: clientUser.name, resetUrl, expiresMinutes: RESET_TTL_MINUTES });
+      const result = await sendSystemEmail({ to: clientUser.email, ...mail });
+      if (!result.sent) {
+        // Surfaced in the server log only — same reasoning as the staff
+        // flow: telling the caller would leak both that the account exists
+        // and details of the mail setup.
+        console.error(`Client portal password reset email to ${clientUser.email} failed: ${result.reason}`);
+      }
+    }
+
+    res.send(forgotPasswordFormHtml({ sent: true }));
+  })
+);
+
+function resetPasswordFormHtml({ error } = {}) {
+  return authShell({
+    title: "Choose a new password",
+    subtitle: "",
+    bodyHtml: `
+      <div style="margin-top:24px;">
+        ${errorBanner(error)}
+        <form method="POST">
+          ${formField({ label: "New password", name: "newPassword", type: "password", placeholder: "At least 8 characters" })}
+          ${formField({ label: "Confirm password", name: "confirmPassword", type: "password" })}
+          ${primaryButton("Update password")}
+        </form>
+      </div>
+    `
+  });
+}
+
+clientPortalRouter.get("/reset-password/:token", (_req, res) => res.send(resetPasswordFormHtml()));
+
+const resetPasswordSchema = z
+  .object({
+    newPassword: z.string().min(8, "Password must be at least 8 characters."),
+    confirmPassword: z.string()
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, { message: "Passwords don't match.", path: ["confirmPassword"] });
+
+clientPortalRouter.post(
+  "/reset-password/:token",
+  asyncHandler(async (req, res) => {
+    const parsed = resetPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? "Please check the form and try again.";
+      return res.status(400).send(resetPasswordFormHtml({ error: message }));
+    }
+
+    const record = await prisma.clientPasswordResetToken.findUnique({
+      where: { tokenHash: hashResetToken(req.params.token) }
+    });
+
+    const invalid = () =>
+      res.status(400).send(resetPasswordFormHtml({ error: "This reset link is invalid or has expired. Request a new one." }));
+    if (!record || record.usedAt || record.expiresAt < new Date()) return invalid();
+
+    await prisma.$transaction([
+      prisma.clientUser.update({
+        where: { id: record.clientUserId },
+        data: { passwordHash: await hashPassword(parsed.data.newPassword) }
+      }),
+      prisma.clientPasswordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+      // Any other outstanding links for this account become useless too —
+      // same reasoning as the staff flow.
+      prisma.clientPasswordResetToken.deleteMany({ where: { clientUserId: record.clientUserId, usedAt: null } })
+    ]);
+
+    res.send(
+      inviteMessagePage({
+        title: "Password updated",
+        message: "Your password has been changed.",
+        note: `<a href="/api/client-portal/login">Sign in now</a>`
+      })
+    );
+  })
+);
 
 // --- Dashboard -------------------------------------------------------------
 
