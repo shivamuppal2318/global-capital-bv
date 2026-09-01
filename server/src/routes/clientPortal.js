@@ -8,6 +8,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { hashPassword, verifyPassword, signClientToken } from "../lib/auth.js";
 import { verifyClientInviteToken } from "../lib/clientPortalToken.js";
 import { hashResetToken } from "../lib/resetTokenHash.js";
+import { verifyStaffPreviewToken } from "../lib/staffPreviewToken.js";
 import { requireClientAuth, setClientSessionCookie, clearClientSessionCookie } from "../middleware/requireClientAuth.js";
 import { authShell, dashboardShell, formField, primaryButton, errorBanner, noteText, escapeHtml } from "../lib/clientPortalPage.js";
 import { buildPortalStages, PORTAL_STAGES } from "../lib/clientPortalStages.js";
@@ -637,6 +638,77 @@ clientPortalRouter.get(
           <p style="margin-top:16px;">
             <a href="/api/client-portal/dashboard" style="font-size:13px;font-weight:600;color:#3046b2;text-decoration:none;">← Back to full overview</a>
           </p>
+        `
+      })
+    );
+  })
+);
+
+// --- Staff preview (read-only "view as client") -----------------------
+
+// Opened from CRM Workspace in a new tab (see routes/leads.js's
+// POST /:id/client-portal-preview-link) — a normal <a>/window.open can't
+// carry the staff Authorization header, so this is gated by its own
+// short-lived signed token instead of requireAuth/requireClientAuth. Reuses
+// the exact same dashboard content as GET /dashboard, minus the NDA/Data
+// Room action forms (those POST to routes only a real client session can
+// use, and this isn't one — signing or uploading on the client's behalf
+// from here would be misleading even if it happened to work).
+clientPortalRouter.get(
+  "/preview/:leadId",
+  asyncHandler(async (req, res) => {
+    const leadId = verifyStaffPreviewToken(String(req.query.token ?? ""));
+    if (!leadId || leadId !== req.params.leadId) {
+      return res.status(401).send(
+        inviteMessagePage({ title: "Preview link expired", message: "This staff preview link is invalid or has expired. Open it again from the lead's CRM Workspace panel." })
+      );
+    }
+
+    const lead = await prisma.lead.findUnique({ where: { id: leadId }, include: { clientUser: true } });
+    if (!lead || !lead.clientUser) {
+      return res.status(404).send(inviteMessagePage({ title: "Not found", message: "This lead no longer has a client portal account." }));
+    }
+
+    const { nda, stages } = await loadPortalData(leadId);
+    const completedCount = stages.filter((s) => s.status === "completed").length;
+    const nextStage = stages.find((s) => s.status !== "completed");
+    const stats = [
+      { label: "Steps Completed", value: `${completedCount}/${stages.length}`, note: `${Math.round((completedCount / stages.length) * 100)}% complete`, tone: "green" },
+      { label: "Current Stage", value: nextStage ? nextStage.label : "All done", note: nextStage ? nextStage.detail : "Every step is complete", tone: "blue" },
+      { label: "Your Contact", value: nda?.owner || "—", note: "Global Capital BV", tone: "violet" }
+    ];
+
+    res.send(
+      dashboardShell({
+        title: "Staff preview",
+        clientName: lead.clientUser.name,
+        companyName: lead.company,
+        stages: sidebarStagesFrom(stages),
+        bodyHtml: `
+          <div style="display:flex;align-items:center;gap:10px;background:#fff4e0;border:1px solid #f4d9a8;color:#8a5a12;border-radius:12px;padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:20px;">
+            <span aria-hidden="true">👁</span>
+            Staff preview — read-only. This is exactly what ${escapeHtml(lead.clientUser.name)} sees, but nothing here can be clicked to act on their behalf.
+          </div>
+
+          <span class="gc-badge-pill">Your Deal</span>
+          <h1 class="gc-heading">${escapeHtml(lead.company)}</h1>
+          <p class="gc-subheading">Client portal account: ${escapeHtml(lead.clientUser.email)}</p>
+
+          <div class="gc-stats">${stats.map(statCardHtml).join("")}</div>
+
+          <div class="gc-card">
+            <div class="gc-card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#3046b2" stroke-width="2" width="20" height="20" aria-hidden="true">
+                <path d="M9 11l3 3L22 4" />
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              </svg>
+              Deal Progress
+            </div>
+            <p class="gc-card-subtitle">Every step of this lead's deal with Global Capital BV, in order.</p>
+            <div style="margin-top:8px;">
+              ${stages.map((s) => stageRowHtml(s)).join("")}
+            </div>
+          </div>
         `
       })
     );
