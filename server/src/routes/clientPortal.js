@@ -12,6 +12,7 @@ import { buildPortalStages, PORTAL_STAGES } from "../lib/clientPortalStages.js";
 import { REQUIRED_DOCUMENTS, REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
 import { extractText } from "../lib/documentText.js";
 import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
+import { loginRateLimit } from "../middleware/authRateLimit.js";
 
 export const clientPortalRouter = Router();
 
@@ -159,6 +160,7 @@ const loginSchema = z.object({ email: z.string().trim().email(), password: z.str
 
 clientPortalRouter.post(
   "/login",
+  loginRateLimit,
   asyncHandler(async (req, res) => {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).send(loginFormHtml({ error: "Enter your email and password." }));

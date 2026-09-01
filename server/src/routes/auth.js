@@ -8,6 +8,7 @@ import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
 import { liveModules } from "../lib/permissions.js";
 import { appBaseUrl } from "../lib/appUrl.js";
 import { recordAudit } from "../lib/auditLog.js";
+import { loginRateLimit, forgotPasswordRateLimit } from "../middleware/authRateLimit.js";
 
 const router = Router();
 
@@ -26,7 +27,7 @@ function publicUser(user) {
 
 const hashToken = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 
-router.post("/login", asyncHandler(async (req, res) => {
+router.post("/login", loginRateLimit, asyncHandler(async (req, res) => {
   const email = String(req.body?.email ?? "").trim().toLowerCase();
   const password = String(req.body?.password ?? "");
   if (!email || !password) {
@@ -89,7 +90,7 @@ router.patch("/me/password", requireAuth, asyncHandler(async (req, res) => {
 
 // --- Password reset (public — no session, that's the whole point) --------
 
-router.post("/forgot-password", asyncHandler(async (req, res) => {
+router.post("/forgot-password", forgotPasswordRateLimit, asyncHandler(async (req, res) => {
   const email = String(req.body?.email ?? "").trim().toLowerCase();
 
   // Always the same answer whether or not the address exists, so this

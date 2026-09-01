@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { channelPartnersApi } from "../../lib/relationshipsApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
-import { LinkIcon, PlusIcon, SearchIcon, XIcon } from "../Icons";
+import { CheckCircleIcon, CopyIcon, LinkIcon, PlusIcon, SearchIcon, XIcon } from "../Icons";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
@@ -46,7 +46,13 @@ export function ChannelPartnerModule() {
   // partner and copied to the clipboard — see channelPartnersApi.agreementLink.
   const [agreementBusyId, setAgreementBusyId] = useState(null);
   const [agreementNoticeId, setAgreementNoticeId] = useState(null);
+  // A plain message (already-signed case, or an error) OR the generated
+  // link itself (not-yet-signed case) — kept apart so the link gets its
+  // own copy-friendly box instead of being dumped as a wall of URL text
+  // alongside a message.
   const [agreementNotice, setAgreementNotice] = useState(null);
+  const [agreementLinkUrl, setAgreementLinkUrl] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   // Real Channel Partner Portal activity — what a partner has actually done
   // with their own login (own campaigns/leads, see channelPartnerScope.js),
   // shown as an expandable section per partner, one open at a time, same
@@ -79,13 +85,19 @@ export function ChannelPartnerModule() {
   async function handleGetAgreementLink(partner) {
     setAgreementBusyId(partner.id);
     setAgreementNoticeId(null);
+    setAgreementLinkUrl(null);
+    setLinkCopied(false);
     try {
       const result = await channelPartnersApi.agreementLink(partner.id);
       if (result.signed) {
         setAgreementNotice(`Already signed by ${result.signedName} on ${new Date(result.signedAt).toLocaleDateString()}.`);
       } else {
-        await navigator.clipboard.writeText(result.url);
-        setAgreementNotice(`Link copied to clipboard: ${result.url}`);
+        await navigator.clipboard.writeText(result.url).then(
+          () => setLinkCopied(true),
+          () => {} // clipboard permission denied — the link is still shown below, just not auto-copied
+        );
+        setAgreementNotice(null);
+        setAgreementLinkUrl(result.url);
       }
       setAgreementNoticeId(partner.id);
     } catch (err) {
@@ -94,6 +106,10 @@ export function ChannelPartnerModule() {
     } finally {
       setAgreementBusyId(null);
     }
+  }
+
+  async function handleCopyAgreementLink() {
+    await navigator.clipboard.writeText(agreementLinkUrl).then(() => setLinkCopied(true));
   }
 
   useEffect(() => {
@@ -416,7 +432,32 @@ export function ChannelPartnerModule() {
               </div>
 
               {agreementNoticeId === p.id && agreementNotice ? (
-                <p className="mt-2 break-all text-[13px] text-[#334463]">{agreementNotice}</p>
+                <p className="mt-2 text-[13px] text-[#334463]">{agreementNotice}</p>
+              ) : null}
+
+              {agreementNoticeId === p.id && agreementLinkUrl ? (
+                <div className="mt-2.5 rounded-[12px] border border-[#e7edf5] bg-[#fbfcfe] p-3">
+                  <p className="flex items-center gap-1.5 text-[12px] font-semibold text-[#2b9b60]">
+                    <CheckCircleIcon className="size-3.5" />
+                    {linkCopied ? "Link copied to clipboard" : "Link generated"} — send it to the partner however you'd like
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={agreementLinkUrl}
+                      onFocus={(e) => e.target.select()}
+                      className="w-full truncate rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 font-mono text-[12px] text-[#435471] outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyAgreementLink}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[12px] font-medium text-[#3046b2] hover:bg-[#f4f7fb]"
+                    >
+                      <CopyIcon className="size-3.5" />
+                      {linkCopied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                </div>
               ) : null}
 
               {calcOpenId === p.id ? (

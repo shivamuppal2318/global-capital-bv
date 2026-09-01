@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { verifyPassword, signChannelPartnerUserToken } from "../lib/auth.js";
 import { requireChannelPartnerAuth } from "../middleware/requireChannelPartnerAuth.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
+import { loginRateLimit } from "../middleware/authRateLimit.js";
 
 export const channelPartnerPortalAuthRouter = Router();
 
@@ -22,7 +23,7 @@ function publicChannelPartnerUser(channelPartnerUser) {
 // portal here — this issues a bearer token, since the partner portal is a
 // real SPA (see ChannelPartnerPortalApp.jsx) following the staff app's
 // Authorization-header convention.
-channelPartnerPortalAuthRouter.post("/login", asyncHandler(async (req, res) => {
+channelPartnerPortalAuthRouter.post("/login", loginRateLimit, asyncHandler(async (req, res) => {
   const email = String(req.body?.email ?? "").trim().toLowerCase();
   const password = String(req.body?.password ?? "");
   if (!email || !password) {
