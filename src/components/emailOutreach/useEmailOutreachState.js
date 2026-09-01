@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
+import { emailSegmentsApi } from "../../lib/emailSegmentsApi.js";
 import { emailLeadsApi } from "../../lib/emailLeadsApi.js";
 import { emailTemplatesApi } from "../../lib/emailTemplatesApi.js";
 import { emailAccountsApi } from "../../lib/emailAccountsApi.js";
@@ -396,6 +397,20 @@ export function useEmailOutreachState() {
       .catch(() => {
         // Backend unreachable or no DB migrated yet — keep the local seed
         // campaigns table already set above.
+      });
+  }, []);
+
+  // Real, saved lead segments (Segments tab) — the Dashboard's "Lists" stat
+  // and "New List" action point at this, not a synthesized number, since
+  // this is the actual reusable "named group of leads" concept the app has.
+  const [segments, setSegments] = useState([]);
+  useEffect(() => {
+    emailSegmentsApi
+      .list()
+      .then(setSegments)
+      .catch(() => {
+        // Backend unreachable or no DB migrated yet — stays empty rather
+        // than showing a fabricated count.
       });
   }, []);
 
@@ -1136,7 +1151,7 @@ export function useEmailOutreachState() {
   }
 
   return {
-    campaigns, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
+    campaigns, segments, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
     repliedLeads, allLeads, systemStatus, dashboardSummary, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
     automationForm, automationNotice, newLeadForm, setNewLeadForm,
     csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, csvImportBusy, csvPreviewBusy, previewHtml, setPreviewHtml,

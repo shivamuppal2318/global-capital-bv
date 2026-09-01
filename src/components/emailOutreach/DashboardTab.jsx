@@ -30,10 +30,12 @@ function pctToNumber(value) {
 }
 
 export function DashboardTab({ mailing, onNavigateTab }) {
-  const { campaigns, systemStatus, repliedLeads } = mailing;
+  const { campaigns, segments, systemStatus, repliedLeads } = mailing;
 
   const totalCampaigns = campaigns.length;
-  const totalLists = campaigns.length;
+  // Real saved segments (Segments tab) — a named, reusable, filter-defined
+  // group of leads, the actual "list" concept this app has.
+  const totalLists = segments.length;
   const totalSubscribers = campaigns.reduce((sum, campaign) => sum + (campaign.leadCount ?? (Number.parseInt(campaign.sent, 10) || 0)), 0);
   const unreadMail = repliedLeads.filter((lead) => !lead.movedToWorkflow).length;
   const emailsSent = campaigns.reduce((sum, campaign) => sum + (campaign.sentCount ?? (Number.parseInt(campaign.sent, 10) || 0)), 0);
@@ -118,7 +120,7 @@ export function DashboardTab({ mailing, onNavigateTab }) {
               </button>
               <button
                 type="button"
-                onClick={() => onNavigateTab?.("leads")}
+                onClick={() => onNavigateTab?.("segments")}
                 className="w-full rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#102246]"
               >
                 New List
