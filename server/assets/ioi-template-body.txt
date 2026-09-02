@@ -1,0 +1,111 @@
+Proposed Letter of Intent to Invest
+
+General Comments
+
+This Letter of Intent (LOI) sets forth preliminary terms for a potential investment. Final terms and conditions will be negotiated and agreed upon following a site visit and further discussions.
+
+Lender — Global Capital BV and/or Assigns
+
+Borrower — {{COUNTERPARTY_NAME}}, the borrower themselves or a Special Purpose Vehicle (SPV) to be formed by the borrower
+
+The Company shall be domiciled in the following jurisdiction: {{JURISDICTION}}
+
+Total Acquisition or Project Cost: {{PROJECT_COST}}
+
+Equity to be Provided by the Borrower: {{BORROWER_EQUITY}} towards purchase or investment.
+
+Anticipated Investment
+
+Amount {{INVESTMENT_AMOUNT}} of investment to Borrower/Investee. Loan proceeds can be increased to accommodate closing costs. All the funds will be available at the time of the closing. The entire amount will be available at closing in one single tranche. There will be no pre-closing funding.
+
+Investment Fee
+
+The Borrower shall not pay any advance investment fee to the Investor. The charges relating to the business evaluation, business appraisal, Technical valuation, fees of the Investor shall be incurred separately as required. Additionally, in order to asses the borrower's project appropriately, the borrower will make the arrangements of travel including airfare and hotel accommodation for the team representing the Investor to visit the facilities and have a face-to-face meeting in order to issue a Term Sheet.
+
+Conditions Precedent
+
+The Lender will require a Business Enterprise Value. This Enterprise Valuation Exercise needs to be completed from any one of the Lender's empanelled valuator.
+
+Initial business evaluation based on technical evaluation of the entity's financial situation/structure to determine feasibility of funding.
+
+Depending on the kind of business and at the discretion of the Lender, the Lender may require a site visit before term sheet is presented.
+
+The Lender will require Adequate Security as collateral for the debt (existing assets, other assets of the Borrower, acceptable Insurance Policy, or other financial instrument may be sufficient).
+
+Terms and Conditions upon acceptance of this LOI and next steps:
+
+The Borrower will provide the Lender access to their data room or any other information and documentation the Lender requires.
+
+The Lender will review and let the Borrower know if anything else is needed.
+
+Next steps & Term Sheet
+
+The Term Sheet will be issued after the site visit, the business valuation completion, the initial underwriting, due diligence, the interest rate, and the other terms and conditions that have been agreed upon.
+
+Non-Disparagement:
+
+During the Term of this agreement and thereafter, the Borrower agrees to take no action intentionally or unintentionally that can potentially harm the Lender's reputation or that could lead to unwanted or unfavourable publicity. This clause shall survive any agreements related to this project and shall survive the termination of this agreement.
+
+Terms and Conditions upon acceptance of Term Sheet:
+
+Upon acceptance and signing of the Term Sheet, the Borrower shall agree to pay, as needed, for the third-party costs as per the Costs & Expense Disclosure given in the Term sheet.
+
+Upon acceptance and signing of the Term Sheet, the Borrower shall not pursue any other means of financing without the written permission of the Lender.
+
+Guarantee/Recourse
+
+This Debt will be non-recourse to the Borrower under industry standard terms, provisions, and standard fraud language, including "Bad Boy" provisions. The personal recourse provision is only applicable in the Breakup Fee provision of the Other Terms and Conditions section.
+
+Effective Date of LOI
+
+This LOI will be effective when both sides execute the LOI and all the appurtenant costs have been paid.
+
+Timeline to Close the Loan
+
+The timeline for closing this transaction will depend on the compliance of all requirements as presented within the Term Sheet.
+
+Conditions & Disclosures of LOI
+
+This document is confidential and for Borrower/Sponsor's confidential information only.
+
+This document is sent to illustrate indicative terms summarizing certain basic terms of the Loan for discussion purposes. It is not intended to be a definitive list of all the requirements of the Lender in connection with the financing facilities.
+
+This document is non-binding and is presented for discussion purposes only. It should not be construed as a commitment by the Lender and requires approvals to issue a formal Term Sheet, including defined terms.
+
+This document is subject to the copyright of the Lender or any of its affiliates or group companies and no part of it may be reproduced or distributed without Lender's consent.
+
+This document is for discussion purposes only and is not an offer or solicitation to sell or buy any investment or investment advice.
+
+This document holds indicative terms only. The material terms will be set out in the final transaction documentation, which will prevail.
+
+The Lender does not stand for or call for that this document is complete and, to the extent allowed by applicable law, does not accept any liability whatsoever for any loss arising from any action taken in reliance on the content of this document.
+
+This document is provided so that the Borrowers can independently evaluate the financial, market, legal, regulatory, credit, tax, and accounting risks and consequences involved in the transaction and its suitability for your purposes. To the extent permitted by applicable law, the Lender accepts no responsibility or liability in this regard.
+
+The Borrower certifies that the Company and its Board have sought Legal and other relevant Professional advice before signing this document.
+
+The Borrower certifies that the corporation board has approved the signing of this document. All transactions will be handled on a best-efforts basis.
+
+Date of Issue and Expiration
+
+This LOI was issued on {{ISSUE_DATE}} and will expire in 10 days from this date.
+
+===SIGNATURE_BLOCK===
+
+Signature Page
+
+IN ORDER TO PROCEED, PLEASE SIGN this document and submit a copy of your passport or identification and company registration.
+
+As agreed to on {{ISSUE_DATE}}
+
+Signed By: Amol Kadam, CEO
+as authorized signatory for Global Capital BV
+
+As agreed to on {{ISSUE_DATE}}
+
+Signed By: {{SIGNATORY_NAME}} — signed electronically on {{SIGNED_AT}}
+as authorized signatory for the Borrower
+Print Name: {{SIGNATORY_NAME}}
+Address: {{SIGNATORY_ADDRESS}}
+Phone number: {{SIGNATORY_PHONE}}
+Email of signatory: {{SIGNATORY_EMAIL}}

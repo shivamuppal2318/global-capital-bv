@@ -6,6 +6,7 @@ import { ndaMetrics } from "../lib/relationshipMetrics.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
 import { sendSystemEmail, ndaReadyToSignEmail } from "../lib/systemMailer.js";
 import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { renderSignedNda, slugify } from "../lib/signedDocumentRenderer.js";
 
 export const ndaRecordsRouter = Router();
 
@@ -29,7 +30,10 @@ const NDA_STATUSES = ["DRAFT", "SENT", "REMINDER_1", "REMINDER_2", "SIGNED", "DE
 
 const include = {
   lead: { select: { id: true, name: true, company: true, email: true } },
-  document: { select: { id: true, originalName: true } }
+  // leadId distinguishes a client's own uploaded signed copy (leadId set)
+  // from the company-wide template still attached by default (leadId
+  // null) -- the frontend uses it to pick which download path to use.
+  document: { select: { id: true, originalName: true, leadId: true } }
 };
 
 ndaRecordsRouter.get("/", asyncHandler(async (req, res) => {
@@ -54,6 +58,28 @@ ndaRecordsRouter.get("/", asyncHandler(async (req, res) => {
     orderBy: { updatedAt: "desc" }
   });
   res.json(records);
+}));
+
+// A client who accepted via "fill in your details online" never uploaded
+// a real file -- documentId still points at the blank company-wide
+// template, so there's nothing meaningful for the frontend to just
+// download. This renders the template's own text with the client's
+// submitted values filled in instead. A record with a genuine client
+// upload (document.leadId set) skips this route entirely -- the frontend
+// downloads that file directly, same as before.
+ndaRecordsRouter.get("/:id/signed-document", asyncHandler(async (req, res) => {
+  const nda = await prisma.ndaRecord.findFirst({
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) },
+    include: { lead: { select: { company: true } } }
+  });
+  if (!nda) return res.status(404).json({ error: "NDA record not found" });
+  if (nda.status !== "SIGNED") return res.status(400).json({ error: "This NDA hasn't been signed yet." });
+
+  const html = await renderSignedNda(nda);
+  const filename = `Signed-NDA-${slugify(nda.counterpartyLegalName || nda.lead?.company || "record")}.html`;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(html);
 }));
 
 // Metrics come from every record, never the filtered view — a KPI that

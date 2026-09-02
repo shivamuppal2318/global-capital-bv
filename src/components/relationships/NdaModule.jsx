@@ -168,12 +168,17 @@ export function NdaModule() {
     setFormMode(null);
   };
 
-  // Once signed, r.document is either the client's own uploaded copy or
-  // (if they filled the form in online instead) still the blank template —
-  // either way, it's a real file worth being able to pull up.
-  const handleDownloadDocument = async (doc) => {
+  // r.document.leadId is set only for a real client upload (the client
+  // portal's "upload a copy" option stamps it on create) — the blank
+  // company-wide template staff attach by default is leadId: null. For an
+  // upload, the file itself is the signed document; otherwise (accepted by
+  // filling the form in online) there's nothing uploaded to hand back, so
+  // this pulls the filled-in template text instead — see
+  // signedDocumentRenderer.js.
+  const handleDownloadDocument = async (r) => {
     try {
-      await documentsApi.open(doc, { download: true });
+      if (r.document?.leadId) await documentsApi.open(r.document, { download: true });
+      else await ndaApi.downloadSignedDocument(r.id);
     } catch (err) {
       setError(err.message);
     }
@@ -731,7 +736,7 @@ export function NdaModule() {
                     r.status === "SIGNED" ? (
                       <button
                         type="button"
-                        onClick={() => handleDownloadDocument(r.document)}
+                        onClick={() => handleDownloadDocument(r)}
                         className="mt-1 text-[12px] font-semibold text-[#3046b2] underline decoration-dotted hover:text-[#21439b]"
                       >
                         Download Signed NDA
