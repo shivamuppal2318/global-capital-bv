@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ndaApi } from "../../lib/relationshipsApi";
 import { leadsApi } from "../../lib/leadsApi";
 import { documentsApi } from "../../lib/documentsApi";
@@ -75,8 +75,6 @@ export function NdaModule() {
   const [formError, setFormError] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [uploadingFile, setUploadingFile] = useState(false);
-  const attachFileInputRef = useRef(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -169,28 +167,6 @@ export function NdaModule() {
     setEditing(null);
     setFormMode(null);
   };
-
-  // Lets a DOE/admin attach a file straight from this form instead of
-  // needing to go upload it in the Data Room first, then come back and pick
-  // it from the dropdown — e.g. a client emails back a signed scan, or
-  // staff already have their own filled copy ready to attach when sending.
-  // Uploads into the Data Room the same way (category "NDA", scoped to the
-  // selected lead) so it's the exact same document either path produces.
-  async function handleAttachUpload(file) {
-    if (!file) return;
-    setUploadingFile(true);
-    setFormError(null);
-    try {
-      const doc = await documentsApi.upload(file, { category: "NDA", leadId: editing.leadId || undefined });
-      setDocuments((current) => [doc, ...current]);
-      setEditing((current) => ({ ...current, documentId: doc.id }));
-    } catch (err) {
-      setFormError(err.message);
-    } finally {
-      setUploadingFile(false);
-      if (attachFileInputRef.current) attachFileInputRef.current.value = "";
-    }
-  }
 
   async function handleSave(e) {
     e?.preventDefault?.();
@@ -524,33 +500,19 @@ export function NdaModule() {
 
               <div className="md:col-span-2">
                 <label className={labelClass}>Attach NDA</label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    className={inputClass}
-                    value={editing.documentId}
-                    onChange={(e) => setEditing({ ...editing, documentId: e.target.value })}
-                  >
-                    <option value="">None</option>
-                    {documents.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.originalName}
-                      </option>
-                    ))}
-                  </select>
-                  <ActionButton
-                    label={uploadingFile ? "Uploading…" : "Upload"}
-                    small
-                    onClick={() => attachFileInputRef.current?.click()}
-                    disabled={uploadingFile}
-                  />
-                  <input
-                    ref={attachFileInputRef}
-                    type="file"
-                    className="hidden"
-                    onChange={(e) => handleAttachUpload(e.target.files[0])}
-                  />
-                </div>
-                <p className="mt-1 text-[12px] text-[#8592ab]">Pick one already in the Data Room, or upload a new one here.</p>
+                <select
+                  className={inputClass}
+                  value={editing.documentId}
+                  onChange={(e) => setEditing({ ...editing, documentId: e.target.value })}
+                >
+                  <option value="">None</option>
+                  {documents.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.originalName}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[12px] text-[#8592ab]">Pulled from the Data Room - upload it there first.</p>
               </div>
             </div>
 
@@ -663,33 +625,19 @@ export function NdaModule() {
 
               <div className="md:col-span-2">
                 <label className={labelClass}>Attach the signed NDA (optional)</label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    className={inputClass}
-                    value={editing.documentId}
-                    onChange={(e) => setEditing({ ...editing, documentId: e.target.value })}
-                  >
-                    <option value="">None</option>
-                    {documents.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.originalName}
-                      </option>
-                    ))}
-                  </select>
-                  <ActionButton
-                    label={uploadingFile ? "Uploading…" : "Upload"}
-                    small
-                    onClick={() => attachFileInputRef.current?.click()}
-                    disabled={uploadingFile}
-                  />
-                  <input
-                    ref={attachFileInputRef}
-                    type="file"
-                    className="hidden"
-                    onChange={(e) => handleAttachUpload(e.target.files[0])}
-                  />
-                </div>
-                <p className="mt-1 text-[12px] text-[#8592ab]">Pick one already in the Data Room, or upload a new one here.</p>
+                <select
+                  className={inputClass}
+                  value={editing.documentId}
+                  onChange={(e) => setEditing({ ...editing, documentId: e.target.value })}
+                >
+                  <option value="">None</option>
+                  {documents.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.originalName}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[12px] text-[#8592ab]">Pulled from the Data Room - upload it there first.</p>
               </div>
 
               <div className="md:col-span-2">
