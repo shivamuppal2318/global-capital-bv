@@ -1,5 +1,5 @@
 import { API_ROOT } from "./config";
-import { apiFetch } from "./apiFetch";
+import { apiFetch, getToken } from "./apiFetch";
 
 // Clients for the three modules that outgrew the shared deal-stage table:
 // NDA tracking, Zoom call capture and visit planning.
@@ -13,6 +13,28 @@ function qs(params) {
   return suffix ? `?${suffix}` : "";
 }
 
+// The download route needs the Authorization header, so it can't just be
+// an <a href> — same reasoning as documentsApi.open. Used for the "filled
+// template" fallback (signed-document) when a record was accepted online
+// rather than by uploading a real file.
+async function downloadBlob(url) {
+  const token = getToken();
+  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error ?? `Could not download that file (${response.status})`);
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "document";
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+}
+
 const ndaBase = `${API_ROOT}/api/nda-records`;
 
 export const ndaApi = {
@@ -23,7 +45,8 @@ export const ndaApi = {
   // UI never has to know which date field a given step writes.
   advance: (id, action) => apiFetch(`${ndaBase}/${id}/${action}`, { method: "POST" }),
   update: (id, body) => apiFetch(`${ndaBase}/${id}`, { method: "PATCH", body }),
-  remove: (id) => apiFetch(`${ndaBase}/${id}`, { method: "DELETE" })
+  remove: (id) => apiFetch(`${ndaBase}/${id}`, { method: "DELETE" }),
+  downloadSignedDocument: (id) => downloadBlob(`${ndaBase}/${id}/signed-document`)
 };
 
 const visitBase = `${API_ROOT}/api/visit-plans`;
@@ -47,7 +70,8 @@ export const ioiApi = {
   save: (body) => apiFetch(ioiBase, { method: "POST", body }),
   advance: (id, action) => apiFetch(`${ioiBase}/${id}/${action}`, { method: "POST" }),
   update: (id, body) => apiFetch(`${ioiBase}/${id}`, { method: "PATCH", body }),
-  remove: (id) => apiFetch(`${ioiBase}/${id}`, { method: "DELETE" })
+  remove: (id) => apiFetch(`${ioiBase}/${id}`, { method: "DELETE" }),
+  downloadSignedDocument: (id) => downloadBlob(`${ioiBase}/${id}/signed-document`)
 };
 
 const channelPartnersBase = `${API_ROOT}/api/channel-partners`;

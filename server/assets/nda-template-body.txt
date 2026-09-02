@@ -1,0 +1,179 @@
+Reciprocal Non-Disclosure Agreement
+
+THIS AGREEMENT is made on {{AGREEMENT_DATE}} and between;
+
+Global Capital B.V., a company having its registered office at Groen v Prinstererstraat 38, 3354 BD Papendrecht, Zuid Holland, Netherlands, registration number 96239735, (hereinafter referred to as "Disclosing Party/Recipient") which expression shall where the context so admits, include its successors and assigns in the title; and
+
+{{COUNTERPARTY_NAME}}, a company registered under the laws of {{COUNTERPARTY_COUNTRY}}, and having its registered office at {{COUNTERPARTY_ADDRESS}} (hereinafter referred to as "Disclosing Party/Recipient") which expression shall where the context so admits, include its successors and assigns in the title;
+
+The Disclosing Party and the Recipient are hereinafter referred to individually as "Party" or collectively as "Parties".
+
+WHEREAS
+
+- For the specific purpose of entering into discussions relating to a business and future business opportunities the parties hereto wish to disclose to each other and/or allow each other (whether directly or indirectly), access to Confidential Information (as hereinafter defined); and
+- In the course of such discussions, it is anticipated that the Disclosing Party will disclose to the Recipient and its Representatives certain proprietary and confidential information regarding the subject matter of the Transaction; and
+- The Parties wish that such information will be kept confidential by the Recipients and its Representatives to protect the proper interests of the Disclosing Party.
+
+NOW IT IS HEREBY AGREED AS FOLLOWS:
+
+1. DEFINITIONS
+
+The following words and phrases shall have the following meaning unless the context otherwise requires:
+
+1.1 "Confidential Information" shall mean: -
+
+i. in respect of Information provided in documentary or by way of a model or in other tangible or intangible form, Information which at the time of disclosure to the Recipient is marked or otherwise designated, to show expressly or by implication that it is imparted or disclosed in confidence; and
+
+ii. in respect of Information that is imparted or disclosed orally or by demonstration or presentation, any Information that the Recipient has been expressly informed by the Disclosing Party at the time of disclosure to have been imparted or disclosed in confidence; and
+
+iii. in respect of Information imparted or disclosed orally or by demonstration or presentation, any note or record of the disclosure; and
+
+iv. any copy of any of the foregoing; and
+
+v. Information that is acquired, directly or indirectly by the Recipient other than from the Disclosing Party.
+
+vi. in respect of Third Parties, introduced in the process of negotiation, as potential partners, alliances or sources of financial participation.
+
+a) "Information" shall include information provided to or acquired by the Recipient in oral or documentary form or by way of models or other tangible or intangible form or by demonstrations or presentations.
+
+b) "Parties" shall mean either or all of the Parties and, in addition, any affiliated persons, companies or entities which are related in business to the Parties.
+
+c) "Related Company" shall mean any corporation, company or other entity, which controls, or is controlled by or is under common control with one Party directly or through one or more intermediaries as long as such control exists. For purposes of this definition "control" shall mean (i) the ownership of the majority of the company's voting stock or the majority of its voting rights, (ii) the right to directly or indirectly appoint the majority of the members of the managing or administrative board or of similar managing authority with the power to represent the company, or (iii) the power to direct or cause the direction of the management by contract or otherwise.
+
+d) "Representatives" shall mean directors, officers or employees of one Party or of its Related companies involved in the discussions or lawyers, consultants, advisers or investment bankers advising one Party or its Related Companies with respect to the discussions.
+
+e) "Recipient" means the party who receives or acquires the Information from the Disclosing Party;
+
+f) Both parties shall deem to share both roles of "Disclosing Party" and "Recipient" considering the nature of disclosure;
+
+g) "Proper Use" shall mean the use of Confidential Information wholly necessary and exclusively for the purpose set out in recital A above.
+
+2. CONFIDENTIALITY
+
+All Confidential Information:
+
+i. shall be used by the Recipient exclusively for the discussions.
+
+ii. Shall not be distributed or disclosed in anyway or form by the Recipient to anyone except to those Representatives who reasonably need to know such Confidential Information for the purpose of evaluating the discussions and who are bound to confidentiality themselves to an extent no less stringent than the Recipient under this Agreement.
+
+iii. Shall be kept confidential by the Recipient with the same degree of care as is used with respect to the Recipient's own confidential information of similar nature to avoid disclosure to any third party.
+
+iv. Shall at all times remain the property of the Disclosing Party.
+
+3. EXCLUDED INFORMATION
+
+Without prejudice to any obligations imposed on and assumed by the Recipient under any national or governmental security regulations the obligations of confidentiality herein shall not apply to any Information which the Recipient can show:
+
+a) was in the possession of the Recipient before such Information was imparted or disclosed by the Disclosing Party;
+
+b) is independently developed by the Recipient without access to or use or knowledge of the Information and to whom no disclosure of the Information has been made;
+
+c) is in or subsequently comes into the public domain or subsequently becomes available to the public other than by breach by the Recipient of its obligations hereunder or by breach of the corresponding obligations of its Representatives;
+
+d) is received by the Recipient without restriction on disclosure or use from a third party, provided, that such third party is not in breach of any confidential agreement.
+
+e) Is required to be disclosed by any decree or order of a government authority, or by court or by an arbitration tribunal or by mandatory law, provided that (a) written notice of such decree is given without undue delay to the Disclosing Party so as to give the Disclosing Party an opportunity to intervene, and (b) the recipient uses best efforts to obtain assurance that the Confidential Information will be treated as confidential by such authority, by marking Confidential Information as "Confidential".
+
+The Recipient shall bear the burden of proving the existence of such exemption.
+
+4. RIGHTS
+
+a) Any Information imparted, disclosed or acquired hereunder shall remain the property of the Disclosing Party or the originator of such Information and must be applied for the Proper Use only. No licence under any trademark, copyright, patent, design rights or any other intellectual property rights or any other intellectual property right, is granted, whether expressly or by implication to the Recipient by the disclosure or acquisition of such Information. The disclosure of such Information shall not constitute any representation or warranty, express or implied with respect to the non-infringement of trademarks, patents, copyright, design rights or any other intellectual property rights belonging to third parties.
+
+b) This agreement and the supply of Confidential Information or Assistance by either party does not constitute an offer. The Parties are under no obligation to accept any offer that the other party may make and may end discussions without giving any reason for doing so and without incurring any liability to the other party.
+
+5. NO WARRANTY; LIMITATION OF LIABILITY
+
+Any information provided hereunder is, made available by the Disclosing Party to the Recipient "as is" without warranty of any kind, whether express or implied, including, but not limited to, fitness for a particular purpose, non-infringement of any third-party rights, or correctness of such information. The Recipient acknowledges and agrees that neither the Disclosing Party nor any of its representatives have made or make any representations or warranties as to the content, the accuracy or completeness of any information furnished hereunder or in connection with the discussions.
+
+Neither the Disclosing Party nor any of its representatives shall have any liability towards the Recipient, its Related Companies and its Representatives relating to the information or for any mistakes, error, inaccuracy or omissions.
+
+6. NON-ASSIGNMENT
+
+Neither party shall assign this Agreement or any part thereof without the prior written consent of the other.
+
+7. NONCIRCUMVENTION
+
+Each Party hereby agree that, during the subsistence of this agreement, they will not directly or indirectly, contact, deal with or otherwise become involved with any entity or any other entities or parties introduced, directly or indirectly, by or through the other party, it's officers, directors, agents or associates, for the purpose of avoiding payment to the other party of fees or otherwise, without the specific written approval of the other party.
+
+8. REPRESENTATIONS AND WARRANTIES
+
+Each party represents and warrants to the other that it has the authority necessary to enter into this agreement and to do all things necessary to procure the fulfilment of its obligations of this Agreement.
+
+9. TERM
+
+The Agreement shall come into force upon execution by both Parties. It shall automatically terminate upon the occurrence of the earlier of the following events:
+
+i. Break-up of the discussions;
+
+ii. Twenty-four (24) months after its coming into force;
+
+iii. the coming into force of a final agreement regarding the discussions, unless agreed otherwise in such final agreement.
+
+The rights and obligations of the Parties which have accrued prior to termination shall, however, survive the termination of this Agreement for a period of five years.
+
+10. RETURN
+
+a) Upon written request of the Disclosing Party at any time, but not later than six (6) months after termination of this Agreement, the Recipient shall in its discretion (1) return all Confidential Information to the Disclosing Party or destroy all Confidential Information; and (2) delete all Confidential Information from any data carrier or storage device.
+
+b) Upon written request of the Disclosing Party, the Recipient shall confirm in writing that all such Confidential Information as well as any copies thereof have been destroyed, returned and deleted, as the case may be. The Recipient shall cause its Related Companies and its Representatives to comply with such obligation respectively. If the Recipient shall not have received a written request within said six (6) months period, the Recipient is entitled in its discretion and at any time and to allow its Related Companies and its Representatives (1) to return all Confidential Information to the Disclosing Party or to destroy all Confidential Information; and (2) to delete all Confidential Information from any data carrier or storage device.
+
+c) The provisions of Section 10(a) shall not apply to copies of electronically exchanged Confidential Information made as a matter of routine information technology backup and Confidential information or copies thereof which must be stored by the Recipient, its Related Companies or its Representatives according to applicable law or internal compliance guidelines, provided that such Confidential information or copies thereof shall then be subject to an indefinite confidential obligation according to the terms and conditions set forth herein.
+
+11. LIABILITY FOR RELATED COMPANIES AND REPRESENTATIVES; THIRD PARTIES
+
+a) The Recipient shall be liable for acts or omissions of its Related Companies and its Representatives — even where such Related Companies and/or Representatives ceases to be a Related Company and/or a Representative — resulting in unauthorised distribution, use and/or disclosure of Confidential information as if such acts or omissions had been its own acts or omissions.
+
+b) Unless stated otherwise in this Agreement, this Agreement shall inure to the benefit of, and may be enforced in accordance with its terms by the original Parties hereto, their Related Companies and their permitted assigns and successors.
+
+12. ENFORCEMENT
+
+A failure or neglect by the Disclosing Party to enforce at any time any of the provisions hereof shall not be construed or deemed to be a waiver of the Disclosing Party's rights hereunder nor in any way affect the validity of the whole or any part of this Agreement nor prejudice the Disclosing Party's rights to take subsequent action.
+
+13. ENTIRE AGREEMENT
+
+This agreement constitutes the entire agreement and understanding of the parties and supersedes any previous agreement between the parties relating to the subject matter of this agreement. Nothing in this Agreement constitute a commitment to provide any service which shall be the subject of a separate written agreement.
+
+14. GOVERNING LAW AND JURISDICTION
+
+a) This Agreement and the relationship of the parties in connection with the subject matter of this Agreement shall be governed and determined in accordance with the laws of the Republic of India.
+
+b) The parties irrevocably submit to the non-exclusive jurisdiction of the Indian courts (particularly the Bombay High Court) for the determination of any dispute arising out of or in connection with this Agreement.
+
+c) In the event of any dispute arising between the parties then such dispute (if not resolved by mutual agreement within thirty (30) days) shall be referred for arbitration to a single arbitrator chosen by mutual agreement of the parties. If the Parties fail to appoint the arbitrator by mutual consent within such thirty (30) day period, then either Party may apply under Section 11 of the Arbitration and Conciliation Act, 1996 to the appropriate court for appointment of the arbitrator. The seat and venue of arbitration shall be set in Pune, India and the language of arbitration shall be English.
+
+d) The arbitral proceedings shall be conducted in accordance with Part I of the Act and any amendments thereto. The award rendered by the arbitrator shall be final and binding on the Parties and may be enforced in any court having jurisdiction.
+
+e) Pending final settlement or determination of a dispute, the parties shall continue to perform their subsisting obligations hereunder.
+
+f) Nothing in this Agreement shall prevent or delay a party seeking injunctive or interlocutory relief in a court having jurisdiction.
+
+15. ADDRESSES FOR SERVICE
+
+Any notice required to be given hereunder by either party to the other shall be in writing and shall be deemed to have been sufficiently given when it is transmitted by telex or facsimile or by registered or recorded delivery post to the address of the party as stated herein.
+
+16. COSTS
+
+a) Each party shall bear its own costs incidental to the negotiation, preparation, settling, signing and implementation of this Agreement.
+
+b) Any costs, including attorney and own client costs, incurred by either party arising out of breach of any of the provisions of this Agreement shall be borne by the party in breach.
+
+17. SEVERABILITY
+
+In the event, any one or more of the provisions of this Agreement being held for any reason to be invalid, illegal, or unenforceable in any respect, such invalidity, illegality, or unenforceability shall not affect any of the provisions of this Agreement, and this Agreement shall be construed as if such invalid, illegal or unenforceable provision was not a part of this Agreement, and the Agreement shall be carried out as nearly as possible in accordance with its original terms and intent.
+
+18. COUNTERPARTS
+
+This Agreement may be executed in any number of counterparts, each of which when executed shall be deemed to be an original and all of the counterparts together shall constitute the same agreement.
+
+===SIGNATURE_BLOCK===
+
+Global Capital BV
+Name: Amol Kadam
+Designation: CEO
+Signature: signed electronically
+
+{{COUNTERPARTY_NAME}}
+Name: {{SIGNATORY_NAME}}
+Designation: {{SIGNATORY_TITLE}}
+Signature: signed electronically by {{SIGNER_NAME}} on {{SIGNED_AT}}
