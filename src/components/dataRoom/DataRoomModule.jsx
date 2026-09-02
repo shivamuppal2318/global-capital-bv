@@ -618,6 +618,20 @@ export function DataRoomModule() {
                         {doc.originalName}
                       </button>
                       <Badge tone="slate">{doc.category}</Badge>
+                      {!selectedLeadId ? (
+                        doc.lead ? (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLeadId(doc.lead.id)}
+                            className="rounded-full bg-[#eef1ff] px-2.5 py-0.5 text-[11px] font-semibold text-[#3046b2] hover:bg-[#e2e8ff]"
+                            title={`Show only ${doc.lead.company}'s Data Room`}
+                          >
+                            {doc.lead.company}
+                          </button>
+                        ) : (
+                          <Badge tone="slate">Company library</Badge>
+                        )
+                      ) : null}
                       {doc.searchable ? (
                         <Badge tone="green">AI-readable</Badge>
                       ) : (

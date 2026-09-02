@@ -39,6 +39,12 @@ function publicDocument(doc) {
     verifiedAt: doc.verifiedAt,
     verifiedBy: doc.verifiedBy ? { id: doc.verifiedBy.id, name: doc.verifiedBy.name } : null,
     leadId: doc.leadId,
+    // Which client this belongs to — previously only the bare leadId came
+    // back, so the "Company library (all documents)" mixed view had no way
+    // to show whose document is whose; a staff member had to already know
+    // which lead to pick in the Deal dropdown, one at a time, to ever see
+    // this. Null when it's a real company-wide reference document.
+    lead: doc.lead ? { id: doc.lead.id, name: doc.lead.name, company: doc.lead.company } : null,
     createdAt: doc.createdAt
   };
 }
@@ -64,7 +70,11 @@ documentsRouter.get("/", asyncHandler(async (req, res) => {
           }
         : {})
     },
-    include: { uploadedBy: { select: { id: true, name: true } }, verifiedBy: { select: { id: true, name: true } } },
+    include: {
+      uploadedBy: { select: { id: true, name: true } },
+      verifiedBy: { select: { id: true, name: true } },
+      lead: { select: { id: true, name: true, company: true } }
+    },
     orderBy: { createdAt: "desc" }
   });
   res.json(docs.map(publicDocument));
