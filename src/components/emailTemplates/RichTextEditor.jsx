@@ -18,7 +18,11 @@ const toolbarButtons = [
 // start, which makes typing unusable.
 export function RichTextEditor({ value, onChange, placeholder }) {
   const editorRef = useRef(null);
-  const lastEmittedValue = useRef(value);
+  // Seeded to a value no real `value` prop can equal (not "") so the very
+  // first effect run always writes into the DOM — a freshly mounted
+  // contentEditable div starts genuinely empty, regardless of what `value`
+  // already holds (e.g. opening a template that has real saved body text).
+  const lastEmittedValue = useRef(null);
   const [htmlMode, setHtmlMode] = useState(false);
 
   useEffect(() => {
