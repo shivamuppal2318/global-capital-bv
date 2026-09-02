@@ -124,7 +124,7 @@ async function main() {
     {
       key: "interested",
       subject: "NDA & next steps — {{company}}",
-      body: "Hi {{leadName}},\n\nThank you for the quick response — glad to hear {{company}} is aligned with the mandate.\n\nTo move forward, please review and sign our NDA here: {{ndaSignUrl}}\n\nOnce we have your signature on file, we'll unlock the next stage of diligence and share our data-room request checklist so we can move efficiently from here.\n\nHappy to jump on a call in parallel if that's useful — just let us know.\n\nBest regards,\nGlobal Capital BV"
+      body: "Hi {{leadName}},\n\nThank you for the quick response — glad to hear {{company}} is aligned with the mandate.\n\nThere are two ways to move forward from here: sign our NDA to unlock the full diligence materials, or first schedule a short Zoom call to walk through the details before any paperwork — https://calendly.com/globalcapitalbv/intro-call\n\nIf you'd rather go straight to the NDA, you can review and sign it here: {{ndaSignUrl}}\n\nOnce we have your signature on file (or right after the call), we'll unlock the next stage of diligence and share our data-room request checklist so we can move efficiently from here.\n\nBest regards,\nGlobal Capital BV"
     },
     {
       key: "zoom-request",
