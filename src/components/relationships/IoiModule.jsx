@@ -167,6 +167,17 @@ export function IoiModule() {
     setFormMode(null);
   };
 
+  // Once signed, r.document is either the client's own uploaded copy or
+  // (if they filled the form in online instead) still the blank template —
+  // either way, it's a real file worth being able to pull up.
+  const handleDownloadDocument = async (doc) => {
+    try {
+      await documentsApi.open(doc, { download: true });
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   async function handleSave(e) {
     e?.preventDefault?.();
     if (!editing.leadId) return setFormError("Pick which lead this IOI is for.");
@@ -739,7 +750,17 @@ export function IoiModule() {
                     {r.geography ? <Badge tone="slate">{r.geography}</Badge> : null}
                   </div>
                   {r.document ? (
-                    <p className="mt-1 text-[12px] text-[#3046b2]">Attached: {r.document.originalName}</p>
+                    r.status === "SIGNED" ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadDocument(r.document)}
+                        className="mt-1 text-[12px] font-semibold text-[#3046b2] underline decoration-dotted hover:text-[#21439b]"
+                      >
+                        Download Signed IOI
+                      </button>
+                    ) : (
+                      <p className="mt-1 text-[12px] text-[#3046b2]">Attached: {r.document.originalName}</p>
+                    )
                   ) : null}
                   {r.notes ? <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[#4f6181]">{r.notes}</p> : null}
                 </div>
