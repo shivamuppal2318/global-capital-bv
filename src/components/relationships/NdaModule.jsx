@@ -4,6 +4,7 @@ import { leadsApi } from "../../lib/leadsApi";
 import { documentsApi } from "../../lib/documentsApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
 import { CheckCircleIcon, PlusIcon, SearchIcon, XIcon } from "../Icons";
+import { useAuth } from "../../context/AuthContext";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
@@ -45,6 +46,7 @@ const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : "—");
 const has = (v) => v !== null && v !== undefined;
 
 export function NdaModule() {
+  const { user } = useAuth();
   const [records, setRecords] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [leads, setLeads] = useState([]);
@@ -107,7 +109,10 @@ export function NdaModule() {
     expiresAt: "",
     signerName: "",
     signerEmail: "",
-    owner: "",
+    // Defaults to whichever DOE is sending it — the person creating this
+    // record almost always is the owner; still editable for the rarer case
+    // of one DOE setting up an NDA on behalf of another.
+    owner: user?.name ?? "",
     notes: "",
     documentId: ""
   });
