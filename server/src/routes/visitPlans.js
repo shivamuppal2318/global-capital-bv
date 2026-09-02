@@ -3,8 +3,19 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { visitMetrics } from "../lib/relationshipMetrics.js";
+import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const visitPlansRouter = Router();
+
+// A Channel Partner's Visit Planning access is read-only, scoped to visits
+// on their own referred leads only -- company-wide metrics/calendar and
+// every write stay refused.
+function blockChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Your account has read-only access to visits on your own referred leads." });
+  }
+  next();
+}
 
 const STATUSES = ["PLANNED", "CONFIRMED", "COMPLETED", "CANCELLED"];
 
@@ -17,6 +28,7 @@ visitPlansRouter.get("/", asyncHandler(async (req, res) => {
   const { status, region, q, leadId, owner } = req.query;
   const plans = await prisma.visitPlan.findMany({
     where: {
+      ...relatedLeadOwnerWhereClause(req),
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(region && region !== "All" ? { region: String(region) } : {}),
       ...(leadId ? { leadId: String(leadId) } : {}),
@@ -38,13 +50,13 @@ visitPlansRouter.get("/", asyncHandler(async (req, res) => {
   res.json(plans);
 }));
 
-visitPlansRouter.get("/metrics", asyncHandler(async (_req, res) => {
+visitPlansRouter.get("/metrics", blockChannelPartner, asyncHandler(async (_req, res) => {
   res.json(visitMetrics(await prisma.visitPlan.findMany()));
 }));
 
 // Visits grouped by month then day, for the calendar view. Done server-side
 // so the calendar doesn't have to pull every visit and bucket them itself.
-visitPlansRouter.get("/calendar", asyncHandler(async (req, res) => {
+visitPlansRouter.get("/calendar", blockChannelPartner, asyncHandler(async (req, res) => {
   const plans = await prisma.visitPlan.findMany({
     where: {
       status: { not: "CANCELLED" },
@@ -122,7 +134,7 @@ function buildData(input) {
 
 // Unlike NDAs, a lead can have several visits over time, so this creates
 // rather than upserts.
-visitPlansRouter.post("/", asyncHandler(async (req, res) => {
+visitPlansRouter.post("/", blockChannelPartner, asyncHandler(async (req, res) => {
   const parsed = upsertSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -134,7 +146,7 @@ visitPlansRouter.post("/", asyncHandler(async (req, res) => {
   res.status(201).json(plan);
 }));
 
-visitPlansRouter.patch("/:id", asyncHandler(async (req, res) => {
+visitPlansRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const parsed = upsertSchema.partial({ leadId: true }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -146,7 +158,7 @@ visitPlansRouter.patch("/:id", asyncHandler(async (req, res) => {
   res.json(plan);
 }));
 
-visitPlansRouter.delete("/:id", asyncHandler(async (req, res) => {
+visitPlansRouter.delete("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const deleted = await prisma.visitPlan.delete({ where: { id: req.params.id } }).catch(() => null);
   if (!deleted) return res.status(404).json({ error: "Visit plan not found" });
   res.status(204).end();

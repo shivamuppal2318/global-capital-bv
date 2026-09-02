@@ -3,8 +3,19 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { dealFunnel, ioiMetrics } from "../lib/relationshipMetrics.js";
+import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const ioiRecordsRouter = Router();
+
+// A Channel Partner's IOI access is read-only, scoped to IOIs on their own
+// referred leads only -- company-wide metrics/funnel and every write stay
+// refused.
+function blockChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Your account has read-only access to IOIs on your own referred leads." });
+  }
+  next();
+}
 
 const STATUSES = ["DRAFT", "GENERATED", "SENT", "SIGNED", "DECLINED", "EXPIRED"];
 
@@ -17,6 +28,7 @@ ioiRecordsRouter.get("/", asyncHandler(async (req, res) => {
   const { status, industry, geography, q, leadId, owner } = req.query;
   const records = await prisma.ioiRecord.findMany({
     where: {
+      ...relatedLeadOwnerWhereClause(req),
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(industry && industry !== "All" ? { industry: String(industry) } : {}),
       ...(geography && geography !== "All" ? { geography: String(geography) } : {}),
@@ -41,7 +53,7 @@ ioiRecordsRouter.get("/", asyncHandler(async (req, res) => {
 
 // Always over every record, never the filtered view — a KPI that moved when
 // you typed in the search box would be misleading.
-ioiRecordsRouter.get("/metrics", asyncHandler(async (_req, res) => {
+ioiRecordsRouter.get("/metrics", blockChannelPartner, asyncHandler(async (_req, res) => {
   res.json(ioiMetrics(await prisma.ioiRecord.findMany()));
 }));
 
@@ -52,7 +64,7 @@ ioiRecordsRouter.get("/metrics", asyncHandler(async (_req, res) => {
 // records created before that move still live in the shared one, and a
 // funnel that ignored them would show a cliff where the migration happened
 // rather than where deals actually drop out.
-ioiRecordsRouter.get("/funnel", asyncHandler(async (_req, res) => {
+ioiRecordsRouter.get("/funnel", blockChannelPartner, asyncHandler(async (_req, res) => {
   const [ndaRows, meetingRows, ioiRows, stageRows] = await Promise.all([
     prisma.ndaRecord.findMany({ select: { leadId: true } }),
     prisma.meeting.findMany({ where: { leadId: { not: null } }, select: { leadId: true } }),
@@ -112,7 +124,7 @@ function buildData(input) {
 
 // One IOI per lead (leadId is unique), so this upserts — recording the same
 // lead's IOI twice updates it rather than failing on the constraint.
-ioiRecordsRouter.post("/", asyncHandler(async (req, res) => {
+ioiRecordsRouter.post("/", blockChannelPartner, asyncHandler(async (req, res) => {
   const parsed = upsertSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -138,7 +150,7 @@ const ACTION_FIELD = {
   sign: { field: "signedAt", status: "SIGNED", label: "Signed" }
 };
 
-ioiRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
+ioiRecordsRouter.post("/:id/:action", blockChannelPartner, asyncHandler(async (req, res) => {
   const step = ACTION_FIELD[req.params.action];
   if (!step) return res.status(400).json({ error: `Unknown action "${req.params.action}".` });
 
@@ -160,7 +172,7 @@ ioiRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
   res.json(record);
 }));
 
-ioiRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
+ioiRecordsRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const parsed = upsertSchema.partial({ leadId: true }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -172,7 +184,7 @@ ioiRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
   res.json(record);
 }));
 
-ioiRecordsRouter.delete("/:id", asyncHandler(async (req, res) => {
+ioiRecordsRouter.delete("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const deleted = await prisma.ioiRecord.delete({ where: { id: req.params.id } }).catch(() => null);
   if (!deleted) return res.status(404).json({ error: "IOI record not found" });
   res.status(204).end();

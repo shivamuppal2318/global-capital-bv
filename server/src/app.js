@@ -123,7 +123,12 @@ const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
   "/api/email/ai-agent",
   "/api/market-intelligence",
   "/api/leads",
-  "/api/documents"
+  "/api/documents",
+  "/api/nda-records",
+  "/api/ioi-records",
+  "/api/visit-plans",
+  "/api/ageing-report",
+  "/api/outreach-doe"
 ];
 app.use((req, res, next) => {
   if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
@@ -212,12 +217,12 @@ app.use(
 // module id since it can be granted independently of the stage screens it
 // reports on. Per-DOE activity itself lives in outreachDoeRouter below, not
 // duplicated here.
-app.use("/api/ageing-report", requireModule("ageing-report"), ageingReportRouter);
+app.use("/api/ageing-report", outreachOrChannelPartnerModule("ageing-report"), ageingReportRouter);
 // NDA tracking and visit planning outgrew the shared deal-stage table, so
 // they have dedicated routers. Note this is not "/api/nda" — that path is
 // the public token-based signing page and must stay unauthenticated.
-app.use("/api/nda-records", requireModule("nda"), ndaRecordsRouter);
-app.use("/api/visit-plans", requireModule("visit-planning"), visitPlansRouter);
+app.use("/api/nda-records", outreachOrChannelPartnerModule("nda"), ndaRecordsRouter);
+app.use("/api/visit-plans", outreachOrChannelPartnerModule("visit-planning"), visitPlansRouter);
 app.use("/api/channel-partners", requireModule("channel-partner"), channelPartnersRouter);
 // Public token-based signing page (same pattern as /api/nda) — not
 // "/api/channel-partners" plus a subpath, since that's the authenticated
@@ -226,7 +231,7 @@ app.use("/api/channel-partner-agreement", channelPartnerAgreementRouter);
 // The portal's own login/me — see the PUBLIC_PREFIXES comment above for why
 // this path is unauthenticated at the global-gate level.
 app.use("/api/channel-partner-portal-auth", channelPartnerPortalAuthRouter);
-app.use("/api/ioi-records", requireModule("ioi"), ioiRecordsRouter);
+app.use("/api/ioi-records", outreachOrChannelPartnerModule("ioi"), ioiRecordsRouter);
 app.use("/api/executive-dashboard", requireModule("command-center"), executiveDashboardRouter);
 app.use("/api/universal-filters", requireModule("universal-filters"), universalFiltersRouter);
 app.use("/api/ai", aiChatRouter);
@@ -267,7 +272,7 @@ function outreachOrChannelPartnerModule(moduleId, ...staffModuleIds) {
     return staffCheck(req, res, next);
   };
 }
-app.use("/api/outreach-doe", outreach, outreachDoeRouter);
+app.use("/api/outreach-doe", outreachOrChannelPartnerModule("leads", "cold-bulk-mailing", "leads"), outreachDoeRouter);
 app.use("/api/email/campaigns", outreachOrChannelPartner, emailCampaignsRouter);
 app.use(
   "/api/email/leads",

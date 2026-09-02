@@ -5,8 +5,18 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { ndaMetrics } from "../lib/relationshipMetrics.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
 import { sendSystemEmail, ndaReadyToSignEmail } from "../lib/systemMailer.js";
+import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const ndaRecordsRouter = Router();
+
+// A Channel Partner's NDA access is read-only, scoped to NDAs on their own
+// referred leads only -- company-wide metrics and every write stay refused.
+function blockChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Your account has read-only access to NDAs on your own referred leads." });
+  }
+  next();
+}
 
 // Same reasoning as leads.js's apiBaseUrl(): the client portal is
 // server-rendered by THIS API, not the React SPA, so its links point at
@@ -26,6 +36,7 @@ ndaRecordsRouter.get("/", asyncHandler(async (req, res) => {
   const { status, q, leadId, owner } = req.query;
   const records = await prisma.ndaRecord.findMany({
     where: {
+      ...relatedLeadOwnerWhereClause(req),
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(leadId ? { leadId: String(leadId) } : {}),
       ...(owner ? { owner: { contains: String(owner), mode: "insensitive" } } : {}),
@@ -47,7 +58,7 @@ ndaRecordsRouter.get("/", asyncHandler(async (req, res) => {
 
 // Metrics come from every record, never the filtered view — a KPI that
 // changed when you typed in the search box would be misleading.
-ndaRecordsRouter.get("/metrics", asyncHandler(async (_req, res) => {
+ndaRecordsRouter.get("/metrics", blockChannelPartner, asyncHandler(async (_req, res) => {
   const all = await prisma.ndaRecord.findMany({ include: { lead: { select: { name: true, company: true } } } });
   const metrics = ndaMetrics(all);
   // Re-attach lead names to the chase list, which the pure metric function
@@ -92,7 +103,7 @@ function buildData(input) {
 
 // One NDA per lead (leadId is unique), so this upserts — recording the same
 // lead's NDA twice updates it rather than failing on the constraint.
-ndaRecordsRouter.post("/", asyncHandler(async (req, res) => {
+ndaRecordsRouter.post("/", blockChannelPartner, asyncHandler(async (req, res) => {
   const parsed = upsertSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -120,7 +131,7 @@ const ACTION_FIELD = {
   sign: { field: "signedAt", status: "SIGNED" }
 };
 
-ndaRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
+ndaRecordsRouter.post("/:id/:action", blockChannelPartner, asyncHandler(async (req, res) => {
   const step = ACTION_FIELD[req.params.action];
   if (!step) return res.status(400).json({ error: `Unknown action "${req.params.action}".` });
 
@@ -177,7 +188,7 @@ ndaRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
   res.json({ ...record, emailResult });
 }));
 
-ndaRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
+ndaRecordsRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const parsed = upsertSchema.partial({ leadId: true }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -189,7 +200,7 @@ ndaRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
   res.json(record);
 }));
 
-ndaRecordsRouter.delete("/:id", asyncHandler(async (req, res) => {
+ndaRecordsRouter.delete("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const deleted = await prisma.ndaRecord.delete({ where: { id: req.params.id } }).catch(() => null);
   if (!deleted) return res.status(404).json({ error: "NDA record not found" });
   res.status(204).end();

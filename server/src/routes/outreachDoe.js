@@ -5,6 +5,19 @@ import { doeScorecard, doeOverallMetrics, outreachMetrics, whatsappReplyRateMetr
 
 export const outreachDoeRouter = Router();
 
+// A Channel Partner's Outreach/DOE access is read-only, scoped to their own
+// referred cold-outreach leads (via EmailCampaign.ownerChannelPartnerId,
+// same mechanism Email Automation itself already uses -- see
+// lib/channelPartnerScope.js). /facets lists every DOE's name/geography
+// company-wide with no scoping mechanism of its own, so it's refused
+// outright for this tier rather than leaking other DOEs' names.
+function blockChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Your account has read-only access to your own referred leads' outreach." });
+  }
+  next();
+}
+
 // Targets from the spec — not stored anywhere, just the fixed goals the
 // scorecard is measured against.
 const TARGETS = {
@@ -16,7 +29,7 @@ const TARGETS = {
   zoomCallsPerDay: 2
 };
 
-outreachDoeRouter.get("/facets", asyncHandler(async (_req, res) => {
+outreachDoeRouter.get("/facets", blockChannelPartner, asyncHandler(async (_req, res) => {
   const leads = await prisma.emailLead.findMany({ select: { owner: true, country: true } });
   res.json({
     does: [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort(),
@@ -28,7 +41,10 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   const { doe, geography, dateFrom, dateTo } = req.query;
 
   const [allLeads, allActivity, agents, allMeetings] = await Promise.all([
-    prisma.emailLead.findMany({ select: { id: true, owner: true, country: true, replyType: true, callBookedAt: true, createdAt: true } }),
+    prisma.emailLead.findMany({
+      where: req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {},
+      select: { id: true, owner: true, country: true, replyType: true, callBookedAt: true, createdAt: true }
+    }),
     prisma.emailActivityLog.findMany({ select: { leadId: true, kind: true, createdAt: true } }),
     prisma.agent.findMany({ select: { assignedCount: true, resolvedCount: true } }),
     prisma.meeting.findMany({ select: { createdAt: true } })
@@ -52,8 +68,16 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   // WhatsApp and Zoom are reported company-wide, unfiltered by the leads
   // query above — neither can be attributed to a DOE or a cold-outreach
   // date range with the data this app links today (see doeScorecard.js).
-  const whatsapp = whatsappReplyRateMetrics(agents);
-  const zoom = zoomBookingMetrics(allMeetings);
+  // That's exactly why this section is nulled out for a Channel Partner:
+  // there's no scoping mechanism for it at all, unlike everything else in
+  // this response.
+  const companyWide = req.channelPartner
+    ? { linkedinAcceptanceRate: null, whatsappReplyRate: null, zoomCallsPerDay: null }
+    : {
+        linkedinAcceptanceRate: null, // no LinkedIn integration exists in this app
+        whatsappReplyRate: whatsappReplyRateMetrics(agents).replyRate,
+        zoomCallsPerDay: zoomBookingMetrics(allMeetings).perDay
+      };
 
   res.json({
     targets: TARGETS,
@@ -65,10 +89,6 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
     },
     scorecard,
     overall,
-    companyWide: {
-      linkedinAcceptanceRate: null, // no LinkedIn integration exists in this app
-      whatsappReplyRate: whatsapp.replyRate,
-      zoomCallsPerDay: zoom.perDay
-    }
+    companyWide
   });
 }));

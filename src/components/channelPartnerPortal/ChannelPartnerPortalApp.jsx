@@ -4,6 +4,9 @@ import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
 import { MarketIntelligenceModule } from "../marketIntelligence/MarketIntelligenceModule.jsx";
 import { PartnerLeadsView } from "./PartnerLeadsView.jsx";
 import { PartnerDocumentsView } from "./PartnerDocumentsView.jsx";
+import { PartnerDealRecordsView } from "./PartnerDealRecordsView.jsx";
+import { PartnerAgeingReportView } from "./PartnerAgeingReportView.jsx";
+import { PartnerOutreachView } from "./PartnerOutreachView.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
 
 const inputClass =
@@ -84,9 +87,17 @@ function PartnerLoginView() {
 // is a separate top-level module in the staff app (App.jsx), not a tab
 // inside EmailOutreachModule like Segments/Templates/AI Agent are, so they
 // need their own nav entries here rather than more visibleTabs ids.
+// matchIds (instead of a single id) is for Deal Records, which folds NDA/
+// IOI/Visit Planning into one section with internal tabs rather than three
+// separate nav entries -- shown if ANY of the three is granted, and the
+// component itself (via the permissions prop below) only renders tabs for
+// the ones actually granted.
 const EXTRA_SECTIONS = [
   { id: "crm-workspace", label: "CRM Workspace", Component: PartnerLeadsView },
   { id: "data-room", label: "Data Room", Component: PartnerDocumentsView },
+  { id: "deal-records", label: "Deal Records", matchIds: ["nda", "ioi", "visit-planning"], Component: PartnerDealRecordsView },
+  { id: "ageing-report", label: "Ageing Report", Component: PartnerAgeingReportView },
+  { id: "leads", label: "Outreach / DOE", Component: PartnerOutreachView },
   { id: "market-intelligence", label: "Market Intelligence", Component: MarketIntelligenceModule }
 ];
 
@@ -94,8 +105,9 @@ function PartnerShell() {
   const { partnerUser, logout } = useChannelPartnerAuth();
   const [section, setSection] = useState("email");
   const permissions = partnerUser.permissions ?? [];
-  const grantedExtraSections = EXTRA_SECTIONS.filter((s) => permissions.includes(s.id));
-  const ActiveExtraSection = grantedExtraSections.find((s) => s.id === section)?.Component ?? null;
+  const grantedExtraSections = EXTRA_SECTIONS.filter((s) => (s.matchIds ?? [s.id]).some((id) => permissions.includes(id)));
+  const activeSection = grantedExtraSections.find((s) => s.id === section);
+  const ActiveExtraSection = activeSection?.Component ?? null;
 
   return (
     <div className="min-h-screen bg-[#f7f9fc] px-6 py-6 lg:px-10">
@@ -139,7 +151,7 @@ function PartnerShell() {
         ) : null}
 
         {ActiveExtraSection ? (
-          <ActiveExtraSection />
+          <ActiveExtraSection permissions={permissions} />
         ) : (
           // The existing staff module, unchanged — Dashboard/Campaigns/Leads/
           // Automation are the always-included baseline (one shared API

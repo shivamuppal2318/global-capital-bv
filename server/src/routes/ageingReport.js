@@ -4,6 +4,6 @@ import { computeAgeingReport } from "../lib/ageingReport.js";
 
 export const ageingReportRouter = Router();
 
-ageingReportRouter.get("/", asyncHandler(async (_req, res) => {
-  res.json(await computeAgeingReport());
+ageingReportRouter.get("/", asyncHandler(async (req, res) => {
+  res.json(await computeAgeingReport(req.channelPartner));
 }));
