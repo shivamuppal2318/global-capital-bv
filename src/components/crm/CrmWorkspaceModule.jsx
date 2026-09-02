@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   FunnelIcon,
+  GlobeIcon,
   MailIcon,
   PencilIcon,
   PlusIcon,
@@ -52,7 +53,8 @@ function LeadDetailModal({
   onConvert, converting, convertError,
   onOpenSendMail,
   tagsEditing, tagsDraft, setTagsDraft, onOpenTags, onCloseTags, onSaveTags, savingTags, tagsError,
-  timeline, timelineLoading, interactions, interactionsLoading
+  timeline, timelineLoading, interactions, interactionsLoading,
+  onEnrich, enriching, enrichResult
 }) {
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -125,10 +127,16 @@ function LeadDetailModal({
               onClick={onSendInvite}
               disabled={inviting || Boolean(lead.clientUser)}
             />
+            <ActionButton label={enriching ? "Enriching…" : "Enrich"} icon={GlobeIcon} onClick={onEnrich} disabled={enriching} />
           </div>
 
           {!lead.email ? <p className="mt-2 text-[12px] text-[#8592ab]">Send Mail needs an email address on file for this lead.</p> : null}
           {convertError ? <p className="mt-2 text-[13px] font-medium text-[#e0483f]">{convertError}</p> : null}
+          {enrichResult ? (
+            <p className={`mt-2 text-[13px] font-medium ${enrichResult.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>
+              {enrichResult.text}
+            </p>
+          ) : null}
 
           {tagsEditing ? (
             <div className="mt-3 rounded-[14px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
@@ -344,6 +352,24 @@ function LeadDetailModal({
                     <p className="mt-2 text-[14px] leading-6 text-[#334463]">{lead.notes}</p>
                   </div>
                 ) : null}
+                {lead.zoomInfoData ? (
+                  <div className="mt-4 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] px-4 py-3">
+                    <p className="text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Company Info (ZoomInfo)</p>
+                    <div className="mt-3 grid gap-x-6 gap-y-2 text-[13px] text-[#334463] sm:grid-cols-2">
+                      {lead.zoomInfoData.website ? <p><span className="text-[#8592ab]">Website</span> — {lead.zoomInfoData.website}</p> : null}
+                      {lead.zoomInfoData.phone ? <p><span className="text-[#8592ab]">Phone</span> — {lead.zoomInfoData.phone}</p> : null}
+                      {lead.zoomInfoData.employeeCount ? <p><span className="text-[#8592ab]">Employees</span> — {lead.zoomInfoData.employeeCount}</p> : null}
+                      {lead.zoomInfoData.revenue ? <p><span className="text-[#8592ab]">Revenue</span> — ${Number(lead.zoomInfoData.revenue).toLocaleString()}k</p> : null}
+                      {lead.zoomInfoData.foundedYear ? <p><span className="text-[#8592ab]">Founded</span> — {lead.zoomInfoData.foundedYear}</p> : null}
+                      {lead.zoomInfoData.primaryIndustry?.length ? (
+                        <p><span className="text-[#8592ab]">Industry</span> — {lead.zoomInfoData.primaryIndustry.join(", ")}</p>
+                      ) : null}
+                    </div>
+                    {lead.zoomInfoData.description ? (
+                      <p className="mt-3 text-[13px] leading-6 text-[#435471]">{lead.zoomInfoData.description}</p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : activeTab === "Timeline" ? (
               <EventList loading={timelineLoading} events={timeline} emptyText="No deal-progression events recorded yet." />
@@ -461,6 +487,10 @@ export function CrmWorkspaceModule() {
   const [sendMailForm, setSendMailForm] = useState({ subject: "", body: "" });
   const [sendMailSaving, setSendMailSaving] = useState(false);
   const [sendMailError, setSendMailError] = useState(null);
+  // ZoomInfo company lookup — a manual, one-click action (not automatic on
+  // lead creation) so every API credit spent is a rep's explicit choice.
+  const [enriching, setEnriching] = useState(false);
+  const [enrichResult, setEnrichResult] = useState(null);
 
   function refreshLeads() {
     return leadsApi
@@ -726,6 +756,25 @@ export function CrmWorkspaceModule() {
     }
   };
 
+  const handleEnrich = async () => {
+    setEnriching(true);
+    setEnrichResult(null);
+    try {
+      const result = await leadsApi.enrich(selectedLead.id);
+      if (result.matched) {
+        setLeads((prev) => prev.map((l) => (l.id === result.lead.id ? result.lead : l)));
+        setEnrichResult({ ok: true, text: "Enriched from ZoomInfo." });
+        leadsApi.timeline(selectedLead.id).then(setTimeline).catch(() => {});
+      } else {
+        setEnrichResult({ ok: false, text: result.message });
+      }
+    } catch (err) {
+      setEnrichResult({ ok: false, text: err.message });
+    } finally {
+      setEnriching(false);
+    }
+  };
+
   const unassigned = leads.filter((l) => !l.owner).length;
   const convertedPct = leads.length ? ((leads.filter((l) => l.status === "CONVERTED").length / leads.length) * 100).toFixed(1) : "0.0";
   const qualifiedCount = leads.filter((l) => l.qualified).length;
@@ -796,6 +845,7 @@ export function CrmWorkspaceModule() {
                             setSelectedId(deal.id);
                             setDetailOpen(true);
                             setInviteResult(null);
+                            setEnrichResult(null);
                           }}
                           className="cursor-pointer rounded-[14px] border border-[#e7edf5] bg-white px-3 py-3 shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:border-[#c3cfe6]"
                         >
@@ -845,6 +895,7 @@ export function CrmWorkspaceModule() {
                     setSelectedId(lead.id);
                     setDetailOpen(true);
                     setInviteResult(null);
+                    setEnrichResult(null);
                   }}
                   className={`cursor-pointer bg-white transition hover:bg-[#f8faff] ${lead.id === selectedId ? "bg-[#f5f8fd]" : ""}`}
                 >
@@ -889,6 +940,7 @@ export function CrmWorkspaceModule() {
           onClose={() => {
             setDetailOpen(false);
             setEditing(false);
+            setEnrichResult(null);
           }}
           editing={editing}
           editForm={editForm}
@@ -923,6 +975,9 @@ export function CrmWorkspaceModule() {
           timelineLoading={timelineLoading}
           interactions={interactions}
           interactionsLoading={interactionsLoading}
+          onEnrich={handleEnrich}
+          enriching={enriching}
+          enrichResult={enrichResult}
         />
       ) : null}
 

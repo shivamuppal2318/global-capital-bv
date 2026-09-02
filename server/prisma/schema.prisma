@@ -451,6 +451,15 @@ model Lead {
   // these aren't a fixed vocabulary tied to a filter dimension.
   tags String[] @default([])
 
+  // Raw company attributes from a ZoomInfo enrichment lookup (see
+  // lib/zoominfoClient.js) — display-only, not queried on, so a single Json
+  // blob is enough rather than a column per field (matches rawPayload's
+  // precedent above for arbitrary upstream data). Set only when a match was
+  // actually found; a lead a rep clicked "Enrich" on with no ZoomInfo match
+  // stays null rather than storing an empty/fake result.
+  zoomInfoData       Json?
+  zoomInfoEnrichedAt DateTime?
+
   meetings   Meeting[]
   dealStages DealStageRecord[]
   ndaRecord  NdaRecord?
@@ -617,6 +626,20 @@ model ZoomSettings {
   hostEmail    String?
   connected    Boolean   @default(false)
   lastTestedAt DateTime?
+}
+
+// ZoomInfo's GTM API (OAuth2 client_credentials against api.zoominfo.com) —
+// unrelated to Zoom video/meetings above despite the similar name. Used for
+// CRM Workspace's "Enrich" action (lib/zoominfoClient.js), not the classic
+// Zoom video-call product. clientSecret stored encrypted (see
+// credentialCrypto.js), unlike ZoomSettings above which predates that
+// convention — new credentials in this app follow the encrypted pattern.
+model ZoomInfoSettings {
+  id                    String    @id @default(cuid())
+  clientId              String?
+  clientSecretEncrypted String?
+  connected             Boolean   @default(false)
+  lastTestedAt          DateTime?
 }
 
 model Meeting {
