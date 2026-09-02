@@ -43,10 +43,19 @@ export async function extractText(filePath, mimeType, originalName) {
 
     if (mimeType === "application/pdf" || ext === "pdf") {
       // Imported lazily: pdf-parse pulls in a sizeable dependency tree, and
-      // most uploads aren't PDFs.
-      const { default: pdfParse } = await import("pdf-parse");
+      // most uploads aren't PDFs. v2 replaced the old `pdfParse(buffer)`
+      // function export with a `PDFParse` class (`new PDFParse({data}).getText()`)
+      // — there's no default export at all now, so the old call silently
+      // failed every PDF ("pdfParse is not a function") until this fix.
+      const { PDFParse } = await import("pdf-parse");
       const buffer = await fs.readFile(filePath);
-      const parsed = await pdfParse(buffer);
+      const parser = new PDFParse({ data: buffer });
+      let parsed;
+      try {
+        parsed = await parser.getText();
+      } finally {
+        await parser.destroy();
+      }
       const text = tidy(parsed.text ?? "");
       return text
         ? { text: text.slice(0, MAX_STORED_CHARS), note: null }
