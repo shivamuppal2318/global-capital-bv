@@ -176,4 +176,4 @@ Signature: signed electronically
 {{COUNTERPARTY_NAME}}
 Name: {{SIGNATORY_NAME}}
 Designation: {{SIGNATORY_TITLE}}
-Signature: signed electronically by {{SIGNER_NAME}} on {{SIGNED_AT}}
+Signature: {{SIGNATURE_STATUS}}

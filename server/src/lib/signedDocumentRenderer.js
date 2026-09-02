@@ -1,11 +1,13 @@
-// Renders a downloadable "signed" NDA/IOI when the client accepted via the
-// client portal's "fill in your details online" option rather than
-// uploading their own signed copy. In that path there's no real file on
-// disk to hand back -- Document.documentId still points at the blank
-// company-wide template -- so this fills the template's own text (read
-// once from assets/*-template-body.txt, extracted verbatim from the real
-// NDA PDF / LOI docx) with the values the client actually submitted, and
-// wraps it as a clean, printable HTML page.
+// Renders the real NDA/IOI document text -- extracted verbatim from the
+// actual NDA PDF / LOI docx into assets/*-template-body.txt -- in two
+// forms:
+//   - renderSignedNda/Ioi: a downloadable read-only copy with the client's
+//     submitted values filled into the blanks as plain text, used when
+//     they accepted online (no uploaded file exists to hand back instead).
+//   - ndaFillFormFragment/ioiFillFormFragment: the SAME document text, but
+//     with the blanks turned into live <input> fields the client edits
+//     right there in the client portal, so "fill in your details online"
+//     looks like the actual agreement rather than a generic form.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,24 +39,26 @@ function fillTokens(text, tokens) {
   return text.replace(/\{\{(\w+)\}\}/g, (match, key) => (key in tokens ? tokens[key] : match));
 }
 
+function toParagraphHtml(part, substitute) {
+  return part
+    .trim()
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => {
+      if (/^-\s/.test(block)) {
+        const items = block.split(/\n(?=-\s)/).map((line) => `<li>${substitute(line.replace(/^-\s*/, ""))}</li>`);
+        return `<ul>${items.join("")}</ul>`;
+      }
+      return `<p>${substitute(block).replace(/\n/g, "<br/>")}</p>`;
+    })
+    .join("\n");
+}
+
 function renderBody(rawText) {
   const [mainPart, signaturePart] = rawText.split("===SIGNATURE_BLOCK===");
-  const toParagraphs = (part) =>
-    part
-      .trim()
-      .split(/\n{2,}/)
-      .map((block) => block.trim())
-      .filter(Boolean)
-      .map((block) => {
-        if (/^-\s/.test(block)) {
-          const items = block.split(/\n(?=-\s)/).map((line) => `<li>${escapeHtml(line.replace(/^-\s*/, ""))}</li>`);
-          return `<ul>${items.join("")}</ul>`;
-        }
-        return `<p>${escapeHtml(block).replace(/\n/g, "<br/>")}</p>`;
-      })
-      .join("\n");
-
-  return { mainHtml: toParagraphs(mainPart), signatureHtml: toParagraphs(signaturePart) };
+  const substitute = (block) => escapeHtml(block);
+  return { mainHtml: toParagraphHtml(mainPart, substitute), signatureHtml: toParagraphHtml(signaturePart, substitute) };
 }
 
 function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
@@ -92,6 +96,7 @@ function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
 
 export async function renderSignedNda(nda) {
   const raw = await fs.readFile(path.join(ASSETS_DIR, "nda-template-body.txt"), "utf8");
+  const signerName = nda.signerName || nda.signatoryName || "the counterparty";
   const filled = fillTokens(raw, {
     AGREEMENT_DATE: fmtDate(nda.agreementDate),
     COUNTERPARTY_NAME: nda.counterpartyLegalName || "[counterparty name not provided]",
@@ -99,8 +104,7 @@ export async function renderSignedNda(nda) {
     COUNTERPARTY_ADDRESS: nda.counterpartyAddress || "[address not provided]",
     SIGNATORY_NAME: nda.signatoryName || nda.signerName || "[signatory not provided]",
     SIGNATORY_TITLE: nda.signatoryTitle || "",
-    SIGNER_NAME: nda.signerName || nda.signatoryName || "the counterparty",
-    SIGNED_AT: fmtDateTime(nda.signedAt)
+    SIGNATURE_STATUS: `signed electronically by ${signerName} on ${fmtDateTime(nda.signedAt)}`
   });
   const { mainHtml, signatureHtml } = renderBody(filled);
   return documentShell({
@@ -125,7 +129,7 @@ export async function renderSignedIoi(ioi) {
     SIGNATORY_ADDRESS: ioi.signatoryAddress || "[address not provided]",
     SIGNATORY_PHONE: ioi.signatoryPhone || "[phone not provided]",
     SIGNATORY_EMAIL: ioi.signatoryEmail || "[email not provided]",
-    SIGNED_AT: fmtDateTime(ioi.signedAt)
+    SIGNATURE_STATUS: `signed electronically on ${fmtDateTime(ioi.signedAt)}`
   });
   const { mainHtml, signatureHtml } = renderBody(filled);
   return documentShell({
@@ -134,4 +138,100 @@ export async function renderSignedIoi(ioi) {
     signatureHtml,
     footerNote: `Accepted online via the Global Capital BV client portal on ${fmtDateTime(ioi.signedAt)}. This copy reflects the details the client submitted at acceptance.`
   });
+}
+
+// --- Interactive "fill in your details online" document, embedded in the
+// client portal's Option 1 (see clientPortal.js's ndaSignFormHtml /
+// ioiRespondFormHtml) -----------------------------------------------------
+
+// A token that appears more than once in the source text (a company name
+// named both in the opening paragraph and again in the signature block,
+// say) gets ONE real <input> at its first occurrence and a read-only
+// mirror <span> at every later one, kept in sync client-side by a tiny
+// generated <script> -- so the document still reads naturally without a
+// second form field fighting the first over what value actually submits.
+function renderInteractiveBody(rawText, fieldSpecs) {
+  const seen = new Map();
+  const mirrors = [];
+
+  function substitute(block) {
+    return escapeHtml(block).replace(/\{\{(\w+)\}\}/g, (match, key) => {
+      const spec = fieldSpecs[key];
+      if (!spec) return match;
+      if (!spec.editable) return escapeHtml(spec.text ?? "");
+
+      if (!seen.has(key)) {
+        seen.set(key, true);
+        const type = spec.type ?? "text";
+        return `<input type="${type}" id="gcf-${key}" name="${escapeHtml(spec.name)}" value="${escapeHtml(spec.value ?? "")}" placeholder="${escapeHtml(spec.placeholder ?? "")}" required class="gc-doc-input" />`;
+      }
+      const mirrorId = `gcf-mirror-${key}-${mirrors.length}`;
+      mirrors.push({ key, mirrorId });
+      return `<span id="${mirrorId}" class="gc-doc-mirror">${escapeHtml(spec.value ?? "") || "…"}</span>`;
+    });
+  }
+
+  const [mainPart, signaturePart] = rawText.split("===SIGNATURE_BLOCK===");
+  const mainHtml = toParagraphHtml(mainPart, substitute);
+  const signatureHtml = toParagraphHtml(signaturePart, substitute);
+
+  const script = mirrors.length
+    ? `<script>${mirrors
+        .map(
+          ({ key, mirrorId }) =>
+            `document.getElementById('gcf-${key}')?.addEventListener('input', function (e) { var el = document.getElementById('${mirrorId}'); if (el) el.textContent = e.target.value || '…'; });`
+        )
+        .join("\n")}</script>`
+    : "";
+
+  return { mainHtml, signatureHtml, script };
+}
+
+function fillFormShell({ mainHtml, signatureHtml, script }) {
+  return `
+    <div class="gc-doc-frame">
+      <div class="gc-doc-scroll">
+        ${mainHtml}
+        <div class="gc-doc-signature">${signatureHtml}</div>
+      </div>
+    </div>
+    ${script}`;
+}
+
+export async function ndaFillFormFragment(filled, companyName) {
+  const raw = await fs.readFile(path.join(ASSETS_DIR, "nda-template-body.txt"), "utf8");
+  const specs = {
+    AGREEMENT_DATE: { editable: true, name: "agreementDate", type: "date", value: filled.agreementDate ?? "" },
+    COUNTERPARTY_NAME: {
+      editable: true,
+      name: "counterpartyLegalName",
+      value: filled.counterpartyLegalName || companyName || "",
+      placeholder: "Your company's legal name"
+    },
+    COUNTERPARTY_COUNTRY: { editable: true, name: "counterpartyCountry", value: filled.counterpartyCountry ?? "", placeholder: "Country of registration" },
+    COUNTERPARTY_ADDRESS: { editable: true, name: "counterpartyAddress", value: filled.counterpartyAddress ?? "", placeholder: "Registered office address" },
+    SIGNATORY_NAME: { editable: true, name: "signatoryName", value: filled.signatoryName ?? "", placeholder: "Signatory name" },
+    SIGNATORY_TITLE: { editable: true, name: "signatoryTitle", value: filled.signatoryTitle ?? "", placeholder: "Signatory title" },
+    SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" }
+  };
+  return fillFormShell(renderInteractiveBody(raw, specs));
+}
+
+export async function ioiFillFormFragment(filled, companyName, ioi) {
+  const raw = await fs.readFile(path.join(ASSETS_DIR, "ioi-template-body.txt"), "utf8");
+  const investmentAmount = ioi?.value ? `${ioi.valueCurrency ?? "USD"} ${Number(ioi.value).toLocaleString("en-US")}` : "to be confirmed";
+  const specs = {
+    COUNTERPARTY_NAME: { editable: true, name: "counterpartyLegalName", value: filled.counterpartyLegalName || companyName || "", placeholder: "Your company's legal name" },
+    JURISDICTION: { editable: true, name: "counterpartyJurisdiction", value: filled.counterpartyJurisdiction ?? "", placeholder: "Jurisdiction of domicile" },
+    PROJECT_COST: { editable: true, name: "totalProjectCost", value: filled.totalProjectCost ?? "", placeholder: "Total acquisition / project cost (USD)" },
+    BORROWER_EQUITY: { editable: true, name: "borrowerEquity", value: filled.borrowerEquity ?? "", placeholder: "Equity provided by borrower (USD)" },
+    INVESTMENT_AMOUNT: { editable: false, text: investmentAmount },
+    ISSUE_DATE: { editable: true, name: "agreementDate", type: "date", value: filled.agreementDate ?? "" },
+    SIGNATORY_NAME: { editable: true, name: "signatoryName", value: filled.signatoryName ?? "", placeholder: "Signatory name" },
+    SIGNATORY_ADDRESS: { editable: true, name: "signatoryAddress", value: filled.signatoryAddress ?? "", placeholder: "Signatory address" },
+    SIGNATORY_PHONE: { editable: true, name: "signatoryPhone", type: "tel", value: filled.signatoryPhone ?? "", placeholder: "Signatory phone" },
+    SIGNATORY_EMAIL: { editable: true, name: "signatoryEmail", type: "email", value: filled.signatoryEmail ?? "", placeholder: "Signatory email" },
+    SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" }
+  };
+  return fillFormShell(renderInteractiveBody(raw, specs));
 }

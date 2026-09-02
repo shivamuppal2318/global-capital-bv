@@ -17,6 +17,7 @@ import { extractText } from "../lib/documentText.js";
 import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
 import { loginRateLimit, forgotPasswordRateLimit } from "../middleware/authRateLimit.js";
 import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
+import { ndaFillFormFragment, ioiFillFormFragment } from "../lib/signedDocumentRenderer.js";
 
 // Same idiom as routes/leads.js and routes/ndaRecords.js — the client
 // portal is server-rendered by this API, not the frontend SPA, so its own
@@ -398,8 +399,7 @@ function ndaFilledValues(nda) {
 // signed/scanned copy back, or upload an NDA of their own instead of ours
 // — the last two share the same upload control, since the system can't
 // tell (and doesn't need to) which one a given file is.
-function ndaSignFormHtml({ error, doeName, alreadySigned, companyName, filled } = {}) {
-  const f = filled ?? {};
+function ndaSignFormHtml({ error, doeName, alreadySigned, companyName, filled, documentHtml } = {}) {
   return `
     <div class="gc-sign-box">
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
@@ -411,13 +411,9 @@ function ndaSignFormHtml({ error, doeName, alreadySigned, companyName, filled } 
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
 
       <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#102246;">Option 1 — Fill in your details online</p>
-      <form method="POST" action="/api/client-portal/nda/fill-details" style="margin:0 0 22px;display:grid;gap:12px;max-width:480px;">
-        ${formField({ label: "Your company's legal name", name: "counterpartyLegalName", value: f.counterpartyLegalName ?? companyName ?? "" })}
-        ${formField({ label: "Country of registration", name: "counterpartyCountry", value: f.counterpartyCountry ?? "" })}
-        ${formField({ label: "Registered office address", name: "counterpartyAddress", value: f.counterpartyAddress ?? "" })}
-        ${formField({ label: "Agreement date", name: "agreementDate", type: "date", value: f.agreementDate ?? "" })}
-        ${formField({ label: "Signatory name", name: "signatoryName", value: f.signatoryName ?? "" })}
-        ${formField({ label: "Signatory title", name: "signatoryTitle", value: f.signatoryTitle ?? "" })}
+      <p style="margin:0 0 12px;font-size:12.5px;color:#5c6b87;">This is the actual agreement — edit the highlighted fields directly in the text below, then confirm and submit.</p>
+      <form method="POST" action="/api/client-portal/nda/fill-details" style="margin:0 0 22px;">
+        ${documentHtml}
         <label class="gc-checkbox-row">
           <input type="checkbox" name="agree" required />
           I have read and agree to the terms of this NDA
@@ -469,8 +465,7 @@ function ioiFilledValues(ioi) {
 // own offer, not something a client would independently produce): fill in
 // the LOI template's actual blanks (assets/ioi-template.docx) right here,
 // or download it, sign by hand, and upload the scanned/completed copy.
-function ioiRespondFormHtml({ error, doeName, alreadySigned, companyName, filled } = {}) {
-  const f = filled ?? {};
+function ioiRespondFormHtml({ error, doeName, alreadySigned, companyName, filled, documentHtml } = {}) {
   return `
     <div class="gc-sign-box">
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
@@ -482,16 +477,9 @@ function ioiRespondFormHtml({ error, doeName, alreadySigned, companyName, filled
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
 
       <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#102246;">Option 1 — Fill in your details online</p>
-      <form method="POST" action="/api/client-portal/ioi/fill-details" style="margin:0 0 22px;display:grid;gap:12px;max-width:480px;">
-        ${formField({ label: "Your company's legal name", name: "counterpartyLegalName", value: companyName ?? "" })}
-        ${formField({ label: "Jurisdiction of domicile", name: "counterpartyJurisdiction", value: f.counterpartyJurisdiction ?? "" })}
-        ${formField({ label: "Total acquisition / project cost (USD)", name: "totalProjectCost", value: f.totalProjectCost ?? "" })}
-        ${formField({ label: "Equity to be provided by the borrower (USD)", name: "borrowerEquity", value: f.borrowerEquity ?? "" })}
-        ${formField({ label: "Agreement date", name: "agreementDate", type: "date", value: f.agreementDate ?? "" })}
-        ${formField({ label: "Signatory name", name: "signatoryName", value: f.signatoryName ?? "" })}
-        ${formField({ label: "Signatory address", name: "signatoryAddress", value: f.signatoryAddress ?? "" })}
-        ${formField({ label: "Signatory phone", name: "signatoryPhone", type: "tel", value: f.signatoryPhone ?? "" })}
-        ${formField({ label: "Signatory email", name: "signatoryEmail", type: "email", value: f.signatoryEmail ?? "" })}
+      <p style="margin:0 0 12px;font-size:12.5px;color:#5c6b87;">This is the actual Letter of Intent — edit the highlighted fields directly in the text below, then confirm and submit.</p>
+      <form method="POST" action="/api/client-portal/ioi/fill-details" style="margin:0 0 22px;">
+        ${documentHtml}
         <label class="gc-checkbox-row">
           <input type="checkbox" name="agree" required />
           I have read and agree to the terms of this IOI
@@ -642,6 +630,12 @@ clientPortalRouter.get(
     const ioiActionable = ioi && Boolean(ioi.sentAt) && !["DECLINED", "EXPIRED"].includes(ioi.status);
     const ioiError = req.query.ioiError ? String(req.query.ioiError) : null;
 
+    // Read once per request (the .map() below rendering each stage row
+    // can't itself be async) — the real document text with the client's
+    // current values already filled into the editable fields.
+    const ndaDocHtml = ndaActionable ? await ndaFillFormFragment(ndaFilledValues(nda), req.clientUser.lead.company) : null;
+    const ioiDocHtml = ioiActionable ? await ioiFillFormFragment(ioiFilledValues(ioi), req.clientUser.lead.company, ioi) : null;
+
     // Mirrors the SPA's own StatCard row (see e.g. MeetingsModule's five
     // cards) — a quick-read summary above the full stage-by-stage list,
     // not just decoration.
@@ -699,7 +693,8 @@ clientPortalRouter.get(
                       doeName: nda.owner,
                       alreadySigned: nda.status === "SIGNED",
                       companyName: req.clientUser.lead.company,
-                      filled: ndaFilledValues(nda)
+                      filled: ndaFilledValues(nda),
+                      documentHtml: ndaDocHtml
                     });
                   } else if (s.key === "ioi" && ioiActionable) {
                     extraHtml = ioiRespondFormHtml({
@@ -707,7 +702,8 @@ clientPortalRouter.get(
                       doeName: ioi.owner,
                       alreadySigned: ioi.status === "SIGNED",
                       companyName: req.clientUser.lead.company,
-                      filled: ioiFilledValues(ioi)
+                      filled: ioiFilledValues(ioi),
+                      documentHtml: ioiDocHtml
                     });
                   } else if (s.key === "dataRoom") {
                     extraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
@@ -750,7 +746,8 @@ clientPortalRouter.get(
         doeName: nda.owner,
         alreadySigned: nda.status === "SIGNED",
         companyName: req.clientUser.lead.company,
-        filled: ndaFilledValues(nda)
+        filled: ndaFilledValues(nda),
+        documentHtml: await ndaFillFormFragment(ndaFilledValues(nda), req.clientUser.lead.company)
       });
     } else if (stage.key === "ioi" && ioiActionable) {
       stageExtraHtml = ioiRespondFormHtml({
@@ -758,7 +755,8 @@ clientPortalRouter.get(
         doeName: ioi.owner,
         alreadySigned: ioi.status === "SIGNED",
         companyName: req.clientUser.lead.company,
-        filled: ioiFilledValues(ioi)
+        filled: ioiFilledValues(ioi),
+        documentHtml: await ioiFillFormFragment(ioiFilledValues(ioi), req.clientUser.lead.company, ioi)
       });
     } else if (stage.key === "dataRoom") {
       stageExtraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });

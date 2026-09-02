@@ -103,7 +103,7 @@ as authorized signatory for Global Capital BV
 
 As agreed to on {{ISSUE_DATE}}
 
-Signed By: {{SIGNATORY_NAME}} — signed electronically on {{SIGNED_AT}}
+Signed By: {{SIGNATORY_NAME}} — {{SIGNATURE_STATUS}}
 as authorized signatory for the Borrower
 Print Name: {{SIGNATORY_NAME}}
 Address: {{SIGNATORY_ADDRESS}}
