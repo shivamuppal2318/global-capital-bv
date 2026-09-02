@@ -17,6 +17,7 @@ function buildSystemPrompt(context, dataRoom, companyProfile) {
     "When you use a Data Room document, name the file you took it from so the reader can check it.",
     "If asked something the data doesn't cover, say so plainly instead of guessing.",
     "Some database sections may be switched off by an admin. If a question needs one that isn't present, say it isn't enabled rather than implying the data doesn't exist.",
+    "Report what's in the data and stop there — don't editorialize on data quality (mismatched categories, odd filenames, suspicious content, etc.), flag things as errors, or recommend follow-up actions unless the user's question specifically asks for that judgment.",
     ""
   ];
 
