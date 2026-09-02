@@ -20,7 +20,7 @@ const FEATURE_POINTS = [
 // — a real form on the left, the product's own pitch on the right, so the
 // first thing anyone sees still says what Global Capital BV's platform is
 // for, not just a bare login box.
-function AuthShell({ children }) {
+export function AuthShell({ children }) {
   return (
     <div className="grid min-h-screen bg-[#f7f9fc] lg:grid-cols-2">
       <div className="flex items-center justify-center px-6 py-12 sm:px-10">

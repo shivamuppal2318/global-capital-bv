@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context/ChannelPartnerAuthContext";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
+import { AuthShell } from "../auth/LoginPage.jsx";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
@@ -29,59 +30,50 @@ function PartnerLoginView() {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center bg-[#f7f9fc] px-6 py-12">
-      <div className="w-full max-w-[380px]">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="grid size-11 place-items-center rounded-2xl bg-[#ebf6ef]">
-            <div className="grid size-7 place-items-center rounded-full bg-white text-[12px] font-bold text-[#2b9b60]">GC</div>
-          </div>
-          <p className="text-[14px] font-semibold text-[#102246]">Global Capital BV</p>
+    <AuthShell>
+      <h1 className="text-[26px] font-semibold leading-tight text-[#102246]">Channel Partner Portal</h1>
+      <p className="mt-2 text-[14px] leading-6 text-[#5f6f89]">
+        Run your own outreach — your campaigns and leads, kept separate from everyone else's.
+      </p>
+
+      <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+        <div>
+          <label className={labelClass}>Email</label>
+          <input
+            type="email"
+            required
+            autoFocus
+            className={inputClass}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@partner.com"
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Password</label>
+          <input
+            type="password"
+            required
+            className={inputClass}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+          />
         </div>
 
-        <h1 className="text-[26px] font-semibold leading-tight text-[#102246]">Channel Partner Portal</h1>
-        <p className="mt-2 text-[14px] leading-6 text-[#5f6f89]">
-          Run your own outreach — your campaigns and leads, kept separate from everyone else's.
-        </p>
+        {error ? (
+          <p className="rounded-[12px] bg-[#fdeceb] px-3.5 py-2.5 text-[13px] font-medium text-[#e0483f]">{error}</p>
+        ) : null}
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-          <div>
-            <label className={labelClass}>Email</label>
-            <input
-              type="email"
-              required
-              autoFocus
-              className={inputClass}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@partner.com"
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Password</label>
-            <input
-              type="password"
-              required
-              className={inputClass}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
-          </div>
+        <button type="submit" disabled={submitting} className={primaryButtonClass}>
+          {submitting ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
 
-          {error ? (
-            <p className="rounded-[12px] bg-[#fdeceb] px-3.5 py-2.5 text-[13px] font-medium text-[#e0483f]">{error}</p>
-          ) : null}
-
-          <button type="submit" disabled={submitting} className={primaryButtonClass}>
-            {submitting ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-
-        <p className="mt-4 text-[12px] leading-5 text-[#8592ab]">
-          Don't have an account yet? Your portal login is created when you sign the Channel Partner Agreement.
-        </p>
-      </div>
-    </div>
+      <p className="mt-4 text-[12px] leading-5 text-[#8592ab]">
+        Don't have an account yet? Your portal login is created when you sign the Channel Partner Agreement.
+      </p>
+    </AuthShell>
   );
 }
 
