@@ -15,6 +15,7 @@ import { buildPortalStages, PORTAL_STAGES } from "../lib/clientPortalStages.js";
 import { REQUIRED_DOCUMENTS, REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
 import { extractText } from "../lib/documentText.js";
 import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
+import fs from "node:fs/promises";
 import { loginRateLimit, forgotPasswordRateLimit } from "../middleware/authRateLimit.js";
 import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
 import { ndaFillFormFragment, ioiFillFormFragment } from "../lib/signedDocumentRenderer.js";
@@ -526,27 +527,38 @@ function ioiRespondFormHtml({ error, doeName, alreadySigned, companyName, filled
 // tag an upload as something the checklist isn't actually asking for.
 function dataRoomUploadFormHtml({ error, uploadedCategories }) {
   const rows = REQUIRED_DOCUMENTS.map((doc) => {
-    const received = uploadedCategories.has(doc.label);
+    const uploaded = uploadedCategories.get(doc.label);
+    const received = Boolean(uploaded);
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid ${received ? "#c7ead8" : "#e7edf5"};background:${received ? "#f3fbf6" : "#fbfcfe"};border-radius:12px;padding:10px 14px;margin-bottom:8px;">
-        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-          <span style="display:grid;place-items:center;width:22px;height:22px;border-radius:999px;font-size:12px;font-weight:700;flex-shrink:0;background:${received ? "#2b9b60" : "#d6deea"};color:${received ? "#ffffff" : "#748096"};">${received ? "✓" : ""}</span>
-          <span style="font-size:13px;color:#102246;font-weight:500;">${escapeHtml(doc.label)}</span>
+      <div class="gc-doc-row" style="border:1px solid ${received ? "#c7ead8" : "#e7edf5"};background:${received ? "#f3fbf6" : "#fbfcfe"};">
+        <div class="gc-doc-row-top">
+          <span class="gc-doc-row-check" style="display:grid;place-items:center;width:22px;height:22px;border-radius:999px;font-size:12px;font-weight:700;flex-shrink:0;background:${received ? "#2b9b60" : "#d6deea"};color:${received ? "#ffffff" : "#748096"};">${received ? "✓" : ""}</span>
+          <div style="min-width:0;">
+            <span class="gc-doc-row-label">${escapeHtml(doc.label)}</span>
+            <p class="gc-doc-row-desc">${escapeHtml(doc.description)}</p>
+          </div>
         </div>
-        <form method="POST" action="/api/client-portal/documents/upload" enctype="multipart/form-data" style="margin:0;flex-shrink:0;">
-          <input type="hidden" name="category" value="${escapeHtml(doc.label)}" />
-          <label class="gc-btn-secondary" style="font-size:12px;padding:7px 16px;">
-            ${received ? "Replace" : "Upload"}
-            <input
-              type="file"
-              name="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-              required
-              class="gc-visually-hidden"
-              onchange="this.form.requestSubmit()"
-            />
-          </label>
-        </form>
+        <div class="gc-doc-row-actions">
+          ${
+            received
+              ? `<a href="/api/client-portal/documents/${uploaded.id}/preview" target="_blank" rel="noreferrer" class="gc-btn-secondary">Preview</a>`
+              : ""
+          }
+          <form method="POST" action="/api/client-portal/documents/upload" enctype="multipart/form-data" style="margin:0;">
+            <input type="hidden" name="category" value="${escapeHtml(doc.label)}" />
+            <label class="gc-btn-secondary">
+              ${received ? "Replace" : "Upload"}
+              <input
+                type="file"
+                name="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                required
+                class="gc-visually-hidden"
+                onchange="this.form.requestSubmit()"
+              />
+            </label>
+          </form>
+        </div>
       </div>`;
   }).join("");
 
@@ -557,7 +569,7 @@ function dataRoomUploadFormHtml({ error, uploadedCategories }) {
         uploading again replaces it with your new file.
       </p>
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
-      <div>${rows}</div>
+      <div class="gc-doc-grid">${rows}</div>
     </div>`;
 }
 
@@ -576,11 +588,19 @@ async function loadPortalData(leadId) {
     // Scoped to this lead's own uploads — unscoped before, which meant any
     // client's portal could show a checklist item "received" just because
     // some OTHER lead's (or an unrelated admin general-library) document
-    // happened to share that category tag.
-    prisma.document.findMany({ where: { leadId }, select: { category: true }, distinct: ["category"] })
+    // happened to share that category tag. orderBy+distinct together give
+    // the MOST RECENT document per category (same "latest upload wins"
+    // convention the staff Data Room screen already uses) — enough to link
+    // a real "Preview" for what's actually on file, not just a checkmark.
+    prisma.document.findMany({
+      where: { leadId },
+      orderBy: { createdAt: "desc" },
+      distinct: ["category"],
+      select: { id: true, category: true, originalName: true, mimeType: true }
+    })
   ]);
 
-  const uploadedCategories = new Set(documentCategories.map((d) => d.category));
+  const uploadedCategories = new Map(documentCategories.map((d) => [d.category, d]));
   const receivedCount = REQUIRED_DOCUMENT_LABELS.filter((label) => uploadedCategories.has(label)).length;
 
   const stages = buildPortalStages({
@@ -770,17 +790,16 @@ clientPortalRouter.get(
         stages: sidebarStagesFrom(stages),
         activeKey: stage.key,
         bodyHtml: `
-          <span class="gc-badge-pill">Deal Stage</span>
-          <h1 class="gc-heading">${escapeHtml(stage.label)}</h1>
-          <p class="gc-subheading">Part of your deal with ${escapeHtml(req.clientUser.lead.company)}.</p>
-
-          <div class="gc-card">
-            ${stageRowHtml(stage, stageExtraHtml)}
-          </div>
-
-          <p style="margin-top:16px;">
+          <p style="margin:0 0 12px;">
             <a href="/api/client-portal/dashboard" style="font-size:13px;font-weight:600;color:#3046b2;text-decoration:none;">← Back to full overview</a>
           </p>
+          <span class="gc-badge-pill">Deal Stage</span>
+          <h1 class="gc-heading" style="margin-top:10px;font-size:1.7rem;">${escapeHtml(stage.label)}</h1>
+          <p class="gc-subheading" style="margin-top:6px;">Part of your deal with ${escapeHtml(req.clientUser.lead.company)}.</p>
+
+          <div class="gc-card" style="margin-top:16px;">
+            ${stageRowHtml(stage, stageExtraHtml)}
+          </div>
         `
       })
     );
@@ -1151,6 +1170,53 @@ clientPortalRouter.post(
     });
 
     res.redirect("/api/client-portal/dashboard");
+  })
+);
+
+// --- Data Room preview (client-side) ---------------------------------------
+
+// So a client can actually see what's already on file for a checklist item
+// before deciding whether to "Replace" it, instead of just trusting a
+// checkmark. Scoped to req.clientUser.leadId — a client must only ever be
+// able to preview their OWN deal's documents, never another lead's by
+// guessing an id. PDFs and images are served inline (the browser renders
+// those natively); .docx gets a real rendered HTML page via mammoth (same
+// approach as the staff Data Room screen's preview, just server-rendered
+// here rather than an SPA modal, matching how the rest of this portal
+// works). Anything else (old .doc, .xls/.xlsx) is served inline as a
+// best-effort — no worse than before, since there was no preview at all.
+clientPortalRouter.get(
+  "/documents/:id/preview",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const doc = await prisma.document.findFirst({ where: { id: req.params.id, leadId: req.clientUser.leadId } });
+    if (!doc) return res.status(404).send("Document not found.");
+
+    const filePath = path.join(UPLOAD_DIR, doc.storedName);
+    if (!(await fs.stat(filePath).catch(() => null))) {
+      return res.status(410).send("The stored file is missing on disk.");
+    }
+
+    const ext = doc.originalName.toLowerCase().split(".").pop();
+    const isDocx = ext === "docx" || doc.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+    if (isDocx) {
+      try {
+        const { default: mammoth } = await import("mammoth");
+        const { value } = await mammoth.convertToHtml({ path: filePath });
+        return res.send(`<!doctype html>
+<html><head><meta charset="utf-8"><title>${escapeHtml(doc.originalName)}</title></head>
+<body style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:760px;margin:32px auto;padding:0 20px;color:#1f2a44;line-height:1.6">
+${value}
+</body></html>`);
+      } catch (err) {
+        return res.status(500).send(`Could not render a preview: ${escapeHtml(err.message)}`);
+      }
+    }
+
+    res.setHeader("Content-Type", doc.mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(doc.originalName)}"`);
+    res.sendFile(path.resolve(filePath));
   })
 );
 

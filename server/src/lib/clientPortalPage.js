@@ -66,7 +66,13 @@ function pageStyles() {
     .gc-shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
     .gc-shell main { min-width: 0; }
 
-    .gc-sidebar { background: #1b295f; color: #fff; padding: 16px; display: flex; flex-direction: column; }
+    /* Pinned to the viewport (not just min-height: 100vh, which only sets a
+       floor — once the Overview page's stacked stages made the page taller
+       than one screen, the whole grid row stretched to match and scrolling
+       carried the logo/nav out of view with it, leaving a blank navy gap).
+       overflow-y: auto is a safety net, not the expected case — the nav
+       list itself is short enough to never need its own scroll. */
+    .gc-sidebar { background: #1b295f; color: #fff; padding: 16px; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
     .gc-sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
     .gc-sidebar-logo { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 16px; background: #fff; overflow: hidden; flex-shrink: 0; }
     .gc-sidebar-logo-inner { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: #ebf6ef; color: #2b9b60; font-size: 12px; font-weight: 700; }
@@ -136,6 +142,21 @@ function pageStyles() {
     .gc-doc-input:focus { background: #dfe5ff; }
     .gc-doc-input:invalid { border-bottom-color: #e0483f; }
     .gc-doc-mirror { font-weight: 600; color: #21439b; border-bottom: 1px dotted #b7c2dd; }
+
+    /* Data Room checklist — two columns so all ten request-list items fit
+       without the page running on forever (mirrors the staff-side Data
+       Room screen's own sm:grid-cols-2 checklist layout, same content). */
+    .gc-doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .gc-doc-row { display: flex; flex-direction: column; gap: 10px; border-radius: 12px; padding: 12px 14px; }
+    .gc-doc-row-top { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+    .gc-doc-row-check { margin-top: 1px; }
+    .gc-doc-row-label { font-size: 13px; color: #102246; font-weight: 500; overflow-wrap: break-word; }
+    .gc-doc-row-desc { margin: 3px 0 0; font-size: 11.5px; line-height: 1.5; color: #6a7790; overflow-wrap: break-word; }
+    .gc-doc-row-actions { display: flex; align-items: center; gap: 8px; }
+    .gc-doc-row-actions .gc-btn-secondary { padding: 7px 16px; font-size: 12px; }
+    @media (max-width: 640px) {
+      .gc-doc-grid { grid-template-columns: 1fr; }
+    }
 
     /* Placed last so it wins over the unconditional .gc-shell/.gc-sidebar
        rules above at equal specificity. */
