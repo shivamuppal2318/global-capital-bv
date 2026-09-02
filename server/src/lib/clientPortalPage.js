@@ -128,6 +128,21 @@ function pageStyles() {
 
     .gc-sign-box { margin-top: 14px; padding: 18px; background: #fbfcfe; border: 1px solid #e7edf5; border-radius: 16px; }
 
+    /* The real NDA/IOI text (assets/*-template-body.txt) with the blanks
+       turned into live inputs -- see signedDocumentRenderer.js's
+       ndaFillFormFragment/ioiFillFormFragment -- so "fill in your details
+       online" reads like the actual agreement, not a generic form. */
+    .gc-doc-frame { border: 1px solid #d6deea; border-radius: 14px; background: #fffefb; box-shadow: inset 0 1px 0 #fff; margin-bottom: 16px; overflow: hidden; }
+    .gc-doc-scroll { max-height: 420px; overflow-y: auto; padding: 22px 24px; font-family: Georgia, "Times New Roman", serif; color: #16213e; line-height: 1.6; }
+    .gc-doc-scroll p { margin: 0 0 12px; font-size: 13px; text-align: justify; }
+    .gc-doc-scroll ul { margin: 0 0 12px; padding-left: 20px; }
+    .gc-doc-scroll li { font-size: 13px; margin-bottom: 5px; }
+    .gc-doc-signature { margin-top: 20px; padding-top: 16px; border-top: 1px dashed #d6deea; }
+    .gc-doc-input { font: inherit; font-size: 13px; color: #102246; border: none; border-bottom: 1.5px solid #3046b2; background: #eef1ff; padding: 1px 5px; outline: none; min-width: 120px; border-radius: 3px 3px 0 0; }
+    .gc-doc-input:focus { background: #dfe5ff; }
+    .gc-doc-input:invalid { border-bottom-color: #e0483f; }
+    .gc-doc-mirror { font-weight: 600; color: #21439b; border-bottom: 1px dotted #b7c2dd; }
+
     /* Data Room checklist — two columns so all ten request-list items fit
        without the page running on forever (mirrors the staff-side Data
        Room screen's own sm:grid-cols-2 checklist layout, same content). */
