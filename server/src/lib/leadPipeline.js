@@ -105,7 +105,7 @@ export async function computeLeadTimeline(leadId) {
 
   const events = [{ at: lead.createdAt, title: "Lead created", detail: "Added to CRM Workspace" }];
 
-  if (lead.zoomInfoEnrichedAt) events.push({ at: lead.zoomInfoEnrichedAt, title: "Enriched via ZoomInfo", detail: "Company data auto-filled" });
+  if (lead.zoomInfoEnrichedAt) events.push({ at: lead.zoomInfoEnrichedAt, title: "Enriched via ZoomInfo", detail: "Company and/or contact data auto-filled" });
 
   if (nda?.sentAt) events.push({ at: nda.sentAt, title: "NDA sent", detail: nda.owner ? `By ${nda.owner}` : "" });
   if (nda?.signedAt) events.push({ at: nda.signedAt, title: "NDA signed", detail: nda.signerName ? `By ${nda.signerName}` : "" });

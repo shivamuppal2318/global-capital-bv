@@ -457,7 +457,17 @@ model Lead {
   // precedent above for arbitrary upstream data). Set only when a match was
   // actually found; a lead a rep clicked "Enrich" on with no ZoomInfo match
   // stays null rather than storing an empty/fake result.
-  zoomInfoData       Json?
+  zoomInfoData        Json?
+  // A separate, independent match — the same "Enrich" action also looks up
+  // this lead's actual named contact (firstName/lastName split from `name`
+  // + `company`), since ZoomInfo's contact and company records are matched
+  // and can succeed/fail independently of each other.
+  zoomInfoContactData Json?
+  // Recent company-change signals (funding, leadership hire, expansion,
+  // etc.) from ZoomInfo's Scoops feed — display-only, always replaced
+  // wholesale by the latest fetch (unlike industry/territory, nothing here
+  // is rep-editable data worth protecting from being overwritten).
+  zoomInfoScoops     Json?
   zoomInfoEnrichedAt DateTime?
 
   meetings   Meeting[]

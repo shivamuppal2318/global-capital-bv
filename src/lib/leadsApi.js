@@ -41,5 +41,9 @@ export const leadsApi = {
   // {matched:false, message} when ZoomInfo has no confident match, rather
   // than an error, since that's a normal outcome for smaller/private
   // companies.
-  enrich: (id) => request(`/${id}/enrich`, { method: "POST" })
+  enrich: (id) => request(`/${id}/enrich`, { method: "POST" }),
+  // "Bulk Enrich" quick action — how many leads it would touch, then the
+  // batch run itself. See server/src/routes/leads.js.
+  enrichCandidatesCount: () => request("/enrich-candidates-count"),
+  bulkEnrich: () => request("/bulk-enrich", { method: "POST" })
 };

@@ -8,7 +8,13 @@
 // before wiring this in; guessing the endpoint would have been unsafe with
 // a real credential.
 
-async function getAccessToken({ clientId, clientSecret }) {
+// Exported (not per-call-internal) deliberately: minting two tokens for the
+// same client_id concurrently invalidates one of them ("Your session has
+// expired" on whichever request loses the race) — confirmed live when
+// company+contact enrich each minted their own token inside a Promise.all.
+// So a single lead enrichment mints exactly one token up front and both
+// company and contact lookups reuse it.
+export async function getAccessToken({ clientId, clientSecret }) {
   const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
   const response = await fetch("https://api.zoominfo.com/gtm/oauth/v1/token", {
     method: "POST",
@@ -49,8 +55,7 @@ const ENRICH_OUTPUT_FIELDS = [
 // if ZoomInfo found no confident match. A "not found" is a normal, expected
 // outcome (plenty of real companies — especially small/private ones —
 // simply aren't in ZoomInfo's database), not a thrown error.
-export async function enrichCompanyByName({ clientId, clientSecret, companyName }) {
-  const token = await getAccessToken({ clientId, clientSecret });
+export async function enrichCompanyByName({ token, companyName }) {
   const response = await fetch("https://api.zoominfo.com/gtm/data/v1/companies/enrich", {
     method: "POST",
     headers: {
@@ -75,4 +80,80 @@ export async function enrichCompanyByName({ clientId, clientSecret, companyName 
   const match = body?.data?.[0];
   if (!match || match.meta?.matchStatus !== "FULL_MATCH" || !match.attributes) return null;
   return match.attributes;
+}
+
+const CONTACT_ENRICH_OUTPUT_FIELDS = ["firstName", "lastName", "jobTitle", "managementLevel", "mobilePhone", "directPhoneAlt"];
+
+// ZoomInfo's contact match only accepts firstName+lastName+companyName (or
+// personId) — confirmed live: an email-based matchPersonInput is rejected
+// with a 400, even though email is a valid *output* field. So a lead's full
+// name has to be split; a single-word name (can't tell first from last)
+// isn't enough to match on and returns null rather than guessing.
+export async function enrichContactByName({ token, fullName, companyName }) {
+  const parts = fullName?.trim().split(/\s+/) ?? [];
+  if (parts.length < 2) return null;
+  const [firstName, ...rest] = parts;
+  const lastName = rest.join(" ");
+
+  const response = await fetch("https://api.zoominfo.com/gtm/data/v1/contacts/enrich", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/vnd.api+json"
+    },
+    body: JSON.stringify({
+      data: {
+        type: "ContactEnrich",
+        attributes: {
+          matchPersonInput: [{ firstName, lastName, companyName }],
+          outputFields: CONTACT_ENRICH_OUTPUT_FIELDS
+        }
+      }
+    })
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.errors?.[0]?.detail ?? body?.detail ?? "ZoomInfo rejected the contact enrich request.");
+  }
+
+  const match = body?.data?.[0];
+  if (!match || match.meta?.matchStatus !== "FULL_MATCH" || !match.attributes) return null;
+  return match.attributes;
+}
+
+// ZoomInfo's own feed of recent, real changes at a company — funding,
+// leadership hires, office openings, and the like — used as a lightweight
+// "why now" signal on a lead rather than anything fabricated or scored.
+// This is a search (companyName filter), not an enrich-by-id lookup, since
+// there's no known scoop id to look up ahead of time. Most recent first,
+// capped to a handful since this is meant to be skimmed on a lead's
+// Overview tab, not a full feed.
+const SCOOP_LIMIT = 5;
+
+export async function searchScoopsByCompany({ token, companyName }) {
+  const response = await fetch("https://api.zoominfo.com/gtm/data/v1/scoops/search", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/vnd.api+json"
+    },
+    body: JSON.stringify({
+      data: { type: "ScoopSearch", attributes: { companyName } }
+    })
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.errors?.[0]?.detail ?? body?.detail ?? "ZoomInfo rejected the scoops search request.");
+  }
+
+  return (body?.data ?? [])
+    .map((item) => ({
+      id: item.id,
+      description: item.attributes?.description,
+      link: item.attributes?.link,
+      linkText: item.attributes?.linkText,
+      publishedDate: item.attributes?.publishedDate,
+      types: (item.attributes?.types ?? []).map((t) => t.type)
+    }))
+    .slice(0, SCOOP_LIMIT);
 }
