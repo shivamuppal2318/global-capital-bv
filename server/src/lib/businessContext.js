@@ -141,7 +141,15 @@ export async function buildBusinessContext(enabledSources = null) {
         engagementStage: l.engagementStage,
         consentGdpr: l.consentGdpr,
         createdAt: l.createdAt,
-        updatedAt: l.updatedAt
+        updatedAt: l.updatedAt,
+        // From the "Enrich"/"Bulk enrich" ZoomInfo action (CRM Workspace) —
+        // null on any lead never enriched or with no ZoomInfo match, rather
+        // than omitted, so the assistant can say "not enriched" instead of
+        // silently treating it the same as "no matching company exists".
+        zoomInfoEnrichedAt: l.zoomInfoEnrichedAt,
+        zoomInfoCompany: l.zoomInfoData,
+        zoomInfoContact: l.zoomInfoContactData,
+        zoomInfoScoops: l.zoomInfoScoops
       }))
     };
   }
