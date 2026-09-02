@@ -792,6 +792,9 @@ clientPortalRouter.get(
         stages: sidebarStagesFrom(stages),
         activeKey: stage.key,
         bodyHtml: `
+          <p style="margin:0 0 12px;">
+            <a href="/api/client-portal/dashboard" style="font-size:13px;font-weight:600;color:#3046b2;text-decoration:none;">← Back to full overview</a>
+          </p>
           <span class="gc-badge-pill">Deal Stage</span>
           <h1 class="gc-heading" style="margin-top:10px;font-size:1.7rem;">${escapeHtml(stage.label)}</h1>
           <p class="gc-subheading" style="margin-top:6px;">Part of your deal with ${escapeHtml(req.clientUser.lead.company)}.</p>
@@ -799,10 +802,6 @@ clientPortalRouter.get(
           <div class="gc-card" style="margin-top:16px;">
             ${stageRowHtml(stage, stageExtraHtml)}
           </div>
-
-          <p style="margin-top:16px;">
-            <a href="/api/client-portal/dashboard" style="font-size:13px;font-weight:600;color:#3046b2;text-decoration:none;">← Back to full overview</a>
-          </p>
         `
       })
     );
