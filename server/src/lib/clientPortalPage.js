@@ -133,8 +133,10 @@ function pageStyles() {
        Room screen's own sm:grid-cols-2 checklist layout, same content). */
     .gc-doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .gc-doc-row { display: flex; flex-direction: column; gap: 10px; border-radius: 12px; padding: 12px 14px; }
-    .gc-doc-row-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .gc-doc-row-top { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+    .gc-doc-row-check { margin-top: 1px; }
     .gc-doc-row-label { font-size: 13px; color: #102246; font-weight: 500; overflow-wrap: break-word; }
+    .gc-doc-row-desc { margin: 3px 0 0; font-size: 11.5px; line-height: 1.5; color: #6a7790; overflow-wrap: break-word; }
     .gc-doc-row-actions { display: flex; align-items: center; gap: 8px; }
     .gc-doc-row-actions .gc-btn-secondary { padding: 7px 16px; font-size: 12px; }
     @media (max-width: 640px) {

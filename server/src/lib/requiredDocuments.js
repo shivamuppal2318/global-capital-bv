@@ -20,7 +20,7 @@ export const REQUIRED_DOCUMENTS = [
   {
     label: "Loans & Debt Obligations",
     description:
-      "Amount, tenure, interest rate and repayment schedules for existing loans/borrowings, plus sanction letters and term sheets for existing or possible debt offers."
+      "Amount, tenure, interest rate and repayment schedules for existing loans/borrowings — please provide this as an Excel sheet. Also attach sanction/approval letters and term sheets for existing loans as well as any possible debt offers."
   },
   {
     label: "Bank Statements",

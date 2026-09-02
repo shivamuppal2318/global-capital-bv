@@ -544,8 +544,11 @@ function dataRoomUploadFormHtml({ error, uploadedCategories }) {
     return `
       <div class="gc-doc-row" style="border:1px solid ${received ? "#c7ead8" : "#e7edf5"};background:${received ? "#f3fbf6" : "#fbfcfe"};">
         <div class="gc-doc-row-top">
-          <span style="display:grid;place-items:center;width:22px;height:22px;border-radius:999px;font-size:12px;font-weight:700;flex-shrink:0;background:${received ? "#2b9b60" : "#d6deea"};color:${received ? "#ffffff" : "#748096"};">${received ? "✓" : ""}</span>
-          <span class="gc-doc-row-label">${escapeHtml(doc.label)}</span>
+          <span class="gc-doc-row-check" style="display:grid;place-items:center;width:22px;height:22px;border-radius:999px;font-size:12px;font-weight:700;flex-shrink:0;background:${received ? "#2b9b60" : "#d6deea"};color:${received ? "#ffffff" : "#748096"};">${received ? "✓" : ""}</span>
+          <div style="min-width:0;">
+            <span class="gc-doc-row-label">${escapeHtml(doc.label)}</span>
+            <p class="gc-doc-row-desc">${escapeHtml(doc.description)}</p>
+          </div>
         </div>
         <div class="gc-doc-row-actions">
           ${
