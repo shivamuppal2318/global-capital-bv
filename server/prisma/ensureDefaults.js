@@ -7,7 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import crypto from "node:crypto";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -149,7 +149,15 @@ async function ensureAdminUser() {
   console.log("=".repeat(60));
 }
 
-async function main() {
+// The actual logic, importable from src/index.js so this genuinely runs on
+// every boot (as the file-header comment has always claimed) instead of
+// only when someone remembers to run `npm run seed` by hand — that gap is
+// exactly why the NDA/IOI template documents never existed on the test VPS
+// despite every deploy since they were added. Exported separately from the
+// CLI self-invocation below, which still exits the process on failure —
+// fine for a one-off `npm run seed` run, but not something the live server
+// should ever do to itself over one missing template file.
+export async function ensureDefaults() {
   await ensureAdminUser();
   await ensureNdaTemplateDocument();
   await ensureIoiTemplateDocument();
@@ -206,9 +214,19 @@ async function main() {
   console.log("Defaults created.");
 }
 
-main()
-  .catch((err) => {
-    console.error("ensureDefaults failed:", err);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+// Only self-invokes (and disconnects/exits) when run directly, e.g.
+// `node prisma/ensureDefaults.js` or `npm run seed` — importing this module
+// from src/index.js must not trigger a second run or tear down the
+// server's own long-lived Prisma connection. pathToFileURL (not a raw
+// `file://${process.argv[1]}` string) because argv[1] uses OS-native path
+// separators (backslashes on Windows) while import.meta.url is always a
+// properly-encoded file:// URL — a plain string comparison would silently
+// never match on Windows dev machines.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  ensureDefaults()
+    .catch((err) => {
+      console.error("ensureDefaults failed:", err);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}
