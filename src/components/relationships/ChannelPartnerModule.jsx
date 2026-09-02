@@ -62,6 +62,11 @@ export function ChannelPartnerModule() {
   const [activityData, setActivityData] = useState(null);
   const [activityBusy, setActivityBusy] = useState(false);
   const [activityError, setActivityError] = useState(null);
+  const [portalLinkCopied, setPortalLinkCopied] = useState(false);
+
+  async function handleCopyPortalLink(url) {
+    setPortalLinkCopied(await copyToClipboard(url));
+  }
 
   async function toggleActivity(partner) {
     if (activityOpenId === partner.id) {
@@ -72,6 +77,7 @@ export function ChannelPartnerModule() {
     setActivityData(null);
     setActivityError(null);
     setActivityBusy(true);
+    setPortalLinkCopied(false);
     try {
       const result = await channelPartnersApi.activity(partner.id);
       setActivityData(result);
@@ -557,6 +563,22 @@ export function ChannelPartnerModule() {
                             ? new Date(activityData.portalAccount.lastLoginAt).toLocaleString()
                             : "Never"}
                         </p>
+                        <div className="!mt-2.5 flex items-center gap-2">
+                          <input
+                            readOnly
+                            value={`${window.location.origin}/partner`}
+                            onFocus={(e) => e.target.select()}
+                            className="w-full truncate rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 font-mono text-[12px] text-[#435471] outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleCopyPortalLink(`${window.location.origin}/partner`)}
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[12px] font-medium text-[#3046b2] hover:bg-[#f4f7fb]"
+                          >
+                            <CopyIcon className="size-3.5" />
+                            {portalLinkCopied ? "Copied" : "Copy portal link"}
+                          </button>
+                        </div>
                       </div>
                     )
                   ) : null}
