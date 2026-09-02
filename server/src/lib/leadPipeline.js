@@ -81,6 +81,59 @@ export async function computeLeadPipeline(leadId) {
   return STAGES.map((stage) => ({ id: stage, label: STAGE_LABELS[stage], ...summaries[stage] }));
 }
 
+// A dated, chronological event list for one lead -- distinct from
+// computeLeadPipeline above, which collapses each stage to a single
+// current status and drops dates entirely. This keeps every real
+// timestamped record instead, across every model that actually carries
+// leadId (all of DealStageRecord's rows this time, not just the 3
+// computeLeadPipeline reads, plus VisitPlan and Document, neither of
+// which that function touches at all) -- nothing here is fabricated, an
+// event only appears if its underlying date field is actually set.
+export async function computeLeadTimeline(leadId) {
+  const [lead, nda, meetings, dealStages, ioi, visits, documents, activity] = await Promise.all([
+    prisma.lead.findUnique({ where: { id: leadId }, select: { createdAt: true } }),
+    prisma.ndaRecord.findUnique({ where: { leadId } }),
+    prisma.meeting.findMany({ where: { leadId } }),
+    prisma.dealStageRecord.findMany({ where: { leadId } }),
+    prisma.ioiRecord.findUnique({ where: { leadId } }),
+    prisma.visitPlan.findMany({ where: { leadId } }),
+    prisma.document.findMany({ where: { leadId } }),
+    prisma.leadActivityLog.findMany({ where: { leadId } })
+  ]);
+
+  if (!lead) return null;
+
+  const events = [{ at: lead.createdAt, title: "Lead created", detail: "Added to CRM Workspace" }];
+
+  if (nda?.sentAt) events.push({ at: nda.sentAt, title: "NDA sent", detail: nda.owner ? `By ${nda.owner}` : "" });
+  if (nda?.signedAt) events.push({ at: nda.signedAt, title: "NDA signed", detail: nda.signerName ? `By ${nda.signerName}` : "" });
+
+  for (const m of meetings) {
+    const held = new Date(m.startTime).getTime() < Date.now();
+    events.push({ at: m.startTime, title: held ? "Zoom call held" : "Zoom call scheduled", detail: m.topic ?? "" });
+  }
+
+  for (const stage of dealStages) {
+    const label = STAGE_LABELS[stage.stage] ?? stage.stage;
+    if (stage.scheduledAt) events.push({ at: stage.scheduledAt, title: `${label} scheduled`, detail: stage.notes ?? "" });
+    if (stage.completedAt) events.push({ at: stage.completedAt, title: `${label} completed`, detail: stage.notes ?? "" });
+  }
+
+  if (ioi?.sentAt) events.push({ at: ioi.sentAt, title: "IOI sent", detail: ioi.owner ? `By ${ioi.owner}` : "" });
+  if (ioi?.signedAt) events.push({ at: ioi.signedAt, title: "IOI signed", detail: "" });
+
+  for (const v of visits) {
+    if (v.plannedFor) events.push({ at: v.plannedFor, title: "Visit planned", detail: v.location ?? "" });
+    if (v.completedAt) events.push({ at: v.completedAt, title: "Visit completed", detail: v.location ?? "" });
+  }
+
+  for (const d of documents) events.push({ at: d.createdAt, title: `Document uploaded: ${d.originalName}`, detail: d.category });
+
+  for (const a of activity) events.push({ at: a.createdAt, title: a.title, detail: a.detail });
+
+  return events.sort((a, b) => new Date(b.at) - new Date(a.at));
+}
+
 // The company-wide complement to computeLeadPipeline: not one lead's
 // stage-by-stage detail, but how many of ALL leads have reached each stage
 // at least once. "Reached" means anything other than not_started —

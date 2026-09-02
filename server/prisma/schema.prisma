@@ -446,6 +446,11 @@ model Lead {
   // account, which can change hands after the deal originates).
   doe String?
 
+  // Free-text labels a rep applies from the lead panel's "Tags" button
+  // (e.g. "Priority", "Referral") — unlike temperature/industry above,
+  // these aren't a fixed vocabulary tied to a filter dimension.
+  tags String[] @default([])
+
   meetings   Meeting[]
   dealStages DealStageRecord[]
   ndaRecord  NdaRecord?
@@ -453,10 +458,34 @@ model Lead {
   ioiRecord  IoiRecord?
   clientUser ClientUser?
   documents  Document[]
+  activity   LeadActivityLog[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@index([status])
+}
+
+enum LeadActivityKind {
+  EMAIL_SENT
+  STATUS_CHANGED
+}
+
+// A per-lead interaction/communication log for CRM Workspace -- direct
+// communications with this lead (Send Mail sends, status changes), kept
+// separate from the company-wide staff AuditLog (logins, permission
+// changes -- a different concern entirely) and from ActivityLog (an
+// unwired, unwritten dashboard decoration -- see its own schema comment).
+// Mirrors EmailActivityLog's shape, scoped to Lead instead of EmailLead.
+model LeadActivityLog {
+  id        String           @id @default(cuid())
+  lead      Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId    String
+  kind      LeadActivityKind
+  title     String
+  detail    String
+  createdAt DateTime         @default(now())
+
+  @@index([leadId, createdAt])
 }
 
 // A login for the counterparty themselves — separate identity system from

@@ -4,8 +4,9 @@ import { prisma } from "../db.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
 import { signStaffPreviewToken } from "../lib/staffPreviewToken.js";
 import { hashPassword } from "../lib/auth.js";
-import { sendSystemEmail, clientPortalInviteEmail } from "../lib/systemMailer.js";
-import { computeLeadPipeline, computePipelineSummary, computeDealBoard } from "../lib/leadPipeline.js";
+import { sendSystemEmail, clientPortalInviteEmail, shell } from "../lib/systemMailer.js";
+import { plainTextToHtml } from "../lib/leadSender.js";
+import { computeLeadPipeline, computePipelineSummary, computeDealBoard, computeLeadTimeline } from "../lib/leadPipeline.js";
 import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 const router = Router();
@@ -111,6 +112,71 @@ router.get("/:id/pipeline", async (req, res, next) => {
   }
 });
 
+// A dated, chronological event list for one lead — see lib/leadPipeline.js.
+// Deal-progression milestones, read-only, auto-derived from records that
+// already exist (NDA/Meeting/DealStageRecord/IOI/VisitPlan/Document) plus
+// LeadActivityLog (Send Mail sends, status changes).
+router.get("/:id/timeline", async (req, res, next) => {
+  try {
+    const owned = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) }, select: { id: true } });
+    if (!owned) return res.status(404).json({ error: "Lead not found" });
+
+    const timeline = await computeLeadTimeline(req.params.id);
+    if (!timeline) return res.status(404).json({ error: "Lead not found" });
+    res.json(timeline);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Direct communications with this lead — Send Mail sends and status
+// changes — distinct from the Timeline above (deal-progression milestones
+// derived from other modules' own records). Sourced only from
+// LeadActivityLog.
+router.get("/:id/interactions", blockChannelPartner, async (req, res, next) => {
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+    const activity = await prisma.leadActivityLog.findMany({ where: { leadId: lead.id }, orderBy: { createdAt: "desc" } });
+    res.json(activity);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// A rep writes a free-text subject+body and sends it straight to this
+// lead's email — the "Send Mail" quick action. Uses the same transactional
+// sendSystemEmail primitive already reused for Zoom meeting invites
+// (meetings.js) — Lead has no unsubscribe/bounce/daily-cap machinery like
+// EmailLead does, so leadSender.js's sendRawEmail/sendTemplateEmail (built
+// specifically for that, with tracking/compliance baked in) would be the
+// wrong fit here.
+router.post("/:id/send-mail", blockChannelPartner, async (req, res, next) => {
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+    if (!lead.email) return res.status(400).json({ error: "This lead has no email address on file." });
+
+    const subject = req.body?.subject?.toString().trim();
+    const body = req.body?.body?.toString().trim();
+    if (!subject || !body) return res.status(400).json({ error: "Subject and body are required." });
+
+    const html = shell(subject, plainTextToHtml(body));
+    const delivery = await sendSystemEmail({ to: lead.email, subject, html, text: body });
+
+    if (delivery.sent) {
+      await prisma.leadActivityLog.create({
+        data: { leadId: lead.id, kind: "EMAIL_SENT", title: subject, detail: body }
+      });
+    }
+
+    res.json({ sent: delivery.sent, reason: delivery.sent ? undefined : delivery.reason });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Text fields that clear to null on an empty string rather than storing "" —
 // the Universal Filters screen treats an empty value as "not set", not as a
 // distinct value to filter on.
@@ -125,6 +191,9 @@ router.patch("/:id", blockChannelPartner, async (req, res, next) => {
     if (req.body.status !== undefined) data.status = req.body.status;
     if (req.body.qualified !== undefined) data.qualified = req.body.qualified;
     if (req.body.temperature !== undefined) data.temperature = req.body.temperature || null;
+    if (req.body.tags !== undefined) {
+      data.tags = Array.isArray(req.body.tags) ? [...new Set(req.body.tags.map((t) => String(t).trim()).filter(Boolean))] : [];
+    }
     for (const field of TEXT_FIELDS) {
       if (req.body[field] !== undefined) data[field] = req.body[field]?.toString().trim() || null;
     }
@@ -133,6 +202,16 @@ router.patch("/:id", blockChannelPartner, async (req, res, next) => {
     if (data.capitalAsk === null) data.capitalAsk = lead.capitalAsk;
 
     const updated = await prisma.lead.update({ where: { id: lead.id }, data });
+
+    // Logged here (not just on the dedicated Convert quick-action) so any
+    // status edit — via Convert or the Overview form's status dropdown —
+    // shows up in Interactions/Timeline uniformly, from one place.
+    if (data.status !== undefined && data.status !== lead.status) {
+      await prisma.leadActivityLog.create({
+        data: { leadId: lead.id, kind: "STATUS_CHANGED", title: `Status changed to ${data.status}`, detail: `Previously ${lead.status}` }
+      });
+    }
+
     res.json(updated);
   } catch (err) {
     next(err);
