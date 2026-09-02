@@ -7,7 +7,6 @@ import {
   CheckCircleIcon,
   NoteIcon,
   SearchIcon,
-  SparklesIcon,
   XIcon
 } from "../Icons";
 
@@ -420,22 +419,6 @@ export function DataRoomModule() {
             ))
           )}
         </div>
-      </Card>
-
-      <Card className="px-5 py-5">
-        <SectionTitle icon={SparklesIcon} iconClass="text-[#8b52d0]">
-          Asking the AI about these documents
-        </SectionTitle>
-        <p className="mt-3 text-[14px] leading-7 text-[#4f6181]">
-          Open the assistant (the button in the bottom-right) and ask something like{" "}
-          <span className="font-medium text-[#102246]">"what does our Q3 report say about revenue?"</span>. It sees the full
-          list of documents plus the contents of the few most relevant to your question, and names the file it used.
-        </p>
-        <p className="mt-3 rounded-[12px] bg-[#f7f9fc] px-4 py-3 text-[13px] leading-6 text-[#5f6f89]">
-          Matching is by keyword, not meaning — asking about "revenue" won't surface a document that only says "turnover".
-          Naming the document in your question is the reliable way to point it at the right file. Scanned PDFs and images
-          have no text to read, so they're listed but can't be quoted.
-        </p>
       </Card>
 
       {previewDoc ? (
