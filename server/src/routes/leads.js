@@ -9,7 +9,7 @@ import { plainTextToHtml } from "../lib/leadSender.js";
 import { computeLeadPipeline, computePipelineSummary, computeDealBoard, computeLeadTimeline } from "../lib/leadPipeline.js";
 import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
-import { enrichCompanyByName } from "../lib/zoominfoClient.js";
+import { enrichCompanyByName, enrichContactByName, getAccessToken } from "../lib/zoominfoClient.js";
 
 const router = Router();
 
@@ -179,14 +179,14 @@ router.post("/:id/send-mail", blockChannelPartner, async (req, res, next) => {
   }
 });
 
-// Manual, one-click company enrichment via ZoomInfo — deliberately not
-// automatic on lead creation (see Admin Panel → ZoomInfo for the
-// credentials), so every real API credit spent is a rep's explicit choice.
-// Only fills industry/territory if they're still empty (never overwrites a
-// value a rep already set), while the full raw attributes always get
-// stored for display — a rep-entered "Fintech" shouldn't be silently
-// replaced by ZoomInfo's own industry label, but the company card should
-// still show ZoomInfo's data underneath it.
+// Manual, one-click company AND contact enrichment via ZoomInfo —
+// deliberately not automatic on lead creation (see Admin Panel → ZoomInfo
+// for the credentials), so every real API credit spent is a rep's explicit
+// choice. Only fills industry/territory if they're still empty (never
+// overwrites a value a rep already set), while the full raw attributes
+// always get stored for display — a rep-entered "Fintech" shouldn't be
+// silently replaced by ZoomInfo's own industry label, but the company card
+// should still show ZoomInfo's data underneath it.
 router.post("/:id/enrich", blockChannelPartner, async (req, res, next) => {
   try {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
@@ -197,23 +197,43 @@ router.post("/:id/enrich", blockChannelPartner, async (req, res, next) => {
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    const attributes = await enrichCompanyByName({ ...credentials, companyName: lead.company });
-    if (!attributes) {
-      return res.json({ matched: false, message: `No confident ZoomInfo match found for "${lead.company}".` });
+    // Company and contact are independent ZoomInfo matches — one can
+    // succeed while the other doesn't (a real person often isn't in
+    // ZoomInfo even when their employer is, and vice versa), so both are
+    // attempted and reported separately rather than treating the whole
+    // action as all-or-nothing. Both reuse the SAME token: minting two
+    // tokens concurrently for one client_id invalidates one of them.
+    const token = await getAccessToken(credentials);
+    const [companyAttributes, contactAttributes] = await Promise.all([
+      enrichCompanyByName({ token, companyName: lead.company }),
+      enrichContactByName({ token, fullName: lead.name, companyName: lead.company })
+    ]);
+
+    if (!companyAttributes && !contactAttributes) {
+      return res.json({ matched: false, message: `No confident ZoomInfo match found for "${lead.name}" at "${lead.company}".` });
     }
 
-    const territoryFromZoomInfo = [attributes.city, attributes.state, attributes.country].filter(Boolean).join(", ");
+    const territoryFromZoomInfo = companyAttributes
+      ? [companyAttributes.city, companyAttributes.state, companyAttributes.country].filter(Boolean).join(", ")
+      : "";
+
     const updated = await prisma.lead.update({
       where: { id: lead.id },
       data: {
-        industry: lead.industry || attributes.primaryIndustry?.[0] || lead.industry,
+        industry: lead.industry || companyAttributes?.primaryIndustry?.[0] || lead.industry,
         territory: lead.territory || territoryFromZoomInfo || lead.territory,
-        zoomInfoData: attributes,
+        ...(companyAttributes ? { zoomInfoData: companyAttributes } : {}),
+        ...(contactAttributes ? { zoomInfoContactData: contactAttributes } : {}),
         zoomInfoEnrichedAt: new Date()
       }
     });
 
-    res.json({ matched: true, lead: updated });
+    res.json({
+      matched: true,
+      companyMatched: Boolean(companyAttributes),
+      contactMatched: Boolean(contactAttributes),
+      lead: updated
+    });
   } catch (err) {
     next(err);
   }

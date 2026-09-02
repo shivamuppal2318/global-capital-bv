@@ -370,6 +370,21 @@ function LeadDetailModal({
                     ) : null}
                   </div>
                 ) : null}
+                {lead.zoomInfoContactData ? (
+                  <div className="mt-4 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] px-4 py-3">
+                    <p className="text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Contact Info (ZoomInfo)</p>
+                    <div className="mt-3 grid gap-x-6 gap-y-2 text-[13px] text-[#334463] sm:grid-cols-2">
+                      {lead.zoomInfoContactData.jobTitle ? <p><span className="text-[#8592ab]">Title</span> — {lead.zoomInfoContactData.jobTitle}</p> : null}
+                      {lead.zoomInfoContactData.managementLevel?.length ? (
+                        <p><span className="text-[#8592ab]">Level</span> — {lead.zoomInfoContactData.managementLevel.join(", ")}</p>
+                      ) : null}
+                      {lead.zoomInfoContactData.mobilePhone ? <p><span className="text-[#8592ab]">Mobile</span> — {lead.zoomInfoContactData.mobilePhone}</p> : null}
+                      {lead.zoomInfoContactData.directPhoneAlt?.[0]?.value ? (
+                        <p><span className="text-[#8592ab]">Direct phone</span> — {lead.zoomInfoContactData.directPhoneAlt[0].value}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : activeTab === "Timeline" ? (
               <EventList loading={timelineLoading} events={timeline} emptyText="No deal-progression events recorded yet." />
@@ -763,7 +778,10 @@ export function CrmWorkspaceModule() {
       const result = await leadsApi.enrich(selectedLead.id);
       if (result.matched) {
         setLeads((prev) => prev.map((l) => (l.id === result.lead.id ? result.lead : l)));
-        setEnrichResult({ ok: true, text: "Enriched from ZoomInfo." });
+        const parts = [];
+        if (result.companyMatched) parts.push("company");
+        if (result.contactMatched) parts.push("contact");
+        setEnrichResult({ ok: true, text: `Enriched ${parts.join(" and ")} data from ZoomInfo.` });
         leadsApi.timeline(selectedLead.id).then(setTimeline).catch(() => {});
       } else {
         setEnrichResult({ ok: false, text: result.message });
