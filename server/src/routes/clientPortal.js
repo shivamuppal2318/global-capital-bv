@@ -542,20 +542,20 @@ function dataRoomUploadFormHtml({ error, uploadedCategories }) {
     const uploaded = uploadedCategories.get(doc.label);
     const received = Boolean(uploaded);
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid ${received ? "#c7ead8" : "#e7edf5"};background:${received ? "#f3fbf6" : "#fbfcfe"};border-radius:12px;padding:10px 14px;margin-bottom:8px;">
-        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+      <div class="gc-doc-row" style="border:1px solid ${received ? "#c7ead8" : "#e7edf5"};background:${received ? "#f3fbf6" : "#fbfcfe"};">
+        <div class="gc-doc-row-top">
           <span style="display:grid;place-items:center;width:22px;height:22px;border-radius:999px;font-size:12px;font-weight:700;flex-shrink:0;background:${received ? "#2b9b60" : "#d6deea"};color:${received ? "#ffffff" : "#748096"};">${received ? "✓" : ""}</span>
-          <span style="font-size:13px;color:#102246;font-weight:500;">${escapeHtml(doc.label)}</span>
+          <span class="gc-doc-row-label">${escapeHtml(doc.label)}</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <div class="gc-doc-row-actions">
           ${
             received
-              ? `<a href="/api/client-portal/documents/${uploaded.id}/preview" target="_blank" rel="noreferrer" class="gc-btn-secondary" style="font-size:12px;padding:7px 16px;">Preview</a>`
+              ? `<a href="/api/client-portal/documents/${uploaded.id}/preview" target="_blank" rel="noreferrer" class="gc-btn-secondary">Preview</a>`
               : ""
           }
           <form method="POST" action="/api/client-portal/documents/upload" enctype="multipart/form-data" style="margin:0;">
             <input type="hidden" name="category" value="${escapeHtml(doc.label)}" />
-            <label class="gc-btn-secondary" style="font-size:12px;padding:7px 16px;">
+            <label class="gc-btn-secondary">
               ${received ? "Replace" : "Upload"}
               <input
                 type="file"
@@ -578,7 +578,7 @@ function dataRoomUploadFormHtml({ error, uploadedCategories }) {
         uploading again replaces it with your new file.
       </p>
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
-      <div>${rows}</div>
+      <div class="gc-doc-grid">${rows}</div>
     </div>`;
 }
 

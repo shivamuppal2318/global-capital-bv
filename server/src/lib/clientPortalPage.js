@@ -122,6 +122,19 @@ function pageStyles() {
 
     .gc-sign-box { margin-top: 14px; padding: 18px; background: #fbfcfe; border: 1px solid #e7edf5; border-radius: 16px; }
 
+    /* Data Room checklist — two columns so all ten request-list items fit
+       without the page running on forever (mirrors the staff-side Data
+       Room screen's own sm:grid-cols-2 checklist layout, same content). */
+    .gc-doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .gc-doc-row { display: flex; flex-direction: column; gap: 10px; border-radius: 12px; padding: 12px 14px; }
+    .gc-doc-row-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .gc-doc-row-label { font-size: 13px; color: #102246; font-weight: 500; overflow-wrap: break-word; }
+    .gc-doc-row-actions { display: flex; align-items: center; gap: 8px; }
+    .gc-doc-row-actions .gc-btn-secondary { padding: 7px 16px; font-size: 12px; }
+    @media (max-width: 640px) {
+      .gc-doc-grid { grid-template-columns: 1fr; }
+    }
+
     /* Placed last so it wins over the unconditional .gc-shell/.gc-sidebar
        rules above at equal specificity. */
     @media (max-width: 767px) {
