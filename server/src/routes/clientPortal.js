@@ -992,6 +992,25 @@ clientPortalRouter.post(
       }
     });
 
+    // A real client upload IS real progress on this stage -- without this,
+    // CRM Workspace's Deal Pipeline board (computeLeadPipeline, which reads
+    // DealStageRecord(DATA_ROOM), never this Document table) stayed stuck
+    // on "not started" forever, even after the client had actually
+    // uploaded documents, since nothing else in the app ever created this
+    // record. Only ever moves NOT_STARTED -> IN_PROGRESS -- never touches a
+    // stage a staff member has already marked COMPLETED/DECLINED/ON_HOLD,
+    // so this can't override a deliberate staff judgement call.
+    const dataRoomStage = await prisma.dealStageRecord.findUnique({
+      where: { leadId_stage: { leadId: req.clientUser.leadId, stage: "DATA_ROOM" } }
+    });
+    if (!dataRoomStage) {
+      await prisma.dealStageRecord.create({
+        data: { leadId: req.clientUser.leadId, stage: "DATA_ROOM", status: "IN_PROGRESS", scheduledAt: new Date() }
+      });
+    } else if (dataRoomStage.status === "NOT_STARTED") {
+      await prisma.dealStageRecord.update({ where: { id: dataRoomStage.id }, data: { status: "IN_PROGRESS" } });
+    }
+
     res.redirect("/api/client-portal/dashboard");
   })
 );
