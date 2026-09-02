@@ -9,8 +9,20 @@ import { REQUIRED_DOCUMENTS, REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDoc
 import { classifyDocumentCategory, runGapCheck } from "../lib/documentClassifier.js";
 import { recordAudit } from "../lib/auditLog.js";
 import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
+import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const documentsRouter = Router();
+
+// A Channel Partner's Data Room access is read-only, scoped to documents on
+// their own referred leads only -- the general company-wide library
+// (leadId: null) and every write/admin-checklist feature (categories,
+// kpis, gap-check, upload, verify, edit, delete) stays refused outright.
+function blockChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Your account has read-only access to documents on your own referred leads." });
+  }
+  next();
+}
 
 function publicDocument(doc) {
   return {
@@ -39,6 +51,7 @@ documentsRouter.get("/", asyncHandler(async (req, res) => {
   const { category, q, leadId } = req.query;
   const docs = await prisma.document.findMany({
     where: {
+      ...relatedLeadOwnerWhereClause(req),
       ...(leadId ? { leadId: String(leadId) } : {}),
       ...(category && category !== "All" ? { category } : {}),
       ...(q
@@ -57,7 +70,7 @@ documentsRouter.get("/", asyncHandler(async (req, res) => {
   res.json(docs.map(publicDocument));
 }));
 
-documentsRouter.get("/categories", asyncHandler(async (req, res) => {
+documentsRouter.get("/categories", blockChannelPartner, asyncHandler(async (req, res) => {
   const { leadId } = req.query;
   const grouped = await prisma.document.groupBy({
     by: ["category"],
@@ -76,7 +89,7 @@ documentsRouter.get("/required-documents", (_req, res) => res.json(REQUIRED_DOCU
 // reviewed) — both are surfaced since the framework's own status flow
 // (Requested → Received → Verified) treats them as genuinely different
 // milestones, not just two names for the same thing.
-documentsRouter.get("/kpis", asyncHandler(async (req, res) => {
+documentsRouter.get("/kpis", blockChannelPartner, asyncHandler(async (req, res) => {
   const { leadId } = req.query;
   const docs = await prisma.document.findMany({
     where: { category: { in: REQUIRED_DOCUMENT_LABELS }, ...(leadId ? { leadId: String(leadId) } : {}) },
@@ -104,7 +117,7 @@ documentsRouter.get("/kpis", asyncHandler(async (req, res) => {
   });
 }));
 
-documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) => {
+documentsRouter.post("/", blockChannelPartner, upload.single("file"), asyncHandler(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file was uploaded." });
   }
@@ -154,7 +167,7 @@ documentsRouter.post("/", upload.single("file"), asyncHandler(async (req, res) =
 // required-documents checklist — see lib/documentClassifier.js. Read-only:
 // nothing here is stored, it's recomputed fresh on every call so it always
 // reflects the current Data Room.
-documentsRouter.post("/gap-check", asyncHandler(async (req, res) => {
+documentsRouter.post("/gap-check", blockChannelPartner, asyncHandler(async (req, res) => {
   const { leadId } = req.body ?? {};
   const documents = await prisma.document.findMany({
     where: leadId ? { leadId: String(leadId) } : {},
@@ -174,7 +187,7 @@ documentsRouter.post("/gap-check", asyncHandler(async (req, res) => {
 }));
 
 documentsRouter.get("/:id/download", asyncHandler(async (req, res) => {
-  const doc = await prisma.document.findUnique({ where: { id: req.params.id } });
+  const doc = await prisma.document.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) } });
   if (!doc) return res.status(404).json({ error: "Document not found" });
 
   const filePath = path.join(UPLOAD_DIR, doc.storedName);
@@ -194,7 +207,7 @@ documentsRouter.get("/:id/download", asyncHandler(async (req, res) => {
 // the KPI framework's completion % actually counts, distinct from just
 // having been uploaded. Toggled by any user who can reach the Data Room;
 // this app doesn't have a reviewer-vs-uploader role split yet.
-documentsRouter.post("/:id/verify", asyncHandler(async (req, res) => {
+documentsRouter.post("/:id/verify", blockChannelPartner, asyncHandler(async (req, res) => {
   const verified = req.body?.verified !== false;
   const doc = await prisma.document
     .update({
@@ -218,7 +231,7 @@ documentsRouter.post("/:id/verify", asyncHandler(async (req, res) => {
   res.json(publicDocument(doc));
 }));
 
-documentsRouter.patch("/:id", asyncHandler(async (req, res) => {
+documentsRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const { category, description } = req.body ?? {};
   const doc = await prisma.document
     .update({
@@ -234,7 +247,7 @@ documentsRouter.patch("/:id", asyncHandler(async (req, res) => {
   res.json(publicDocument(doc));
 }));
 
-documentsRouter.delete("/:id", asyncHandler(async (req, res) => {
+documentsRouter.delete("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const doc = await prisma.document.findUnique({ where: { id: req.params.id } });
   if (!doc) return res.status(404).json({ error: "Document not found" });
 

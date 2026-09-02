@@ -3,6 +3,7 @@ import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
 import { MarketIntelligenceModule } from "../marketIntelligence/MarketIntelligenceModule.jsx";
 import { PartnerLeadsView } from "./PartnerLeadsView.jsx";
+import { PartnerDocumentsView } from "./PartnerDocumentsView.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
 
 const inputClass =
@@ -85,6 +86,7 @@ function PartnerLoginView() {
 // need their own nav entries here rather than more visibleTabs ids.
 const EXTRA_SECTIONS = [
   { id: "crm-workspace", label: "CRM Workspace", Component: PartnerLeadsView },
+  { id: "data-room", label: "Data Room", Component: PartnerDocumentsView },
   { id: "market-intelligence", label: "Market Intelligence", Component: MarketIntelligenceModule }
 ];
 

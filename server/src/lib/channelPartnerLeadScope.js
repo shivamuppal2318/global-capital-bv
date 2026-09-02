@@ -8,3 +8,11 @@
 export function leadOwnerWhereClause(req) {
   return req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {};
 }
+
+// Same scoping, for a model that relates to Lead via a `lead` relation
+// rather than carrying channelPartner directly (Document.leadId is
+// nullable -- this correctly excludes the general company-wide library,
+// since a null-lead document can't match a nested relation filter).
+export function relatedLeadOwnerWhereClause(req) {
+  return req.channelPartner ? { lead: { channelPartner: req.channelPartner.businessName } } : {};
+}

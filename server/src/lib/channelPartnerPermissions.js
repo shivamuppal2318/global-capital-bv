@@ -7,21 +7,24 @@
 // channel-partner token, and (2) it queries only data that's either not
 // company-wide-sensitive (Market Intelligence — MarketSignal rows are
 // external market/news content, never client data) or has REAL per-partner
-// scoping built (CRM Workspace — see lib/channelPartnerLeadScope.js;
-// read-only, matched via the existing Lead.channelPartner field, same
-// convention channelPartners.js's withReferredLeads already uses for
-// commission calc). Everything else stays out: NDA, IOI, Universal
-// Filters, Outreach/DOE, Data Room, Visit Planning, Executive Dashboard,
-// WhatsApp Business and Channel Partner all query every lead/client/
-// partner in the company with no per-partner filter today, so granting
-// them would leak the whole company's data to one partner until they get
-// the same real scoping treatment as CRM Workspace.
+// scoping built (CRM Workspace, Data Room — see
+// lib/channelPartnerLeadScope.js; read-only, matched via the existing
+// Lead.channelPartner field, same convention channelPartners.js's
+// withReferredLeads already uses for commission calc — Data Room also
+// correctly excludes the general company-wide library, since a document
+// with no leadId can't match a nested relation filter). Everything else
+// stays out: NDA, IOI, Universal Filters, Outreach/DOE, Visit Planning,
+// Executive Dashboard, WhatsApp Business and Channel Partner all query
+// every lead/client/partner in the company with no per-partner filter
+// today, so granting them would leak the whole company's data to one
+// partner until they get the same real scoping treatment.
 export const CHANNEL_PARTNER_OPTIONAL_MODULES = [
   { id: "segments", label: "Segments", group: "Email Automation" },
   { id: "templates", label: "Templates", group: "Email Automation" },
   { id: "ai-agent", label: "AI Agent", group: "Email Automation" },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence" },
-  { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" }
+  { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },
+  { id: "data-room", label: "Data Room", group: "Relationships" }
 ];
 
 export const CHANNEL_PARTNER_OPTIONAL_MODULE_IDS = CHANNEL_PARTNER_OPTIONAL_MODULES.map((m) => m.id);

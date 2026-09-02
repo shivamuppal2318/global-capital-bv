@@ -122,7 +122,8 @@ const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
   "/api/email/templates",
   "/api/email/ai-agent",
   "/api/market-intelligence",
-  "/api/leads"
+  "/api/leads",
+  "/api/documents"
 ];
 app.use((req, res, next) => {
   if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
@@ -198,7 +199,7 @@ app.use(
   },
   leadsRouter
 );
-app.use("/api/documents", requireModule("data-room"), documentsRouter);
+app.use("/api/documents", outreachOrChannelPartnerModule("data-room"), documentsRouter);
 // One router serves all seven stages (the stage is a filter, not a route),
 // so it unlocks for anyone holding any of the stage modules; the screens
 // themselves are still gated individually in the sidebar.
@@ -248,17 +249,22 @@ function outreachOrChannelPartner(req, res, next) {
   return outreach(req, res, next);
 }
 // Unlike campaigns/leads above (unconditional for any channel-partner
-// token, since they share one non-separable API surface), these three are
+// token, since they share one non-separable API surface), these are
 // genuinely optional per-partner grants -- refused unless
 // ChannelPartnerUser.permissions actually includes this module id, not
-// just reached via CHANNEL_PARTNER_ELIGIBLE_PREFIXES.
-function outreachOrChannelPartnerModule(moduleId) {
+// just reached via CHANNEL_PARTNER_ELIGIBLE_PREFIXES. `staffModuleIds`
+// defaults to [moduleId] -- pass it explicitly whenever the staff-side
+// module id differs from the channel-partner one (e.g. Templates/Segments/
+// AI Agent are all really staff module "cold-bulk-mailing" since they're
+// tabs inside MailX, not separate staff module ids of their own).
+function outreachOrChannelPartnerModule(moduleId, ...staffModuleIds) {
+  const staffCheck = requireModule(...(staffModuleIds.length ? staffModuleIds : [moduleId]));
   return (req, res, next) => {
     if (req.channelPartner) {
       if (hasChannelPartnerModule(req.channelPartner, moduleId)) return next();
       return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
     }
-    return requireModule("cold-bulk-mailing")(req, res, next);
+    return staffCheck(req, res, next);
   };
 }
 app.use("/api/outreach-doe", outreach, outreachDoeRouter);
@@ -278,11 +284,11 @@ app.use(
 // Templates & Cadences is a tab inside MailX now (see
 // EmailOutreachModule.jsx), not its own nav entry, so it shares MailX's
 // module id rather than needing one of its own.
-app.use("/api/email/templates", outreachOrChannelPartnerModule("templates"), emailTemplatesRouter);
+app.use("/api/email/templates", outreachOrChannelPartnerModule("templates", "cold-bulk-mailing"), emailTemplatesRouter);
 // Segments and AI Agent are tabs inside MailX too — same module id as
 // Templates & Cadences above, for the same reason.
-app.use("/api/email/segments", outreachOrChannelPartnerModule("segments"), emailSegmentsRouter);
-app.use("/api/email/ai-agent", outreachOrChannelPartnerModule("ai-agent"), emailAiAgentRouter);
+app.use("/api/email/segments", outreachOrChannelPartnerModule("segments", "cold-bulk-mailing"), emailSegmentsRouter);
+app.use("/api/email/ai-agent", outreachOrChannelPartnerModule("ai-agent", "cold-bulk-mailing"), emailAiAgentRouter);
 // Not module-gated: everyone manages their own mailbox from Admin Panel →
 // My Account, and the router itself already scopes non-admins to the
 // mailboxes they own.
