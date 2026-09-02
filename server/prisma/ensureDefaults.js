@@ -27,7 +27,15 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || "/app/uploads";
 async function ensureTemplateDocument({ storedName, sourceFileName, originalName, mimeType, category, description }) {
   const existing = await prisma.document.findUnique({ where: { storedName } });
   if (existing) {
-    console.log(`${originalName} document already exists — skipping.`);
+    // Keeps a since-renamed originalName (e.g. this doc's own past
+    // "LOI Template" -> "IOI Template" rename) in sync on every boot,
+    // same self-healing reasoning as the admin password re-sync above.
+    if (existing.originalName !== originalName) {
+      await prisma.document.update({ where: { storedName }, data: { originalName } });
+      console.log(`Renamed existing document to "${originalName}".`);
+    } else {
+      console.log(`${originalName} document already exists — skipping.`);
+    }
     return;
   }
 
@@ -62,7 +70,7 @@ function ensureIoiTemplateDocument() {
   return ensureTemplateDocument({
     storedName: "standard-ioi-template.docx",
     sourceFileName: "ioi-template.docx",
-    originalName: "Global Capital BV — LOI Template.docx",
+    originalName: "Global Capital BV — IOI Template.docx",
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     category: "IOI",
     description: "Standard Letter of Intent template — defaults into every new IOI record."

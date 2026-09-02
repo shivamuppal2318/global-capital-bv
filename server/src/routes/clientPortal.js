@@ -1093,7 +1093,7 @@ clientPortalRouter.get(
   "/ioi/template",
   requireClientAuth,
   (_req, res) => {
-    res.download(IOI_TEMPLATE_PATH, "Global-Capital-BV-LOI-Template.docx");
+    res.download(IOI_TEMPLATE_PATH, "Global-Capital-BV-IOI-Template.docx");
   }
 );
 
