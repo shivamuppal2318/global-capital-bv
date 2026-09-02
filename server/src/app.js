@@ -120,7 +120,8 @@ const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
   "/api/email/segments",
   "/api/email/templates",
   "/api/email/ai-agent",
-  "/api/market-intelligence"
+  "/api/market-intelligence",
+  "/api/leads"
 ];
 app.use((req, res, next) => {
   if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
@@ -184,6 +185,14 @@ app.use(
     // rejected as "no access" before it ever reaches the route's own
     // x-api-key check.
     if (req.method === "POST" && req.path === "/inbound") return next();
+    // A Channel Partner reaches only the read-only, per-partner-scoped
+    // routes leads.js itself refuses everything else for (see
+    // blockChannelPartner there) — this just checks the module grant, the
+    // actual scoping/write-refusal lives in the route handlers.
+    if (req.channelPartner) {
+      if (hasChannelPartnerModule(req.channelPartner, "crm-workspace")) return next();
+      return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+    }
     return requireModule("crm-workspace", "leads")(req, res, next);
   },
   leadsRouter

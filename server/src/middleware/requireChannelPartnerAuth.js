@@ -31,7 +31,15 @@ export async function requireChannelPartnerAuth(req, res, next) {
   try {
     const channelPartnerUser = await prisma.channelPartnerUser.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, status: true, channelPartnerId: true, permissions: true }
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        status: true,
+        channelPartnerId: true,
+        permissions: true,
+        channelPartner: { select: { name: true } }
+      }
     });
 
     if (!channelPartnerUser) {
@@ -46,7 +54,13 @@ export async function requireChannelPartnerAuth(req, res, next) {
       userId: channelPartnerUser.id,
       name: channelPartnerUser.name,
       email: channelPartnerUser.email,
-      permissions: channelPartnerUser.permissions
+      permissions: channelPartnerUser.permissions,
+      // The ChannelPartner business record's own name -- the actual
+      // matching key against Lead.channelPartner (see
+      // lib/channelPartnerLeadScope.js), distinct from the portal user's
+      // own name above (the individual who's logged in, e.g. a contact at
+      // the partner org, not the org's own name).
+      businessName: channelPartnerUser.channelPartner.name
     };
     next();
   } catch (err) {

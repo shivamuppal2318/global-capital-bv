@@ -6,8 +6,22 @@ import { signStaffPreviewToken } from "../lib/staffPreviewToken.js";
 import { hashPassword } from "../lib/auth.js";
 import { sendSystemEmail, clientPortalInviteEmail } from "../lib/systemMailer.js";
 import { computeLeadPipeline, computePipelineSummary, computeDealBoard } from "../lib/leadPipeline.js";
+import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 const router = Router();
+
+// A Channel Partner's CRM Workspace access is read-only and scoped to
+// their own referred leads (see leadOwnerWhereClause) -- everything that
+// writes, and the two company-wide aggregates below that have no filter
+// param to scope by, is refused outright rather than silently exposing
+// (aggregates) or letting an external partner edit (writes) deal records
+// that are really staff/DOE responsibility.
+function blockChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Your account has read-only access to your own referred leads." });
+  }
+  next();
+}
 
 // The client portal is server-rendered by THIS API (see routes/clientPortal.js),
 // not the React SPA — so its links point at the API's own base URL, the
@@ -25,7 +39,11 @@ const clientUserSelect = { select: { id: true, email: true, status: true, lastLo
 
 router.get("/", async (req, res, next) => {
   try {
-    const leads = await prisma.lead.findMany({ orderBy: { createdAt: "desc" }, include: { clientUser: clientUserSelect } });
+    const leads = await prisma.lead.findMany({
+      where: leadOwnerWhereClause(req),
+      orderBy: { createdAt: "desc" },
+      include: { clientUser: clientUserSelect }
+    });
     res.json(leads);
   } catch (err) {
     next(err);
@@ -37,7 +55,7 @@ router.get("/", async (req, res, next) => {
 // Health chart (which also shows conversion rates between stages). Must be
 // registered before "/:id" below, or Express would match "pipeline-summary"
 // itself as an :id.
-router.get("/pipeline-summary", async (req, res, next) => {
+router.get("/pipeline-summary", blockChannelPartner, async (req, res, next) => {
   try {
     res.json(await computePipelineSummary());
   } catch (err) {
@@ -47,7 +65,7 @@ router.get("/pipeline-summary", async (req, res, next) => {
 
 // Kanban board: one column per stage, one card per lead in its current
 // stage. Same "register before /:id" reasoning as pipeline-summary above.
-router.get("/deal-board", async (req, res, next) => {
+router.get("/deal-board", blockChannelPartner, async (req, res, next) => {
   try {
     res.json(await computeDealBoard());
   } catch (err) {
@@ -57,7 +75,14 @@ router.get("/deal-board", async (req, res, next) => {
 
 router.get("/:id", async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: clientUserSelect } });
+    // findFirst (not findUnique) since a Channel Partner's ownership filter
+    // isn't a unique-lookup field -- id + channelPartner together aren't
+    // findUnique-able, this is a real "does this id match AND is it theirs"
+    // query.
+    const lead = await prisma.lead.findFirst({
+      where: { id: req.params.id, ...leadOwnerWhereClause(req) },
+      include: { clientUser: clientUserSelect }
+    });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
     res.json(lead);
   } catch (err) {
@@ -72,6 +97,12 @@ router.get("/:id", async (req, res, next) => {
 // stands right now.
 router.get("/:id/pipeline", async (req, res, next) => {
   try {
+    // computeLeadPipeline itself takes just a leadId with no ownership
+    // concept -- confirm the lead is actually this Channel Partner's own
+    // (or that no partner is involved at all, i.e. staff) before running it.
+    const owned = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) }, select: { id: true } });
+    if (!owned) return res.status(404).json({ error: "Lead not found" });
+
     const pipeline = await computeLeadPipeline(req.params.id);
     if (!pipeline) return res.status(404).json({ error: "Lead not found" });
     res.json(pipeline);
@@ -85,7 +116,7 @@ router.get("/:id/pipeline", async (req, res, next) => {
 // distinct value to filter on.
 const TEXT_FIELDS = ["owner", "territory", "leadSource", "industry", "channelPartner", "teamLeader", "manager", "doe", "capitalAsk"];
 
-router.patch("/:id", async (req, res, next) => {
+router.patch("/:id", blockChannelPartner, async (req, res, next) => {
   try {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
@@ -208,7 +239,7 @@ router.post("/inbound", async (req, res, next) => {
 // The CRM Workspace screen's own "New record" button — a logged-in rep
 // creating a lead directly, as opposed to /inbound above (an external
 // platform, gated by its own webhook API key instead of a session).
-router.post("/", async (req, res, next) => {
+router.post("/", blockChannelPartner, async (req, res, next) => {
   try {
     const { name, company, email, mobile, capitalAsk, owner, leadSource, territory, notes } = req.body ?? {};
     const trimmedName = typeof name === "string" ? name.trim() : "";
@@ -229,7 +260,7 @@ router.post("/", async (req, res, next) => {
 // abort the whole batch (same "isolate each item" principle as the email
 // cold-outreach bulk-create route), so failures are collected and reported
 // rather than thrown.
-router.post("/bulk", async (req, res, next) => {
+router.post("/bulk", blockChannelPartner, async (req, res, next) => {
   try {
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
     if (rows.length === 0) return res.status(400).json({ error: "No rows provided." });
@@ -304,7 +335,7 @@ async function sendPortalInviteForLead(lead) {
 // the invite email actually went out via the configured system SMTP; if
 // none is configured, the link is still generated and returned so a rep
 // can copy/paste it by hand instead of the whole action failing.
-router.post("/:id/portal-invite", async (req, res, next) => {
+router.post("/:id/portal-invite", blockChannelPartner, async (req, res, next) => {
   try {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: true } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
@@ -322,7 +353,7 @@ router.post("/:id/portal-invite", async (req, res, next) => {
 // fires the portal invite on it — the actual trigger point the team wants
 // (see the note above): a cold contact only gets a portal invite once
 // they're converted into a tracked deal, not on the first cold email.
-router.post("/from-email-lead/:emailLeadId", async (req, res, next) => {
+router.post("/from-email-lead/:emailLeadId", blockChannelPartner, async (req, res, next) => {
   try {
     const emailLead = await prisma.emailLead.findUnique({ where: { id: req.params.emailLeadId } });
     if (!emailLead) return res.status(404).json({ error: "Email lead not found" });
@@ -366,7 +397,7 @@ function generateClientPassword() {
   return crypto.randomBytes(9).toString("base64url");
 }
 
-router.post("/:id/client-portal/reset-password", async (req, res, next) => {
+router.post("/:id/client-portal/reset-password", blockChannelPartner, async (req, res, next) => {
   try {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: true } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
@@ -388,7 +419,7 @@ router.post("/:id/client-portal/reset-password", async (req, res, next) => {
 // what this lead's client sees on their own portal dashboard — see
 // routes/clientPortal.js's GET /preview/:leadId and lib/staffPreviewToken.js
 // for why this needs its own token rather than the normal Bearer session.
-router.post("/:id/client-portal/preview-link", async (req, res, next) => {
+router.post("/:id/client-portal/preview-link", blockChannelPartner, async (req, res, next) => {
   try {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: true } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
