@@ -48,7 +48,8 @@ export async function buildBusinessContext(enabledSources = null) {
     dealStages,
     ndaRecords,
     visitPlans,
-    ioiRecords
+    ioiRecords,
+    leadActivity
   ] = await Promise.all([
     on("leads") ? prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: MAX_ROWS }) : [],
     on("whatsapp") ? prisma.contact.findMany({ take: MAX_ROWS }) : [],
@@ -108,6 +109,16 @@ export async function buildBusinessContext(enabledSources = null) {
           orderBy: { updatedAt: "desc" },
           take: MAX_ROWS
         })
+      : [],
+    // CRM Workspace's Timeline/Interactions tab — same relation, gated
+    // under "leads" rather than its own toggle since it has no meaning
+    // apart from the lead it's logged against.
+    on("leads")
+      ? prisma.leadActivityLog.findMany({
+          include: { lead: { select: { name: true, company: true } } },
+          orderBy: { createdAt: "desc" },
+          take: MAX_ROWS
+        })
       : []
   ]);
 
@@ -140,6 +151,16 @@ export async function buildBusinessContext(enabledSources = null) {
         territory: l.territory,
         engagementStage: l.engagementStage,
         consentGdpr: l.consentGdpr,
+        notes: l.notes,
+        // Universal Filters fields (lib/universalFilters.js) — manually set
+        // by a rep, not derived from anything else here.
+        industry: l.industry,
+        channelPartner: l.channelPartner,
+        temperature: l.temperature,
+        teamLeader: l.teamLeader,
+        manager: l.manager,
+        doe: l.doe,
+        tags: l.tags,
         createdAt: l.createdAt,
         updatedAt: l.updatedAt,
         // From the "Enrich"/"Bulk enrich" ZoomInfo action (CRM Workspace) —
@@ -150,6 +171,21 @@ export async function buildBusinessContext(enabledSources = null) {
         zoomInfoCompany: l.zoomInfoData,
         zoomInfoContact: l.zoomInfoContactData,
         zoomInfoScoops: l.zoomInfoScoops
+      }))
+    };
+
+    // CRM Workspace's Timeline/Interactions tab — the log entries a rep
+    // sees against one lead, here flattened across all leads like meetings
+    // and NDAs above so "what's happened on X" or "what did we log
+    // recently" can both be answered.
+    context.leadActivity = {
+      total: leadActivity.length,
+      records: leadActivity.map((a) => ({
+        lead: a.lead ? `${a.lead.name} (${a.lead.company})` : null,
+        kind: a.kind,
+        title: a.title,
+        detail: a.detail,
+        loggedAt: a.createdAt
       }))
     };
   }
