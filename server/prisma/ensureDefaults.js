@@ -17,43 +17,56 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // since that module also configures multer, which this script has no
 // Express request to hand it.
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "/app/uploads";
-const NDA_TEMPLATE_STORED_NAME = "standard-nda-template.pdf";
 
-// The Data Room's standard NDA template (assets/nda-template.pdf, also
-// served to clients at GET /api/client-portal/nda/template) copied in as a
-// real Document row — company-wide (leadId: null), so the NDA quick-add
-// form can default "Attach NDA" to it instead of every new record starting
-// on "None". A fixed storedName makes this idempotent across every boot.
-async function ensureNdaTemplateDocument() {
-  const existing = await prisma.document.findUnique({ where: { storedName: NDA_TEMPLATE_STORED_NAME } });
+// Shared by ensureNdaTemplateDocument/ensureIoiTemplateDocument below — a
+// standard template (assets/<sourceFileName>, also served to clients at
+// GET /api/client-portal/<module>/template) copied in as a real Document
+// row, company-wide (leadId: null), so its quick-add form can default
+// "Attach <X> document" to it instead of every new record starting on
+// "None". A fixed storedName makes each one idempotent across every boot.
+async function ensureTemplateDocument({ storedName, sourceFileName, originalName, mimeType, category, description }) {
+  const existing = await prisma.document.findUnique({ where: { storedName } });
   if (existing) {
-    console.log("Standard NDA template document already exists — skipping.");
+    console.log(`${originalName} document already exists — skipping.`);
     return;
   }
 
-  const sourcePath = path.join(__dirname, "..", "assets", "nda-template.pdf");
+  const sourcePath = path.join(__dirname, "..", "assets", sourceFileName);
   const fileBuffer = await fs.readFile(sourcePath).catch((err) => {
-    console.error(`Could not read ${sourcePath} — skipping standard NDA template document: ${err.message}`);
+    console.error(`Could not read ${sourcePath} — skipping ${originalName} document: ${err.message}`);
     return null;
   });
   if (!fileBuffer) return;
 
   await fs.mkdir(UPLOAD_DIR, { recursive: true }).catch(() => {});
-  await fs.writeFile(path.join(UPLOAD_DIR, NDA_TEMPLATE_STORED_NAME), fileBuffer);
+  await fs.writeFile(path.join(UPLOAD_DIR, storedName), fileBuffer);
 
   await prisma.document.create({
-    data: {
-      originalName: "Global Capital BV — Reciprocal NDA Template.pdf",
-      storedName: NDA_TEMPLATE_STORED_NAME,
-      mimeType: "application/pdf",
-      sizeBytes: fileBuffer.length,
-      category: "NDA",
-      description: "Standard reciprocal NDA template — defaults into every new NDA record.",
-      leadId: null,
-      uploadedById: null
-    }
+    data: { originalName, storedName, mimeType, sizeBytes: fileBuffer.length, category, description, leadId: null, uploadedById: null }
   });
-  console.log("Created standard NDA template document.");
+  console.log(`Created ${originalName} document.`);
+}
+
+function ensureNdaTemplateDocument() {
+  return ensureTemplateDocument({
+    storedName: "standard-nda-template.pdf",
+    sourceFileName: "nda-template.pdf",
+    originalName: "Global Capital BV — Reciprocal NDA Template.pdf",
+    mimeType: "application/pdf",
+    category: "NDA",
+    description: "Standard reciprocal NDA template — defaults into every new NDA record."
+  });
+}
+
+function ensureIoiTemplateDocument() {
+  return ensureTemplateDocument({
+    storedName: "standard-ioi-template.docx",
+    sourceFileName: "ioi-template.docx",
+    originalName: "Global Capital BV — LOI Template.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    category: "IOI",
+    description: "Standard Letter of Intent template — defaults into every new IOI record."
+  });
 }
 
 async function ensureAdminUser() {
@@ -131,6 +144,7 @@ async function ensureAdminUser() {
 async function main() {
   await ensureAdminUser();
   await ensureNdaTemplateDocument();
+  await ensureIoiTemplateDocument();
 
   const existing = await prisma.businessSettings.findFirst();
   if (existing) {

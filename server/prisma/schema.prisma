@@ -1357,6 +1357,20 @@ model IoiRecord {
   owner        String?
   notes        String?
 
+  // Filled in by the client via the "fill in your details online" option —
+  // the LOI template's actual blanks (see assets/ioi-template.docx): the
+  // borrower's jurisdiction, project cost and equity contribution, plus
+  // the signature block. `counterparty` above stays the company name;
+  // these are the individual signatory's own details, which can differ.
+  counterpartyJurisdiction String?
+  totalProjectCost         String?
+  borrowerEquity           String?
+  signatoryName            String?
+  signatoryAddress         String?
+  signatoryPhone           String?
+  signatoryEmail           String?
+  agreementDate            DateTime?
+
   document   Document? @relation("IoiDocument", fields: [documentId], references: [id], onDelete: SetNull)
   documentId String?
 

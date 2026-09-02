@@ -450,6 +450,80 @@ function ndaSignFormHtml({ error, doeName, alreadySigned, companyName, filled } 
     </div>`;
 }
 
+// Same reshaping as ndaFilledValues — yyyy-mm-dd for the date input.
+function ioiFilledValues(ioi) {
+  return {
+    counterpartyJurisdiction: ioi?.counterpartyJurisdiction ?? "",
+    totalProjectCost: ioi?.totalProjectCost ?? "",
+    borrowerEquity: ioi?.borrowerEquity ?? "",
+    agreementDate: ioi?.agreementDate ? new Date(ioi.agreementDate).toISOString().slice(0, 10) : "",
+    signatoryName: ioi?.signatoryName ?? "",
+    signatoryAddress: ioi?.signatoryAddress ?? "",
+    signatoryPhone: ioi?.signatoryPhone ?? "",
+    signatoryEmail: ioi?.signatoryEmail ?? ""
+  };
+}
+
+// Same two-option shape as ndaSignFormHtml, minus its third option (nothing
+// here corresponds to "upload your own IOI" — an IOI is Global Capital's
+// own offer, not something a client would independently produce): fill in
+// the LOI template's actual blanks (assets/ioi-template.docx) right here,
+// or download it, sign by hand, and upload the scanned/completed copy.
+function ioiRespondFormHtml({ error, doeName, alreadySigned, companyName, filled } = {}) {
+  const f = filled ?? {};
+  return `
+    <div class="gc-sign-box">
+      ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
+      ${
+        alreadySigned
+          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this IOI. You can fill in the form again to update the details, or upload a copy for your own records.</p>`
+          : ""
+      }
+      ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
+
+      <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#102246;">Option 1 — Fill in your details online</p>
+      <form method="POST" action="/api/client-portal/ioi/fill-details" style="margin:0 0 22px;display:grid;gap:12px;max-width:480px;">
+        ${formField({ label: "Your company's legal name", name: "counterpartyLegalName", value: companyName ?? "" })}
+        ${formField({ label: "Jurisdiction of domicile", name: "counterpartyJurisdiction", value: f.counterpartyJurisdiction ?? "" })}
+        ${formField({ label: "Total acquisition / project cost (USD)", name: "totalProjectCost", value: f.totalProjectCost ?? "" })}
+        ${formField({ label: "Equity to be provided by the borrower (USD)", name: "borrowerEquity", value: f.borrowerEquity ?? "" })}
+        ${formField({ label: "Agreement date", name: "agreementDate", type: "date", value: f.agreementDate ?? "" })}
+        ${formField({ label: "Signatory name", name: "signatoryName", value: f.signatoryName ?? "" })}
+        ${formField({ label: "Signatory address", name: "signatoryAddress", value: f.signatoryAddress ?? "" })}
+        ${formField({ label: "Signatory phone", name: "signatoryPhone", type: "tel", value: f.signatoryPhone ?? "" })}
+        ${formField({ label: "Signatory email", name: "signatoryEmail", type: "email", value: f.signatoryEmail ?? "" })}
+        <label class="gc-checkbox-row">
+          <input type="checkbox" name="agree" required />
+          I have read and agree to the terms of this IOI
+        </label>
+        <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">Submit &amp; Accept</button>
+      </form>
+
+      <div style="border-top:1px solid #e7edf5;padding-top:16px;">
+        <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#102246;">Prefer a document instead?</p>
+        <p style="margin:0 0 12px;font-size:13px;color:#5c6b87;line-height:1.6;">
+          Option 2 — download our template, sign it by hand, then upload it back.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;">
+          <a href="/api/client-portal/ioi/template" class="gc-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;">Download IOI Template</a>
+          <form method="POST" action="/api/client-portal/ioi/upload" enctype="multipart/form-data" style="margin:0;">
+            <label class="gc-btn-secondary">
+              Upload My IOI
+              <input
+                type="file"
+                name="file"
+                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                required
+                class="gc-visually-hidden"
+                onchange="this.form.requestSubmit()"
+              />
+            </label>
+          </form>
+        </div>
+      </div>
+    </div>`;
+}
+
 // The Data Room stage's real upload UI — previously this stage's page
 // showed only "X of Y documents received" with no way for the client to
 // actually send one, then (before this) a single dropdown that hid the
@@ -531,7 +605,7 @@ async function loadPortalData(leadId) {
     termSheet
   });
 
-  return { nda, stages, uploadedCategories };
+  return { nda, ioi, stages, uploadedCategories };
 }
 
 function sidebarStagesFrom(stages) {
@@ -547,7 +621,7 @@ clientPortalRouter.get(
   requireClientAuth,
   asyncHandler(async (req, res) => {
     const leadId = req.clientUser.leadId;
-    const { nda, stages, uploadedCategories } = await loadPortalData(leadId);
+    const { nda, ioi, stages, uploadedCategories } = await loadPortalData(leadId);
 
     const completedCount = stages.filter((s) => s.status === "completed").length;
 
@@ -562,6 +636,11 @@ clientPortalRouter.get(
     const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
     const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
     const docError = req.query.docError ? String(req.query.docError) : null;
+    // Same gate as ndaActionable — sent and not a deliberate staff-side
+    // decline/expiry — mirrored for IOI rather than reused, since the two
+    // records' status enums and sentAt semantics are independent.
+    const ioiActionable = ioi && Boolean(ioi.sentAt) && !["DECLINED", "EXPIRED"].includes(ioi.status);
+    const ioiError = req.query.ioiError ? String(req.query.ioiError) : null;
 
     // Mirrors the SPA's own StatCard row (see e.g. MeetingsModule's five
     // cards) — a quick-read summary above the full stage-by-stage list,
@@ -622,6 +701,14 @@ clientPortalRouter.get(
                       companyName: req.clientUser.lead.company,
                       filled: ndaFilledValues(nda)
                     });
+                  } else if (s.key === "ioi" && ioiActionable) {
+                    extraHtml = ioiRespondFormHtml({
+                      error: ioiError,
+                      doeName: ioi.owner,
+                      alreadySigned: ioi.status === "SIGNED",
+                      companyName: req.clientUser.lead.company,
+                      filled: ioiFilledValues(ioi)
+                    });
                   } else if (s.key === "dataRoom") {
                     extraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
                   }
@@ -647,11 +734,13 @@ clientPortalRouter.get(
     if (!stageMeta) return res.redirect("/api/client-portal/dashboard");
 
     const leadId = req.clientUser.leadId;
-    const { nda, stages, uploadedCategories } = await loadPortalData(leadId);
+    const { nda, ioi, stages, uploadedCategories } = await loadPortalData(leadId);
     const stage = stages.find((s) => s.key === stageMeta.key);
 
     const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
     const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
+    const ioiActionable = ioi && Boolean(ioi.sentAt) && !["DECLINED", "EXPIRED"].includes(ioi.status);
+    const ioiError = req.query.ioiError ? String(req.query.ioiError) : null;
     const docError = req.query.docError ? String(req.query.docError) : null;
 
     let stageExtraHtml = "";
@@ -662,6 +751,14 @@ clientPortalRouter.get(
         alreadySigned: nda.status === "SIGNED",
         companyName: req.clientUser.lead.company,
         filled: ndaFilledValues(nda)
+      });
+    } else if (stage.key === "ioi" && ioiActionable) {
+      stageExtraHtml = ioiRespondFormHtml({
+        error: ioiError,
+        doeName: ioi.owner,
+        alreadySigned: ioi.status === "SIGNED",
+        companyName: req.clientUser.lead.company,
+        filled: ioiFilledValues(ioi)
       });
     } else if (stage.key === "dataRoom") {
       stageExtraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
@@ -929,6 +1026,129 @@ clientPortalRouter.post(
         signedAt: new Date(),
         signerName: req.clientUser.name,
         signerEmail: req.clientUser.email
+      }
+    });
+
+    res.redirect("/api/client-portal/dashboard");
+  })
+);
+
+// --- IOI fill-in-details (Option 1 — see ioiRespondFormHtml) --------------
+
+const ioiFillDetailsSchema = z.object({
+  agree: z.string().min(1),
+  counterpartyLegalName: z.string().trim().min(1, "Enter your company's legal name."),
+  counterpartyJurisdiction: z.string().trim().min(1, "Enter the jurisdiction of domicile."),
+  totalProjectCost: z.string().trim().min(1, "Enter the total acquisition / project cost."),
+  borrowerEquity: z.string().trim().min(1, "Enter the equity to be provided by the borrower."),
+  agreementDate: z.string().trim().min(1, "Choose the agreement date."),
+  signatoryName: z.string().trim().min(1, "Enter the signatory's name."),
+  signatoryAddress: z.string().trim().min(1, "Enter the signatory's address."),
+  signatoryPhone: z.string().trim().min(1, "Enter the signatory's phone number."),
+  signatoryEmail: z.string().trim().email("Enter a valid signatory email.")
+});
+
+clientPortalRouter.post(
+  "/ioi/fill-details",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const leadId = req.clientUser.leadId;
+    const parsed = ioiFillDetailsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? "Fill in every field and confirm you agree.";
+      return res.redirect(`/api/client-portal/dashboard?ioiError=${encodeURIComponent(message)}`);
+    }
+
+    const ioi = await prisma.ioiRecord.findUnique({ where: { leadId } });
+    if (!ioi || !ioi.sentAt || ["DECLINED", "EXPIRED"].includes(ioi.status)) {
+      return res.redirect(`/api/client-portal/dashboard?ioiError=${encodeURIComponent("This IOI isn't available to accept right now.")}`);
+    }
+
+    await prisma.ioiRecord.update({
+      where: { leadId },
+      data: {
+        status: "SIGNED",
+        signedAt: new Date(),
+        counterparty: parsed.data.counterpartyLegalName,
+        counterpartyJurisdiction: parsed.data.counterpartyJurisdiction,
+        totalProjectCost: parsed.data.totalProjectCost,
+        borrowerEquity: parsed.data.borrowerEquity,
+        agreementDate: new Date(parsed.data.agreementDate),
+        signatoryName: parsed.data.signatoryName,
+        signatoryAddress: parsed.data.signatoryAddress,
+        signatoryPhone: parsed.data.signatoryPhone,
+        signatoryEmail: parsed.data.signatoryEmail
+      }
+    });
+
+    res.redirect("/api/client-portal/dashboard");
+  })
+);
+
+// --- IOI template download (Option 2 starts here) -------------------------
+
+const IOI_TEMPLATE_PATH = path.join(import.meta.dirname, "..", "..", "assets", "ioi-template.docx");
+
+clientPortalRouter.get(
+  "/ioi/template",
+  requireClientAuth,
+  (_req, res) => {
+    res.download(IOI_TEMPLATE_PATH, "Global-Capital-BV-LOI-Template.docx");
+  }
+);
+
+// --- IOI upload (client-side alternative to filling in the form) ---------
+
+clientPortalRouter.post(
+  "/ioi/upload",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const leadId = req.clientUser.leadId;
+    const ioi = await prisma.ioiRecord.findUnique({ where: { leadId } });
+    if (!ioi || !ioi.sentAt || ["DECLINED", "EXPIRED"].includes(ioi.status)) {
+      return res.redirect(`/api/client-portal/dashboard?ioiError=${encodeURIComponent("This IOI isn't available to accept right now.")}`);
+    }
+
+    try {
+      await runUpload(req, res);
+    } catch (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? `That file is too large. The limit is ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`
+          : "Could not upload that file. Try again.";
+      return res.redirect(`/api/client-portal/dashboard?ioiError=${encodeURIComponent(message)}`);
+    }
+
+    if (!req.file) {
+      return res.redirect(`/api/client-portal/dashboard?ioiError=${encodeURIComponent("Choose a file to upload.")}`);
+    }
+
+    const filePath = path.join(UPLOAD_DIR, req.file.filename);
+    const { text, note } = await extractText(filePath, req.file.mimetype, req.file.originalname);
+
+    const doc = await prisma.document.create({
+      data: {
+        originalName: req.file.originalname,
+        storedName: req.file.filename,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        category: "IOI",
+        description: `Uploaded by ${req.clientUser.name} via the client portal`,
+        extractedText: text,
+        extractionNote: note,
+        uploadedById: null,
+        leadId: req.clientUser.leadId
+      }
+    });
+
+    // Uploading a signed copy IS acceptance — same end state as filling in
+    // the online form, just with the client's own document kept as record.
+    await prisma.ioiRecord.update({
+      where: { leadId },
+      data: {
+        documentId: doc.id,
+        status: "SIGNED",
+        signedAt: new Date()
       }
     });
 
