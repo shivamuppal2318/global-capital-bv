@@ -30,6 +30,9 @@ export const documentsApi = {
   // Data Room KPI framework's real numbers: requested/received/verified
   // counts and the completion % (Verified ÷ Requested × 100).
   kpis: (leadId) => request(leadId ? `/kpis?leadId=${encodeURIComponent(leadId)}` : "/kpis"),
+  // Rendered HTML preview for .docx files — PDFs/images already work fine
+  // through `open` below (the browser renders them natively).
+  previewHtml: (id) => request(`/${id}/preview`),
   verify: (id, verified) => request(`/${id}/verify`, { method: "POST", body: { verified } }),
   update: (id, body) => request(`/${id}`, { method: "PATCH", body }),
   remove: (id) => request(`/${id}`, { method: "DELETE" }),

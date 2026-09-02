@@ -39,6 +39,54 @@ function fileGlyph(mimeType, name) {
   return { label: ext.slice(0, 4) || "FILE", tone: "bg-[#edf1f6] text-[#748096]" };
 }
 
+// Only .docx has a real rendered preview (see documentsApi.previewHtml) —
+// PDFs and images already render fine natively when opened as a blob, and
+// old-format .doc has no parser in this app (mammoth only reads .docx).
+function isPreviewableDocx(name) {
+  return name.toLowerCase().endsWith(".docx");
+}
+
+// Mirrors the sandboxed srcDoc pattern already used for email template
+// previews (see RepliesTab.jsx) — untrusted-ish rendered HTML stays inside
+// an iframe with no script execution, rather than dangerouslySetInnerHTML
+// straight into the page.
+function DocumentPreviewModal({ doc, html, loading, error, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0f1f3d]/40 px-4 py-10" onClick={onClose}>
+      <div
+        className="w-full max-w-[820px] rounded-[22px] border border-[#d6deea] bg-white shadow-[0_20px_60px_rgba(15,31,61,0.25)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-[#e7edf5] px-6 py-5">
+          <p className="truncate text-[16px] font-semibold text-[#102246]">{doc.originalName}</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid size-8 shrink-0 place-items-center rounded-[10px] text-[#8592ab] transition hover:bg-[#f4f7fb] hover:text-[#102246]"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="px-6 py-5">
+          {loading ? (
+            <p className="text-[14px] text-[#8592ab]">Rendering preview…</p>
+          ) : error ? (
+            <p className="text-[14px] text-[#e0483f]">{error}</p>
+          ) : (
+            <iframe
+              title={`Preview of ${doc.originalName}`}
+              srcDoc={`<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:8px 4px;color:#1f2a44;line-height:1.6">${html}</div>`}
+              sandbox=""
+              className="h-[70vh] w-full rounded-[12px] border border-[#d6deea]"
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DataRoomModule() {
   const [documents, setDocuments] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -64,6 +112,12 @@ export function DataRoomModule() {
   const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState(null);
   const fileInputRef = useRef(null);
+  // Rendered .docx preview — separate from `handleOpen` below, which still
+  // handles PDFs/images (the browser renders those natively as a blob).
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [previewHtml, setPreviewHtml] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
 
   // Per-checklist-item "Insert doc" button — one shared hidden input rather
   // than one per row, since only ever one row's button is clicked at a time.
@@ -214,6 +268,25 @@ export function DataRoomModule() {
   };
 
   const handleOpen = async (doc, download) => {
+    // A .docx has no native browser renderer — opening it as a blob just
+    // triggers a download prompt or shows raw XML instead of the document.
+    // "Download" is unaffected: that path still fetches the real file.
+    if (!download && isPreviewableDocx(doc.originalName)) {
+      setPreviewDoc(doc);
+      setPreviewHtml(null);
+      setPreviewError(null);
+      setPreviewLoading(true);
+      try {
+        const result = await documentsApi.previewHtml(doc.id);
+        setPreviewHtml(result.html);
+      } catch (err) {
+        setPreviewError(err.message);
+      } finally {
+        setPreviewLoading(false);
+      }
+      return;
+    }
+
     try {
       await documentsApi.open(doc, { download });
     } catch (err) {
@@ -598,6 +671,16 @@ export function DataRoomModule() {
           have no text to read, so they're listed but can't be quoted.
         </p>
       </Card>
+
+      {previewDoc ? (
+        <DocumentPreviewModal
+          doc={previewDoc}
+          html={previewHtml}
+          loading={previewLoading}
+          error={previewError}
+          onClose={() => setPreviewDoc(null)}
+        />
+      ) : null}
     </div>
   );
 }

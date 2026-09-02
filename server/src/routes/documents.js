@@ -207,6 +207,37 @@ documentsRouter.get("/:id/download", asyncHandler(async (req, res) => {
   res.sendFile(path.resolve(filePath));
 }));
 
+// A rendered, in-browser preview for file types the browser itself can't
+// display natively — PDFs and images already open fine via /download's
+// `inline` disposition (that's what "Open" already does), but a .docx just
+// prompts a download or shows raw XML instead of rendering, since browsers
+// have no built-in Word viewer. Reuses mammoth (already a dependency for
+// text extraction in documentText.js) to convert the real document content
+// to HTML, rather than adding a second parsing path.
+documentsRouter.get("/:id/preview", asyncHandler(async (req, res) => {
+  const doc = await prisma.document.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) } });
+  if (!doc) return res.status(404).json({ error: "Document not found" });
+
+  const ext = doc.originalName.toLowerCase().split(".").pop();
+  const isDocx = ext === "docx" || doc.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (!isDocx) {
+    return res.status(400).json({ error: "A rendered preview is only available for .docx files — PDFs and images already open directly via Open." });
+  }
+
+  const filePath = path.join(UPLOAD_DIR, doc.storedName);
+  if (!(await fs.stat(filePath).catch(() => null))) {
+    return res.status(410).json({ error: "The stored file is missing on disk. It may have been removed outside the app." });
+  }
+
+  try {
+    const { default: mammoth } = await import("mammoth");
+    const { value } = await mammoth.convertToHtml({ path: filePath });
+    res.json({ html: value });
+  } catch (err) {
+    res.status(500).json({ error: `Could not render a preview: ${err.message}` });
+  }
+}));
+
 // Marks a document as reviewed/approved (or reverts that) — the human step
 // the KPI framework's completion % actually counts, distinct from just
 // having been uploaded. Toggled by any user who can reach the Data Room;
