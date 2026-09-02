@@ -71,7 +71,13 @@ export const channelPartnersApi = {
   // What this partner has actually done with their own Channel Partner
   // Portal login (separate from referredLeads above, which matches
   // Lead.channelPartner by name) — see server/src/routes/channelPartners.js.
-  activity: (id) => apiFetch(`${channelPartnersBase}/${id}/activity`)
+  activity: (id) => apiFetch(`${channelPartnersBase}/${id}/activity`),
+  optionalModules: () => apiFetch(`${channelPartnersBase}/optional-modules`),
+  // Every Channel Partner Portal login, for Admin Panel -> Channel
+  // Partners (the same home Employees has for staff logins).
+  portalUsers: () => apiFetch(`${channelPartnersBase}/portal-users`),
+  updatePortalUser: (id, body) => apiFetch(`${channelPartnersBase}/portal-users/${id}`, { method: "PATCH", body }),
+  resetPortalUserPassword: (id) => apiFetch(`${channelPartnersBase}/portal-users/${id}/reset-password`, { method: "POST" })
 };
 
 const meetingsBase = `${API_ROOT}/api/meetings`;

@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { requireChannelPartnerAuth } from "./middleware/requireChannelPartnerAuth.js";
 import { requireModule } from "./lib/permissions.js";
+import { hasChannelPartnerModule } from "./lib/channelPartnerPermissions.js";
 import overviewRouter from "./routes/overview.js";
 import dashboardRouter from "./routes/dashboard.js";
 import chatRouter from "./routes/chat.js";
@@ -110,7 +111,16 @@ function matchesPublicPrefix(path, prefix) {
 // token has no req.user a staff-shaped requireAuth could ever recognize, so
 // these two prefixes need their own branch rather than falling through to
 // the staff check below.
-const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = ["/api/email/campaigns", "/api/email/leads"];
+const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
+  "/api/email/campaigns",
+  "/api/email/leads",
+  // Optional, per-partner-granted extras (see lib/channelPartnerPermissions.js)
+  // -- unlike campaigns/leads above these are refused per-partner below
+  // unless actually granted, not unconditional just by reaching this list.
+  "/api/email/segments",
+  "/api/email/templates",
+  "/api/email/ai-agent"
+];
 app.use((req, res, next) => {
   if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
   if (PUBLIC_PREFIXES.some((prefix) => matchesPublicPrefix(req.path, prefix))) return next();
@@ -226,6 +236,20 @@ function outreachOrChannelPartner(req, res, next) {
   if (req.channelPartner) return next();
   return outreach(req, res, next);
 }
+// Unlike campaigns/leads above (unconditional for any channel-partner
+// token, since they share one non-separable API surface), these three are
+// genuinely optional per-partner grants -- refused unless
+// ChannelPartnerUser.permissions actually includes this module id, not
+// just reached via CHANNEL_PARTNER_ELIGIBLE_PREFIXES.
+function outreachOrChannelPartnerModule(moduleId) {
+  return (req, res, next) => {
+    if (req.channelPartner) {
+      if (hasChannelPartnerModule(req.channelPartner, moduleId)) return next();
+      return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+    }
+    return requireModule("cold-bulk-mailing")(req, res, next);
+  };
+}
 app.use("/api/outreach-doe", outreach, outreachDoeRouter);
 app.use("/api/email/campaigns", outreachOrChannelPartner, emailCampaignsRouter);
 app.use(
@@ -243,11 +267,11 @@ app.use(
 // Templates & Cadences is a tab inside MailX now (see
 // EmailOutreachModule.jsx), not its own nav entry, so it shares MailX's
 // module id rather than needing one of its own.
-app.use("/api/email/templates", requireModule("cold-bulk-mailing"), emailTemplatesRouter);
+app.use("/api/email/templates", outreachOrChannelPartnerModule("templates"), emailTemplatesRouter);
 // Segments and AI Agent are tabs inside MailX too — same module id as
 // Templates & Cadences above, for the same reason.
-app.use("/api/email/segments", requireModule("cold-bulk-mailing"), emailSegmentsRouter);
-app.use("/api/email/ai-agent", requireModule("cold-bulk-mailing"), emailAiAgentRouter);
+app.use("/api/email/segments", outreachOrChannelPartnerModule("segments"), emailSegmentsRouter);
+app.use("/api/email/ai-agent", outreachOrChannelPartnerModule("ai-agent"), emailAiAgentRouter);
 // Not module-gated: everyone manages their own mailbox from Admin Panel →
 // My Account, and the router itself already scopes non-admins to the
 // mailboxes they own.

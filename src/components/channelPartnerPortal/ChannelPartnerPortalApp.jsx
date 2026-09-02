@@ -102,11 +102,17 @@ function PartnerShell() {
           </button>
         </header>
 
-        {/* The existing staff module, unchanged — just restricted to the
-            Email Automation tabs, since Segments/Templates/Mailbox/AI
-            Agent/Settings all talk to staff-only endpoints (see
-            EmailOutreachModule's visibleTabs prop). */}
-        <EmailOutreachModule initialTab="dashboard" visibleTabs={["dashboard", "campaigns", "leads", "automation"]} />
+        {/* The existing staff module, unchanged — Dashboard/Campaigns/Leads/
+            Automation are the always-included baseline (one shared API
+            surface every partner gets), Segments/Templates/AI Agent are
+            optional per-partner grants (see Admin Panel -> Channel
+            Partners -> Feature access, and app.js's matching enforcement).
+            Mailbox/Settings stay staff-only regardless — see
+            EmailOutreachModule's visibleTabs prop. */}
+        <EmailOutreachModule
+          initialTab="dashboard"
+          visibleTabs={["dashboard", "campaigns", "leads", "automation", ...(partnerUser.permissions ?? [])]}
+        />
       </div>
     </div>
   );

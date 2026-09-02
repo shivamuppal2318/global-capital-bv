@@ -31,7 +31,7 @@ export async function requireChannelPartnerAuth(req, res, next) {
   try {
     const channelPartnerUser = await prisma.channelPartnerUser.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, status: true, channelPartnerId: true }
+      select: { id: true, name: true, email: true, status: true, channelPartnerId: true, permissions: true }
     });
 
     if (!channelPartnerUser) {
@@ -45,7 +45,8 @@ export async function requireChannelPartnerAuth(req, res, next) {
       id: channelPartnerUser.channelPartnerId,
       userId: channelPartnerUser.id,
       name: channelPartnerUser.name,
-      email: channelPartnerUser.email
+      email: channelPartnerUser.email,
+      permissions: channelPartnerUser.permissions
     };
     next();
   } catch (err) {
