@@ -86,5 +86,9 @@ export const callsApi = {
   list: () => apiFetch(meetingsBase),
   metrics: () => apiFetch(`${meetingsBase}/metrics`),
   update: (id, body) => apiFetch(`${meetingsBase}/${id}`, { method: "PATCH", body }),
-  summarise: (id) => apiFetch(`${meetingsBase}/${id}/summarise`, { method: "POST" })
+  summarise: (id) => apiFetch(`${meetingsBase}/${id}/summarise`, { method: "POST" }),
+  // Manual fallback for the automatic recording.completed webhook — pulls
+  // Zoom's own Cloud Recording transcript and AI-summarizes it in one call.
+  // See server/src/lib/zoomTranscriptProcessor.js.
+  fetchTranscript: (id) => apiFetch(`${meetingsBase}/${id}/fetch-transcript`, { method: "POST" })
 };

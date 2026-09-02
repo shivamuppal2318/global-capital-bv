@@ -27,6 +27,12 @@ export function CallOutcomePanel({ meeting, onSaved }) {
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState(meeting.aiSummary ?? null);
   const [summaryAt, setSummaryAt] = useState(meeting.aiSummaryUpdatedAt ?? null);
+  const [transcript, setTranscript] = useState(meeting.transcriptText ?? null);
+  const [transcriptSummary, setTranscriptSummary] = useState(meeting.transcriptSummary ?? null);
+  const [transcriptSummaryAt, setTranscriptSummaryAt] = useState(meeting.transcriptSummaryUpdatedAt ?? null);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [fetchingTranscript, setFetchingTranscript] = useState(false);
+  const [transcriptError, setTranscriptError] = useState(null);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -67,6 +73,27 @@ export function CallOutcomePanel({ meeting, onSaved }) {
       setError(err.message);
     } finally {
       setSummarising(false);
+    }
+  }
+
+  // Pulls Zoom's own Cloud Recording transcript and AI-summarizes it in one
+  // step — the manual fallback for whenever the automatic recording.completed
+  // webhook hasn't fired yet (Zoom's processing lag, a missed delivery, or
+  // this call simply predates the webhook being wired up).
+  async function fetchTranscript() {
+    setFetchingTranscript(true);
+    setTranscriptError(null);
+    try {
+      const updated = await callsApi.fetchTranscript(meeting.id);
+      setTranscript(updated.transcriptText);
+      setTranscriptSummary(updated.transcriptSummary);
+      setTranscriptSummaryAt(updated.transcriptSummaryUpdatedAt);
+      setTranscriptOpen(true);
+      onSaved?.(updated);
+    } catch (err) {
+      setTranscriptError(err.message);
+    } finally {
+      setFetchingTranscript(false);
     }
   }
 
@@ -200,6 +227,51 @@ export function CallOutcomePanel({ meeting, onSaved }) {
           onClick={summarise}
           disabled={summarising || !form.notes.trim()}
         />
+      </div>
+
+      <div className="mt-5 border-t border-[#e7edf5] pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#3046b2]">Zoom transcript</p>
+          <ActionButton
+            label={fetchingTranscript ? "Fetching…" : transcript ? "Refresh from Zoom" : "Fetch Transcript & Summary"}
+            small
+            onClick={fetchTranscript}
+            disabled={fetchingTranscript}
+          />
+        </div>
+        <p className="mt-1.5 text-[12px] text-[#8592ab]">
+          Pulled automatically from Zoom Cloud Recording once the call ends, or fetch it here if that hasn't happened yet.
+        </p>
+        {transcriptError ? <p className="mt-2 text-[13px] font-medium text-[#e0483f]">{transcriptError}</p> : null}
+
+        {transcriptSummary ? (
+          <div className="mt-3 rounded-[12px] border border-[#dfe6f5] bg-white px-4 py-3">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#3046b2]">Transcript summary</p>
+            <p className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-[#334463]">{transcriptSummary}</p>
+            {transcriptSummaryAt ? (
+              <p className="mt-2 text-[11px] text-[#8592ab]">
+                Generated {new Date(transcriptSummaryAt).toLocaleString()} from what Zoom actually recorded — check it before sending it on.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {transcript ? (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setTranscriptOpen((o) => !o)}
+              className="text-[13px] font-semibold text-[#3046b2] hover:underline"
+            >
+              {transcriptOpen ? "Hide full transcript" : "Show full transcript"}
+            </button>
+            {transcriptOpen ? (
+              <div className="mt-2 max-h-80 overflow-y-auto rounded-[12px] border border-[#e7edf5] bg-white px-4 py-3">
+                <p className="whitespace-pre-wrap text-[13px] leading-6 text-[#334463]">{transcript}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </form>
   );

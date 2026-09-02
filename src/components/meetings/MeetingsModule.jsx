@@ -287,8 +287,10 @@ export function MeetingsModule() {
                     >
                       {openCapture === m.id ? "Hide call record" : m.notes ? "Edit call record" : "Log call outcome"}
                     </button>
+                    {m.callNumber ? <Badge tone="violet">Zoom Call {m.callNumber}</Badge> : null}
                     {m.notes ? <Badge tone="green">Notes</Badge> : null}
                     {m.aiSummary ? <Badge tone="blue">AI summary</Badge> : null}
+                    {m.transcriptText ? <Badge tone="indigo">Transcript</Badge> : null}
                     {m.nextAction ? <Badge tone="amber">Follow-up</Badge> : null}
                     {m.clientSatisfaction ? <Badge tone="slate">{m.clientSatisfaction}/5</Badge> : null}
                   </div>
