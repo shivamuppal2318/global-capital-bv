@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { documentsApi } from "../../lib/documentsApi";
 import { leadsApi } from "../../lib/leadsApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
@@ -8,15 +8,11 @@ import {
   NoteIcon,
   SearchIcon,
   SparklesIcon,
-  UploadIcon,
   XIcon
 } from "../Icons";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
-const labelClass = "mb-1.5 block text-[13px] font-semibold text-[#334463]";
-
-const BASE_CATEGORY_PRESETS = ["General", "Financials", "Legal", "Pitch & Marketing", "Due Diligence", "Portfolio", "HR"];
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -98,13 +94,7 @@ export function DataRoomModule() {
   const selectedLead = leads.find((l) => l.id === selectedLeadId) ?? null;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState(null);
-  const [uploadCategory, setUploadCategory] = useState("General");
-  const [uploadDescription, setUploadDescription] = useState("");
-  const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState(null);
-  const fileInputRef = useRef(null);
   // Rendered .docx preview — separate from `handleOpen` below, which still
   // handles PDFs/images (the browser renders those natively as a blob).
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -132,37 +122,6 @@ export function DataRoomModule() {
     const t = setTimeout(load, query ? 300 : 0);
     return () => clearTimeout(t);
   }, [load, query]);
-
-  const handleFiles = async (files) => {
-    if (!files?.length) return;
-    setUploading(true);
-    setUploadError(null);
-    setNotice(null);
-
-    const results = [];
-    for (const file of files) {
-      try {
-        const doc = await documentsApi.upload(file, { category: uploadCategory, description: uploadDescription, leadId: selectedLeadId || undefined });
-        results.push(doc);
-      } catch (err) {
-        setUploadError(`${file.name}: ${err.message}`);
-      }
-    }
-
-    setUploading(false);
-    setUploadDescription("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-
-    if (results.length) {
-      const unreadable = results.filter((d) => !d.searchable);
-      setNotice(
-        unreadable.length === 0
-          ? `Uploaded ${results.length} file(s) — the AI Assistant can now answer from them.`
-          : `Uploaded ${results.length} file(s). ${unreadable.length} can't be read as text, so the AI can list them but not quote from them.`
-      );
-      load();
-    }
-  };
 
   const handleDelete = async (doc) => {
     try {
@@ -260,79 +219,6 @@ export function DataRoomModule() {
       </section>
 
       <Card className="px-5 py-5">
-        <SectionTitle icon={UploadIcon} iconClass="text-[#3046b2]" subtitle="PDF, Word, text, CSV and images up to 25 MB each. Text is extracted automatically where the format allows.">
-          Upload
-        </SectionTitle>
-
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <label className={labelClass}>Category</label>
-            <input
-              className={inputClass}
-              list="data-room-categories"
-              value={uploadCategory}
-              onChange={(e) => setUploadCategory(e.target.value)}
-              placeholder="General"
-            />
-            <datalist id="data-room-categories">
-              {[...new Set([...BASE_CATEGORY_PRESETS, ...categories.map((c) => c.category)])].map(
-                (c) => (
-                  <option key={c} value={c} />
-                )
-              )}
-            </datalist>
-          </div>
-          <div>
-            <label className={labelClass}>Description (optional)</label>
-            <input
-              className={inputClass}
-              value={uploadDescription}
-              onChange={(e) => setUploadDescription(e.target.value)}
-              placeholder="What is this document?"
-            />
-          </div>
-        </div>
-
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            handleFiles([...e.dataTransfer.files]);
-          }}
-          onClick={() => fileInputRef.current?.click()}
-          className={`mt-4 cursor-pointer rounded-[16px] border-2 border-dashed px-6 py-9 text-center transition ${
-            dragging ? "border-[#3046b2] bg-[#f4f7fd]" : "border-[#d6deea] hover:border-[#3046b2] hover:bg-[#f8faff]"
-          }`}
-        >
-          <UploadIcon className="mx-auto size-6 text-[#3046b2]" />
-          <p className="mt-2 text-[15px] font-medium text-[#102246]">
-            {uploading ? "Uploading…" : "Drop files here, or click to choose"}
-          </p>
-          <p className="mt-1 text-[13px] text-[#8592ab]">You can select several at once.</p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => handleFiles([...e.target.files])}
-          />
-        </div>
-
-        {uploadError ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{uploadError}</p> : null}
-        {notice ? (
-          <p className="mt-3 flex items-center gap-2 text-[13px] font-medium text-[#2b9b60]">
-            <CheckCircleIcon className="size-4" />
-            {notice}
-          </p>
-        ) : null}
-      </Card>
-
-      <Card className="px-5 py-5">
         <SectionTitle
           icon={NoteIcon}
           iconClass="text-[#f29b3a]"
@@ -340,6 +226,13 @@ export function DataRoomModule() {
         >
           Documents
         </SectionTitle>
+
+        {notice ? (
+          <p className="mt-3 flex items-center gap-2 text-[13px] font-medium text-[#2b9b60]">
+            <CheckCircleIcon className="size-4" />
+            {notice}
+          </p>
+        ) : null}
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <div className="relative min-w-[240px] flex-1">
@@ -384,7 +277,7 @@ export function DataRoomModule() {
               <p className="mt-1 text-[13px] text-[#8592ab]">
                 {query || activeCategory !== "All"
                   ? "Try a different search or category."
-                  : "Upload contracts, reports or decks above and the AI Assistant will be able to answer from them."}
+                  : "Documents show up here once a client uploads them through their portal."}
               </p>
             </div>
           ) : (
