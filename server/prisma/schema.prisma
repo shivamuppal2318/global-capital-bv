@@ -463,7 +463,12 @@ model Lead {
   // + `company`), since ZoomInfo's contact and company records are matched
   // and can succeed/fail independently of each other.
   zoomInfoContactData Json?
-  zoomInfoEnrichedAt  DateTime?
+  // Recent company-change signals (funding, leadership hire, expansion,
+  // etc.) from ZoomInfo's Scoops feed — display-only, always replaced
+  // wholesale by the latest fetch (unlike industry/territory, nothing here
+  // is rep-editable data worth protecting from being overwritten).
+  zoomInfoScoops     Json?
+  zoomInfoEnrichedAt DateTime?
 
   meetings   Meeting[]
   dealStages DealStageRecord[]

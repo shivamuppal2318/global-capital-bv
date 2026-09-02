@@ -9,7 +9,13 @@ import { plainTextToHtml } from "../lib/leadSender.js";
 import { computeLeadPipeline, computePipelineSummary, computeDealBoard, computeLeadTimeline } from "../lib/leadPipeline.js";
 import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
-import { enrichCompanyByName, enrichContactByName, getAccessToken } from "../lib/zoominfoClient.js";
+import { getAccessToken } from "../lib/zoominfoClient.js";
+import {
+  lookupLeadInZoomInfo,
+  hasAnyZoomInfoMatch,
+  buildLeadEnrichmentUpdate,
+  enrichCandidateWhereClause
+} from "../lib/zoominfoEnrichment.js";
 
 const router = Router();
 
@@ -71,6 +77,19 @@ router.get("/pipeline-summary", blockChannelPartner, async (req, res, next) => {
 router.get("/deal-board", blockChannelPartner, async (req, res, next) => {
   try {
     res.json(await computeDealBoard());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// How many leads a "Bulk enrich" run would act on — shown as a
+// confirmation count before a rep commits to spending API credits on all
+// of them at once. Must stay ahead of GET /:id below, or Express would try
+// to treat this path itself as a lead id.
+router.get("/enrich-candidates-count", blockChannelPartner, async (req, res, next) => {
+  try {
+    const count = await prisma.lead.count({ where: enrichCandidateWhereClause() });
+    res.json({ count });
   } catch (err) {
     next(err);
   }
@@ -197,42 +216,82 @@ router.post("/:id/enrich", blockChannelPartner, async (req, res, next) => {
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    // Company and contact are independent ZoomInfo matches — one can
-    // succeed while the other doesn't (a real person often isn't in
-    // ZoomInfo even when their employer is, and vice versa), so both are
-    // attempted and reported separately rather than treating the whole
-    // action as all-or-nothing. Both reuse the SAME token: minting two
-    // tokens concurrently for one client_id invalidates one of them.
+    // Both reuse the SAME token: minting two tokens concurrently for one
+    // client_id invalidates one of them (confirmed live).
     const token = await getAccessToken(credentials);
-    const [companyAttributes, contactAttributes] = await Promise.all([
-      enrichCompanyByName({ token, companyName: lead.company }),
-      enrichContactByName({ token, fullName: lead.name, companyName: lead.company })
-    ]);
+    const result = await lookupLeadInZoomInfo({ token, lead });
 
-    if (!companyAttributes && !contactAttributes) {
+    if (!hasAnyZoomInfoMatch(result)) {
       return res.json({ matched: false, message: `No confident ZoomInfo match found for "${lead.name}" at "${lead.company}".` });
     }
 
-    const territoryFromZoomInfo = companyAttributes
-      ? [companyAttributes.city, companyAttributes.state, companyAttributes.country].filter(Boolean).join(", ")
-      : "";
-
     const updated = await prisma.lead.update({
       where: { id: lead.id },
-      data: {
-        industry: lead.industry || companyAttributes?.primaryIndustry?.[0] || lead.industry,
-        territory: lead.territory || territoryFromZoomInfo || lead.territory,
-        ...(companyAttributes ? { zoomInfoData: companyAttributes } : {}),
-        ...(contactAttributes ? { zoomInfoContactData: contactAttributes } : {}),
-        zoomInfoEnrichedAt: new Date()
-      }
+      data: buildLeadEnrichmentUpdate({ lead, ...result })
     });
 
     res.json({
       matched: true,
-      companyMatched: Boolean(companyAttributes),
-      contactMatched: Boolean(contactAttributes),
+      companyMatched: Boolean(result.companyAttributes),
+      contactMatched: Boolean(result.contactAttributes),
+      scoopsMatched: result.scoops.length > 0,
       lead: updated
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Runs the same ZoomInfo lookup as the single-lead "Enrich" action, but
+// across every lead still missing industry or territory in one request —
+// the leads-table equivalent of clicking Enrich on each one individually.
+// Sequential (not Promise.all across leads), for two reasons: it reuses one
+// shared token throughout (see the concurrency note on /:id/enrich above),
+// and a batch that could be tens of leads deep shouldn't fire that many
+// requests at ZoomInfo all at once. A single lead's own lookup failing
+// (network hiccup, ZoomInfo error) doesn't abort the rest of the batch —
+// it's counted and the batch continues, since the whole point is to make
+// progress across as many leads as possible in one run.
+router.post("/bulk-enrich", blockChannelPartner, async (req, res, next) => {
+  try {
+    const credentials = await getZoomInfoCredentials();
+    if (!credentials) {
+      return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
+    }
+
+    const candidates = await prisma.lead.findMany({ where: enrichCandidateWhereClause() });
+    const token = await getAccessToken(credentials);
+
+    let companyMatchedCount = 0;
+    let contactMatchedCount = 0;
+    let scoopsMatchedCount = 0;
+    let noMatchCount = 0;
+    let failedCount = 0;
+
+    for (const lead of candidates) {
+      try {
+        const result = await lookupLeadInZoomInfo({ token, lead });
+        if (!hasAnyZoomInfoMatch(result)) {
+          noMatchCount += 1;
+          continue;
+        }
+
+        await prisma.lead.update({ where: { id: lead.id }, data: buildLeadEnrichmentUpdate({ lead, ...result }) });
+        if (result.companyAttributes) companyMatchedCount += 1;
+        if (result.contactAttributes) contactMatchedCount += 1;
+        if (result.scoops.length) scoopsMatchedCount += 1;
+      } catch {
+        failedCount += 1;
+      }
+    }
+
+    res.json({
+      processed: candidates.length,
+      companyMatchedCount,
+      contactMatchedCount,
+      scoopsMatchedCount,
+      noMatchCount,
+      failedCount
     });
   } catch (err) {
     next(err);

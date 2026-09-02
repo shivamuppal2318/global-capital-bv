@@ -385,6 +385,31 @@ function LeadDetailModal({
                     </div>
                   </div>
                 ) : null}
+                {lead.zoomInfoScoops?.length ? (
+                  <div className="mt-4 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] px-4 py-3">
+                    <p className="text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Recent Company Activity (ZoomInfo)</p>
+                    <div className="mt-3 space-y-3">
+                      {lead.zoomInfoScoops.map((scoop) => (
+                        <div key={scoop.id} className="border-b border-dashed border-[#d9e2ef] pb-3 last:border-0 last:pb-0">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#3046b2]">
+                              {scoop.types?.join(", ") || "Update"}
+                            </span>
+                            <span className="text-[12px] text-[#8592ab]">
+                              {scoop.publishedDate ? new Date(scoop.publishedDate).toLocaleDateString() : ""}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[13px] leading-6 text-[#334463]">{scoop.description}</p>
+                          {scoop.link ? (
+                            <a href={scoop.link} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[12px] font-semibold text-[#3046b2] underline">
+                              {scoop.linkText || "See details"}
+                            </a>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : activeTab === "Timeline" ? (
               <EventList loading={timelineLoading} events={timeline} emptyText="No deal-progression events recorded yet." />
@@ -506,6 +531,11 @@ export function CrmWorkspaceModule() {
   // lead creation) so every API credit spent is a rep's explicit choice.
   const [enriching, setEnriching] = useState(false);
   const [enrichResult, setEnrichResult] = useState(null);
+  // Bulk Enrich — same ZoomInfo lookup as the single-lead action, run
+  // across every lead still missing industry/territory. Confirms the real
+  // count with the rep first, since it's real API credits spent at once.
+  const [bulkEnriching, setBulkEnriching] = useState(false);
+  const [bulkEnrichResult, setBulkEnrichResult] = useState(null);
 
   function refreshLeads() {
     return leadsApi
@@ -781,7 +811,8 @@ export function CrmWorkspaceModule() {
         const parts = [];
         if (result.companyMatched) parts.push("company");
         if (result.contactMatched) parts.push("contact");
-        setEnrichResult({ ok: true, text: `Enriched ${parts.join(" and ")} data from ZoomInfo.` });
+        if (result.scoopsMatched) parts.push("recent activity");
+        setEnrichResult({ ok: true, text: `Enriched ${parts.join(", ")} data from ZoomInfo.` });
         leadsApi.timeline(selectedLead.id).then(setTimeline).catch(() => {});
       } else {
         setEnrichResult({ ok: false, text: result.message });
@@ -790,6 +821,32 @@ export function CrmWorkspaceModule() {
       setEnrichResult({ ok: false, text: err.message });
     } finally {
       setEnriching(false);
+    }
+  };
+
+  const handleBulkEnrich = async () => {
+    setBulkEnrichResult(null);
+    try {
+      const { count } = await leadsApi.enrichCandidatesCount();
+      if (count === 0) {
+        setBulkEnrichResult({ ok: true, text: "Every lead already has industry and territory set — nothing to enrich." });
+        return;
+      }
+      if (!window.confirm(`Enrich ${count} lead(s) missing industry or territory via ZoomInfo? This uses ${count} real API lookup(s).`)) {
+        return;
+      }
+
+      setBulkEnriching(true);
+      const result = await leadsApi.bulkEnrich();
+      setBulkEnrichResult({
+        ok: true,
+        text: `Processed ${result.processed} — ${result.companyMatchedCount} company, ${result.contactMatchedCount} contact, ${result.scoopsMatchedCount} activity matches; ${result.noMatchCount} no match, ${result.failedCount} failed.`
+      });
+      await refreshLeads();
+    } catch (err) {
+      setBulkEnrichResult({ ok: false, text: err.message });
+    } finally {
+      setBulkEnriching(false);
     }
   };
 
@@ -887,12 +944,28 @@ export function CrmWorkspaceModule() {
       ) : null}
 
       <Card className="w-full">
-        <div className="border-b border-[#e7edf5] px-5 py-4">
-          <h2 className="text-[16px] font-semibold text-[#102246]">New Enquiries</h2>
-          <p className="mt-1 text-[14px] text-[#6a7790]">
-            {visibleLeads.length} of {leads.length} records
-            {statusFilter !== "ALL" ? ` · filtered to ${STATUS_LABEL[statusFilter]}` : ""}
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e7edf5] px-5 py-4">
+          <div>
+            <h2 className="text-[16px] font-semibold text-[#102246]">New Enquiries</h2>
+            <p className="mt-1 text-[14px] text-[#6a7790]">
+              {visibleLeads.length} of {leads.length} records
+              {statusFilter !== "ALL" ? ` · filtered to ${STATUS_LABEL[statusFilter]}` : ""}
+            </p>
+          </div>
+          <div className="text-right">
+            <ActionButton
+              label={bulkEnriching ? "Enriching…" : "Bulk Enrich"}
+              icon={GlobeIcon}
+              small
+              onClick={handleBulkEnrich}
+              disabled={bulkEnriching}
+            />
+            {bulkEnrichResult ? (
+              <p className={`mt-1.5 max-w-[280px] text-[12px] font-medium ${bulkEnrichResult.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>
+                {bulkEnrichResult.text}
+              </p>
+            ) : null}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-[14px]">

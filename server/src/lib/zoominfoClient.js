@@ -120,3 +120,40 @@ export async function enrichContactByName({ token, fullName, companyName }) {
   if (!match || match.meta?.matchStatus !== "FULL_MATCH" || !match.attributes) return null;
   return match.attributes;
 }
+
+// ZoomInfo's own feed of recent, real changes at a company — funding,
+// leadership hires, office openings, and the like — used as a lightweight
+// "why now" signal on a lead rather than anything fabricated or scored.
+// This is a search (companyName filter), not an enrich-by-id lookup, since
+// there's no known scoop id to look up ahead of time. Most recent first,
+// capped to a handful since this is meant to be skimmed on a lead's
+// Overview tab, not a full feed.
+const SCOOP_LIMIT = 5;
+
+export async function searchScoopsByCompany({ token, companyName }) {
+  const response = await fetch("https://api.zoominfo.com/gtm/data/v1/scoops/search", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/vnd.api+json"
+    },
+    body: JSON.stringify({
+      data: { type: "ScoopSearch", attributes: { companyName } }
+    })
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.errors?.[0]?.detail ?? body?.detail ?? "ZoomInfo rejected the scoops search request.");
+  }
+
+  return (body?.data ?? [])
+    .map((item) => ({
+      id: item.id,
+      description: item.attributes?.description,
+      link: item.attributes?.link,
+      linkText: item.attributes?.linkText,
+      publishedDate: item.attributes?.publishedDate,
+      types: (item.attributes?.types ?? []).map((t) => t.type)
+    }))
+    .slice(0, SCOOP_LIMIT);
+}
