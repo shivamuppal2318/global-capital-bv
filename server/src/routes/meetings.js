@@ -4,8 +4,31 @@ import { createZoomMeeting } from "../lib/zoomClient.js";
 import { callMetrics } from "../lib/relationshipMetrics.js";
 import { getAnthropicClient, getAnthropicModel } from "../lib/anthropic.js";
 import { sendSystemEmail, zoomMeetingInviteEmail } from "../lib/systemMailer.js";
+import { processMeetingRecording } from "../lib/zoomTranscriptProcessor.js";
 
 const router = Router();
+
+// Which ordinal call this is for its lead — "Zoom Call 1" / "Zoom Call 2"
+// / etc., purely by chronological order of every meeting tied to that
+// leadId. Same convention lib/clientPortalStages.js's deriveZoomStage/
+// deriveZoomStage2 already use for the client portal, computed here too
+// since the staff-side list has no such split today (a lead's calls are
+// just an undifferentiated list) — kept as one small pass over the
+// already-loaded page of meetings rather than a second query.
+function callNumbersByLead(meetings) {
+  const byLead = new Map();
+  for (const m of meetings) {
+    if (!m.leadId) continue;
+    if (!byLead.has(m.leadId)) byLead.set(m.leadId, []);
+    byLead.get(m.leadId).push(m);
+  }
+  const numberById = new Map();
+  for (const leadMeetings of byLead.values()) {
+    const sorted = [...leadMeetings].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+    sorted.forEach((m, index) => numberById.set(m.id, index + 1));
+  }
+  return numberById;
+}
 
 router.get("/", async (req, res, next) => {
   try {
@@ -13,6 +36,7 @@ router.get("/", async (req, res, next) => {
       include: { lead: true },
       orderBy: { startTime: "desc" }
     });
+    const callNumbers = callNumbersByLead(meetings);
     res.json(
       meetings.map((m) => ({
         id: m.id,
@@ -33,6 +57,11 @@ router.get("/", async (req, res, next) => {
         nextMeetingScheduled: m.nextMeetingScheduled,
         recordingLink: m.recordingLink,
         clientSatisfaction: m.clientSatisfaction,
+        transcriptText: m.transcriptText,
+        transcriptFetchedAt: m.transcriptFetchedAt,
+        transcriptSummary: m.transcriptSummary,
+        transcriptSummaryUpdatedAt: m.transcriptSummaryUpdatedAt,
+        callNumber: m.leadId ? callNumbers.get(m.id) : null,
         lead: m.lead ? { id: m.lead.id, name: m.lead.name, company: m.lead.company } : null
       }))
     );
@@ -223,6 +252,38 @@ ${meeting.notes}`
     if (err.status === 401) {
       return res.status(503).json({ error: "Anthropic rejected the configured key — check Admin Panel → AI Assistant." });
     }
+    next(err);
+  }
+});
+
+// Manual fallback for the automatic recording.completed webhook
+// (routes/zoomWebhook.js) — for whenever the webhook hasn't fired yet
+// (Zoom's own processing lag after a call ends, a missed delivery, or
+// local dev where Zoom has no way to reach this server at all). Same
+// pipeline either way, see lib/zoomTranscriptProcessor.js.
+router.post("/:id/fetch-transcript", async (req, res, next) => {
+  try {
+    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id }, include: { lead: true } });
+    if (!meeting) return res.status(404).json({ error: "Meeting not found" });
+    if (!meeting.zoomMeetingId) {
+      return res.status(400).json({ error: "This call has no Zoom meeting ID — it wasn't created through this app's Zoom connection." });
+    }
+
+    const zoomSettings = await prisma.zoomSettings.findFirst();
+    if (!zoomSettings?.accountId || !zoomSettings?.clientId || !zoomSettings?.clientSecret) {
+      return res.status(400).json({ error: "Zoom isn't connected — add credentials in Admin Panel → Zoom API first." });
+    }
+
+    let result;
+    try {
+      result = await processMeetingRecording({ meeting, zoomSettings, zoomIdentifier: meeting.zoomMeetingId });
+    } catch (zoomErr) {
+      return res.status(502).json({ error: `Zoom rejected the recordings request: ${zoomErr.message}` });
+    }
+
+    if (!result.ok) return res.status(404).json({ error: result.reason });
+    res.json(result.meeting);
+  } catch (err) {
     next(err);
   }
 });

@@ -622,6 +622,20 @@ model Meeting {
   // score a model guessed would look like data while being opinion.
   clientSatisfaction Int?
 
+  // --- Zoom Cloud Recording transcript (separate from the above) --------
+  // aiSummary above is generated from a rep's own typed notes; this is
+  // generated from Zoom's own auto-transcript of what was actually said —
+  // different provenance, kept as its own pair rather than overloading
+  // aiSummary/aiSummaryUpdatedAt. Filled in either by the recording.completed
+  // webhook (routes/zoomWebhook.js) once Zoom finishes processing, or by
+  // manually clicking "Fetch Transcript" (POST /:id/fetch-transcript) for
+  // whenever the webhook hasn't fired yet.
+  zoomRecordingUuid          String?   @unique
+  transcriptText             String?
+  transcriptFetchedAt        DateTime?
+  transcriptSummary          String?
+  transcriptSummaryUpdatedAt DateTime?
+
   @@index([startTime])
 }
 

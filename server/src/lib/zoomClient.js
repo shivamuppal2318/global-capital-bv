@@ -48,3 +48,40 @@ export async function createZoomMeeting({ accountId, clientId, clientSecret, hos
   }
   return { id: String(body.id), joinUrl: body.join_url, startUrl: body.start_url };
 }
+
+// Cloud Recording's list of files for one meeting (video, audio, chat,
+// and — when "Audio transcript" is on for the account — a TRANSCRIPT file
+// in WebVTT). Requires Zoom Cloud Recording, which needs a Pro-or-higher
+// plan; a Free/Basic account has nothing to return here. meetingId can be
+// either the numeric meeting ID or the recording's own UUID — Zoom accepts
+// both on this endpoint, double-URL-encoded when it's a UUID starting with
+// "/" or containing "//" per Zoom's own docs, which meeting UUIDs often do.
+export async function getMeetingRecordings({ accountId, clientId, clientSecret, meetingId }) {
+  const token = await getAccessToken({ accountId, clientId, clientSecret });
+  const encodedId = /[/]/.test(String(meetingId))
+    ? encodeURIComponent(encodeURIComponent(meetingId))
+    : encodeURIComponent(meetingId);
+  const response = await fetch(`https://api.zoom.us/v2/meetings/${encodedId}/recordings`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (response.status === 404) return null; // Not recorded, or Zoom hasn't finished processing yet.
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.message ?? "Zoom rejected the recordings request.");
+  }
+  return body;
+}
+
+// Recording file download URLs need the same bearer token as every other
+// Zoom API call (an OAuth access token appended as a header works exactly
+// like Zoom's alternative `?access_token=` query-param form) — this is a
+// plain file fetch, not a v2 JSON endpoint, so the body is returned as text
+// as-is (the transcript file is WebVTT; see lib/vttParser.js for parsing).
+export async function downloadZoomRecordingFile({ accountId, clientId, clientSecret, downloadUrl }) {
+  const token = await getAccessToken({ accountId, clientId, clientSecret });
+  const response = await fetch(downloadUrl, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) {
+    throw new Error(`Zoom rejected the recording file download (${response.status}).`);
+  }
+  return response.text();
+}
