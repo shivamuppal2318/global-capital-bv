@@ -9,6 +9,8 @@ import { MODULES, MODULE_IDS, DEFAULT_EMPLOYEE_MODULES, liveModules } from "../l
 import { encryptSecret } from "../lib/credentialCrypto.js";
 import { getSystemEmailSettings, verifySystemEmail, sendSystemEmail, welcomeEmail } from "../lib/systemMailer.js";
 import { getAiConfig, getAiSettingsRow, saveAiSettings, clearAiSettings, testAiConnection, DEFAULT_MODEL } from "../lib/aiSettings.js";
+import { getZoomInfoSettingsRow, saveZoomInfoSettings, getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
+import { testZoomInfoConnection } from "../lib/zoominfoClient.js";
 import { AI_DATA_SOURCES, AI_DATA_SOURCE_IDS } from "../lib/aiDataSources.js";
 import { getProviderKey, getMarketIntelSettingsRow, saveMarketIntelSettings, clearProviderKey } from "../lib/marketIntelligenceSettings.js";
 import { testProviderConnection } from "../lib/marketIntelligenceProviderTest.js";
@@ -358,6 +360,60 @@ router.delete("/ai-settings", asyncHandler(async (req, res) => {
   const config = await getAiConfig();
   await recordAudit({ req, action: "ai_settings.key_cleared" });
   res.json({ model: config.model, hasKey: Boolean(config.apiKey), keyPreview: null, source: config.source });
+}));
+
+// --- ZoomInfo (GTM API — company enrichment for CRM Workspace's "Enrich" action) ----
+
+function maskZoomInfoSecret(row) {
+  return {
+    clientId: row?.clientId ?? "",
+    hasClientSecret: Boolean(row?.clientSecretEncrypted),
+    connected: row?.connected ?? false,
+    lastTestedAt: row?.lastTestedAt ?? null
+  };
+}
+
+router.get("/zoominfo-settings", asyncHandler(async (_req, res) => {
+  res.json(maskZoomInfoSecret(await getZoomInfoSettingsRow()));
+}));
+
+const zoomInfoSettingsSchema = z.object({
+  clientId: z.string().optional(),
+  // Optional so the client ID can be updated without re-pasting the secret.
+  clientSecret: z.string().min(1).optional()
+});
+
+router.put("/zoominfo-settings", asyncHandler(async (req, res) => {
+  const parsed = zoomInfoSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const saved = await saveZoomInfoSettings(parsed.data);
+  await recordAudit({
+    req,
+    action: "zoominfo_settings.updated",
+    detail: `Client ID ${saved.clientId ?? "(unchanged)"}${parsed.data.clientSecret ? ", secret changed" : ""}`
+  });
+  res.json(maskZoomInfoSecret(saved));
+}));
+
+router.post("/zoominfo-settings/test", asyncHandler(async (_req, res) => {
+  const credentials = await getZoomInfoCredentials();
+  if (!credentials) {
+    return res.json({ success: false, message: "Set a Client ID and Client Secret first." });
+  }
+
+  try {
+    const result = await testZoomInfoConnection(credentials);
+    const row = await getZoomInfoSettingsRow();
+    await prisma.zoomInfoSettings.update({ where: { id: row.id }, data: { connected: true, lastTestedAt: new Date() } });
+    res.json({ success: true, message: result.message });
+  } catch (err) {
+    const row = await getZoomInfoSettingsRow();
+    if (row) await prisma.zoomInfoSettings.update({ where: { id: row.id }, data: { connected: false } });
+    res.json({ success: false, message: err.message });
+  }
 }));
 
 // --- Market Intelligence data-source API keys (Exa, NewsAPI.ai, Firecrawl, Apollo) ----

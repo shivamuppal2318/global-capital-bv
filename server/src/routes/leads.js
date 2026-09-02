@@ -8,6 +8,8 @@ import { sendSystemEmail, clientPortalInviteEmail, shell } from "../lib/systemMa
 import { plainTextToHtml } from "../lib/leadSender.js";
 import { computeLeadPipeline, computePipelineSummary, computeDealBoard, computeLeadTimeline } from "../lib/leadPipeline.js";
 import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
+import { enrichCompanyByName } from "../lib/zoominfoClient.js";
 
 const router = Router();
 
@@ -172,6 +174,46 @@ router.post("/:id/send-mail", blockChannelPartner, async (req, res, next) => {
     }
 
     res.json({ sent: delivery.sent, reason: delivery.sent ? undefined : delivery.reason });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Manual, one-click company enrichment via ZoomInfo — deliberately not
+// automatic on lead creation (see Admin Panel → ZoomInfo for the
+// credentials), so every real API credit spent is a rep's explicit choice.
+// Only fills industry/territory if they're still empty (never overwrites a
+// value a rep already set), while the full raw attributes always get
+// stored for display — a rep-entered "Fintech" shouldn't be silently
+// replaced by ZoomInfo's own industry label, but the company card should
+// still show ZoomInfo's data underneath it.
+router.post("/:id/enrich", blockChannelPartner, async (req, res, next) => {
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+    const credentials = await getZoomInfoCredentials();
+    if (!credentials) {
+      return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
+    }
+
+    const attributes = await enrichCompanyByName({ ...credentials, companyName: lead.company });
+    if (!attributes) {
+      return res.json({ matched: false, message: `No confident ZoomInfo match found for "${lead.company}".` });
+    }
+
+    const territoryFromZoomInfo = [attributes.city, attributes.state, attributes.country].filter(Boolean).join(", ");
+    const updated = await prisma.lead.update({
+      where: { id: lead.id },
+      data: {
+        industry: lead.industry || attributes.primaryIndustry?.[0] || lead.industry,
+        territory: lead.territory || territoryFromZoomInfo || lead.territory,
+        zoomInfoData: attributes,
+        zoomInfoEnrichedAt: new Date()
+      }
+    });
+
+    res.json({ matched: true, lead: updated });
   } catch (err) {
     next(err);
   }

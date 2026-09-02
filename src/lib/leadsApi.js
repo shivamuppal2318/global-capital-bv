@@ -36,5 +36,10 @@ export const leadsApi = {
   interactions: (id) => request(`/${id}/interactions`),
   // Free-text subject+body straight to this lead's email — the "Send
   // Mail" quick action.
-  sendMail: (id, body) => request(`/${id}/send-mail`, { method: "POST", body })
+  sendMail: (id, body) => request(`/${id}/send-mail`, { method: "POST", body }),
+  // ZoomInfo company lookup by name — the "Enrich" quick action. Returns
+  // {matched:false, message} when ZoomInfo has no confident match, rather
+  // than an error, since that's a normal outcome for smaller/private
+  // companies.
+  enrich: (id) => request(`/${id}/enrich`, { method: "POST" })
 };

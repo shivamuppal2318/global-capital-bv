@@ -91,7 +91,7 @@ export async function computeLeadPipeline(leadId) {
 // event only appears if its underlying date field is actually set.
 export async function computeLeadTimeline(leadId) {
   const [lead, nda, meetings, dealStages, ioi, visits, documents, activity] = await Promise.all([
-    prisma.lead.findUnique({ where: { id: leadId }, select: { createdAt: true } }),
+    prisma.lead.findUnique({ where: { id: leadId }, select: { createdAt: true, zoomInfoEnrichedAt: true } }),
     prisma.ndaRecord.findUnique({ where: { leadId } }),
     prisma.meeting.findMany({ where: { leadId } }),
     prisma.dealStageRecord.findMany({ where: { leadId } }),
@@ -104,6 +104,8 @@ export async function computeLeadTimeline(leadId) {
   if (!lead) return null;
 
   const events = [{ at: lead.createdAt, title: "Lead created", detail: "Added to CRM Workspace" }];
+
+  if (lead.zoomInfoEnrichedAt) events.push({ at: lead.zoomInfoEnrichedAt, title: "Enriched via ZoomInfo", detail: "Company data auto-filled" });
 
   if (nda?.sentAt) events.push({ at: nda.sentAt, title: "NDA sent", detail: nda.owner ? `By ${nda.owner}` : "" });
   if (nda?.signedAt) events.push({ at: nda.signedAt, title: "NDA signed", detail: nda.signerName ? `By ${nda.signerName}` : "" });

@@ -36,6 +36,11 @@ export const adminApi = {
   // Market Intelligence's data-source keys (Exa, NewsAPI.ai, Firecrawl,
   // Apollo) — same never-returned-key / hasKey+preview+source shape as AI
   // settings above, one provider at a time.
+  // ZoomInfo GTM API credentials for CRM Workspace's "Enrich" action — same
+  // never-returned-secret / hasClientSecret shape as AI settings above.
+  getZoomInfoSettings: () => request("/zoominfo-settings"),
+  saveZoomInfoSettings: (body) => request("/zoominfo-settings", { method: "PUT", body }),
+  testZoomInfoSettings: () => request("/zoominfo-settings/test", { method: "POST" }),
   getMarketIntelSettings: () => request("/market-intelligence-settings"),
   saveMarketIntelProviderKey: (provider, apiKey) => request(`/market-intelligence-settings/${provider}`, { method: "PUT", body: { apiKey } }),
   testMarketIntelProvider: (provider) => request(`/market-intelligence-settings/${provider}/test`, { method: "POST" }),
