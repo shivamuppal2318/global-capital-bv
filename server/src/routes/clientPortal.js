@@ -14,7 +14,7 @@ import { authShell, dashboardShell, formField, primaryButton, errorBanner, noteT
 import { buildPortalStages, PORTAL_STAGES } from "../lib/clientPortalStages.js";
 import { REQUIRED_DOCUMENTS, REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
 import { extractText } from "../lib/documentText.js";
-import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
+import { upload, uploadDataRoomDocument, UPLOAD_DIR, MAX_FILE_BYTES, UnsupportedFileTypeError } from "../lib/fileUpload.js";
 import fs from "node:fs/promises";
 import { loginRateLimit, forgotPasswordRateLimit } from "../middleware/authRateLimit.js";
 import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
@@ -551,7 +551,7 @@ function dataRoomUploadFormHtml({ error, uploadedCategories }) {
               <input
                 type="file"
                 name="file"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                accept=".pdf,.doc,.docx,.xls,.xlsx"
                 required
                 class="gc-visually-hidden"
                 onchange="this.form.requestSubmit()"
@@ -566,7 +566,7 @@ function dataRoomUploadFormHtml({ error, uploadedCategories }) {
     <div class="gc-sign-box">
       <p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">
         Upload a document for each item on our request list. Already-received items are marked with a check —
-        uploading again replaces it with your new file.
+        uploading again replaces it with your new file. PDF, Word, or Excel files only — no photos or screenshots.
       </p>
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
       <div class="gc-doc-grid">${rows}</div>
@@ -984,6 +984,15 @@ function runUpload(req, res) {
   });
 }
 
+// Same wrapper, restricted uploader — see fileUpload.js: Data Room checklist
+// items must be a real PDF/Word/Excel file, not an image, so OCR's lossy
+// extraction is never the only version of a document on file.
+function runDataRoomUpload(req, res) {
+  return new Promise((resolve, reject) => {
+    uploadDataRoomDocument.single("file")(req, res, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
 clientPortalRouter.post(
   "/nda/upload",
   requireClientAuth,
@@ -1227,12 +1236,14 @@ clientPortalRouter.post(
   requireClientAuth,
   asyncHandler(async (req, res) => {
     try {
-      await runUpload(req, res);
+      await runDataRoomUpload(req, res);
     } catch (err) {
       const message =
-        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
-          ? `That file is too large. The limit is ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`
-          : "Could not upload that file. Try again.";
+        err instanceof UnsupportedFileTypeError
+          ? err.message
+          : err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+            ? `That file is too large. The limit is ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`
+            : "Could not upload that file. Try again.";
       return res.redirect(`/api/client-portal/dashboard?docError=${encodeURIComponent(message)}`);
     }
 

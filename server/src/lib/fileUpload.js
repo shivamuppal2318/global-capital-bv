@@ -28,3 +28,32 @@ const storage = multer.diskStorage({
 });
 
 export const upload = multer({ storage, limits: { fileSize: MAX_FILE_BYTES } });
+
+// Thrown by dataRoomDocumentFileFilter below so route error handlers can
+// recognize a rejected format and reply with a friendly 400 instead of a
+// generic 500 (same pattern as multer.MulterError elsewhere in this file's
+// callers).
+export class UnsupportedFileTypeError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "UnsupportedFileTypeError";
+  }
+}
+
+// Real document formats only, no images — a screenshot or phone photo runs
+// through OCR, which is lossy (misreads characters, picks up UI chrome) next
+// to a native PDF/Word/Excel file's actual text layer. Scoped to Data Room
+// checklist uploads specifically: NDA/IOI uploads keep accepting images via
+// the plain `upload` above, since a photo of a hand-signed paper copy is a
+// legitimate, unavoidable case there.
+const DATA_ROOM_DOCUMENT_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"];
+
+function dataRoomDocumentFileFilter(_req, file, cb) {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (!DATA_ROOM_DOCUMENT_EXTENSIONS.includes(ext)) {
+    return cb(new UnsupportedFileTypeError("Please upload a PDF, Word, or Excel file — images and screenshots aren't accepted here."));
+  }
+  cb(null, true);
+}
+
+export const uploadDataRoomDocument = multer({ storage, limits: { fileSize: MAX_FILE_BYTES }, fileFilter: dataRoomDocumentFileFilter });
