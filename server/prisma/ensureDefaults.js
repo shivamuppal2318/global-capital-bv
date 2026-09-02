@@ -5,9 +5,56 @@
 // if they're already there. Safe to run repeatedly.
 import { PrismaClient } from "@prisma/client";
 import crypto from "node:crypto";
+import path from "node:path";
+import fs from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Same UPLOAD_DIR default as lib/fileUpload.js — not importable directly
+// since that module also configures multer, which this script has no
+// Express request to hand it.
+const UPLOAD_DIR = process.env.UPLOAD_DIR || "/app/uploads";
+const NDA_TEMPLATE_STORED_NAME = "standard-nda-template.pdf";
+
+// The Data Room's standard NDA template (assets/nda-template.pdf, also
+// served to clients at GET /api/client-portal/nda/template) copied in as a
+// real Document row — company-wide (leadId: null), so the NDA quick-add
+// form can default "Attach NDA" to it instead of every new record starting
+// on "None". A fixed storedName makes this idempotent across every boot.
+async function ensureNdaTemplateDocument() {
+  const existing = await prisma.document.findUnique({ where: { storedName: NDA_TEMPLATE_STORED_NAME } });
+  if (existing) {
+    console.log("Standard NDA template document already exists — skipping.");
+    return;
+  }
+
+  const sourcePath = path.join(__dirname, "..", "assets", "nda-template.pdf");
+  const fileBuffer = await fs.readFile(sourcePath).catch((err) => {
+    console.error(`Could not read ${sourcePath} — skipping standard NDA template document: ${err.message}`);
+    return null;
+  });
+  if (!fileBuffer) return;
+
+  await fs.mkdir(UPLOAD_DIR, { recursive: true }).catch(() => {});
+  await fs.writeFile(path.join(UPLOAD_DIR, NDA_TEMPLATE_STORED_NAME), fileBuffer);
+
+  await prisma.document.create({
+    data: {
+      originalName: "Global Capital BV — Reciprocal NDA Template.pdf",
+      storedName: NDA_TEMPLATE_STORED_NAME,
+      mimeType: "application/pdf",
+      sizeBytes: fileBuffer.length,
+      category: "NDA",
+      description: "Standard reciprocal NDA template — defaults into every new NDA record.",
+      leadId: null,
+      uploadedById: null
+    }
+  });
+  console.log("Created standard NDA template document.");
+}
 
 async function ensureAdminUser() {
   const email = (process.env.ADMIN_EMAIL || "admin@globalcapital.local").trim().toLowerCase();
@@ -83,6 +130,7 @@ async function ensureAdminUser() {
 
 async function main() {
   await ensureAdminUser();
+  await ensureNdaTemplateDocument();
 
   const existing = await prisma.businessSettings.findFirst();
   if (existing) {
