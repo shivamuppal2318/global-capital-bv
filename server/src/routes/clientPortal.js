@@ -793,10 +793,10 @@ clientPortalRouter.get(
         activeKey: stage.key,
         bodyHtml: `
           <span class="gc-badge-pill">Deal Stage</span>
-          <h1 class="gc-heading">${escapeHtml(stage.label)}</h1>
-          <p class="gc-subheading">Part of your deal with ${escapeHtml(req.clientUser.lead.company)}.</p>
+          <h1 class="gc-heading" style="margin-top:10px;font-size:1.7rem;">${escapeHtml(stage.label)}</h1>
+          <p class="gc-subheading" style="margin-top:6px;">Part of your deal with ${escapeHtml(req.clientUser.lead.company)}.</p>
 
-          <div class="gc-card">
+          <div class="gc-card" style="margin-top:16px;">
             ${stageRowHtml(stage, stageExtraHtml)}
           </div>
 
