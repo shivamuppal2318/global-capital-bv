@@ -4,6 +4,7 @@ import { leadsApi } from "../../lib/leadsApi";
 import { documentsApi } from "../../lib/documentsApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
 import { CheckCircleIcon, PlusIcon, SearchIcon, XIcon } from "../Icons";
+import { useAuth } from "../../context/AuthContext";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
@@ -51,6 +52,7 @@ function fmtMoney(value, currency = "EUR") {
 }
 
 export function IoiModule() {
+  const { user } = useAuth();
   const [records, setRecords] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [leads, setLeads] = useState([]);
@@ -99,7 +101,7 @@ export function IoiModule() {
 
   useEffect(() => {
     leadsApi.list().then(setLeads).catch(() => {});
-    documentsApi.list().then(setDocuments).catch(() => {});
+    documentsApi.list({ category: "IOI" }).then(setDocuments).catch(() => {});
   }, []);
 
   const blankRecord = () => ({
@@ -114,7 +116,7 @@ export function IoiModule() {
     industry: "",
     geography: "",
     counterparty: "",
-    owner: "",
+    owner: user?.name ?? "",
     notes: "",
     documentId: ""
   });

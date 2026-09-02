@@ -98,7 +98,7 @@ export function NdaModule() {
 
   useEffect(() => {
     leadsApi.list().then(setLeads).catch(() => {});
-    documentsApi.list().then(setDocuments).catch(() => {});
+    documentsApi.list({ category: "NDA" }).then(setDocuments).catch(() => {});
   }, []);
 
   // Seeded once at boot (prisma/ensureDefaults.js) as a company-wide
