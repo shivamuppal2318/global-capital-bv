@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context/ChannelPartnerAuthContext";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
+import { MarketIntelligenceModule } from "../marketIntelligence/MarketIntelligenceModule.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
 
 const inputClass =
@@ -79,6 +80,8 @@ function PartnerLoginView() {
 
 function PartnerShell() {
   const { partnerUser, logout } = useChannelPartnerAuth();
+  const [section, setSection] = useState("email");
+  const hasMarketIntelligence = (partnerUser.permissions ?? []).includes("market-intelligence");
 
   return (
     <div className="min-h-screen bg-[#f7f9fc] px-6 py-6 lg:px-10">
@@ -102,17 +105,46 @@ function PartnerShell() {
           </button>
         </header>
 
-        {/* The existing staff module, unchanged — Dashboard/Campaigns/Leads/
-            Automation are the always-included baseline (one shared API
-            surface every partner gets), Segments/Templates/AI Agent are
-            optional per-partner grants (see Admin Panel -> Channel
-            Partners -> Feature access, and app.js's matching enforcement).
-            Mailbox/Settings stay staff-only regardless — see
-            EmailOutreachModule's visibleTabs prop. */}
-        <EmailOutreachModule
-          initialTab="dashboard"
-          visibleTabs={["dashboard", "campaigns", "leads", "automation", ...(partnerUser.permissions ?? [])]}
-        />
+        {/* Only shown at all once there's a second real section to switch
+            to — Market Intelligence is a separate top-level module in the
+            staff app (App.jsx), not a tab inside EmailOutreachModule like
+            Segments/Templates/AI Agent are, so it needs its own nav here
+            rather than another visibleTabs entry. */}
+        {hasMarketIntelligence ? (
+          <div className="flex gap-1.5 rounded-[14px] border border-[#d6deea] bg-white p-1.5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+            {[
+              { id: "email", label: "Email Automation" },
+              { id: "market-intelligence", label: "Market Intelligence" }
+            ].map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSection(s.id)}
+                className={`rounded-[10px] px-3.5 py-2 text-[13px] font-medium transition ${
+                  section === s.id ? "bg-[#3046b2] text-white shadow-sm" : "text-[#4f6181] hover:bg-[#f4f7fb]"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {section === "market-intelligence" && hasMarketIntelligence ? (
+          <MarketIntelligenceModule />
+        ) : (
+          // The existing staff module, unchanged — Dashboard/Campaigns/Leads/
+          // Automation are the always-included baseline (one shared API
+          // surface every partner gets), Segments/Templates/AI Agent are
+          // optional per-partner grants (see Admin Panel -> Channel
+          // Partners -> Feature access, and app.js's matching enforcement).
+          // Mailbox/Settings stay staff-only regardless — see
+          // EmailOutreachModule's visibleTabs prop.
+          <EmailOutreachModule
+            initialTab="dashboard"
+            visibleTabs={["dashboard", "campaigns", "leads", "automation", ...(partnerUser.permissions ?? [])]}
+          />
+        )}
       </div>
     </div>
   );

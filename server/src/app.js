@@ -119,7 +119,8 @@ const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
   // unless actually granted, not unconditional just by reaching this list.
   "/api/email/segments",
   "/api/email/templates",
-  "/api/email/ai-agent"
+  "/api/email/ai-agent",
+  "/api/market-intelligence"
 ];
 app.use((req, res, next) => {
   if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
@@ -276,7 +277,7 @@ app.use("/api/email/ai-agent", outreachOrChannelPartnerModule("ai-agent"), email
 // My Account, and the router itself already scopes non-admins to the
 // mailboxes they own.
 app.use("/api/email-accounts", emailAccountsRouter);
-app.use("/api/market-intelligence", requireModule("market-intelligence"), marketIntelligenceRouter);
+app.use("/api/market-intelligence", outreachOrChannelPartnerModule("market-intelligence"), marketIntelligenceRouter);
 app.use("/api/webhooks/bounce", bouncesRouter);
 app.use("/api/webhooks/calendly", calendlyWebhookRouter);
 app.use("/api/webhooks", webhooksRouter);
