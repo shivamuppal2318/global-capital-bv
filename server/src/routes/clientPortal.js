@@ -377,43 +377,75 @@ function statCardHtml(card) {
     </div>`;
 }
 
+// Reshapes an NdaRecord's stored counterparty-details fields into what
+// ndaSignFormHtml's inputs expect — mainly formatting agreementDate as
+// yyyy-mm-dd, the only shape an <input type="date"> value will accept.
+function ndaFilledValues(nda) {
+  return {
+    counterpartyLegalName: nda?.counterpartyLegalName ?? "",
+    counterpartyCountry: nda?.counterpartyCountry ?? "",
+    counterpartyAddress: nda?.counterpartyAddress ?? "",
+    agreementDate: nda?.agreementDate ? new Date(nda.agreementDate).toISOString().slice(0, 10) : "",
+    signatoryName: nda?.signatoryName ?? "",
+    signatoryTitle: nda?.signatoryTitle ?? ""
+  };
+}
+
 // The NDA row is the only stage a client can act on directly — it's the
-// gate everything else waits behind. Two ways to clear it: accept in the
-// portal using the identity they're already authenticated as (no re-typed
-// name — that's what the old cold-email NDA link needed, but this client
-// is already signed in), or upload their own signed copy, which counts as
-// acceptance in its own right and is kept as the record.
-function ndaSignFormHtml({ error, doeName, alreadySigned } = {}) {
+// gate everything else waits behind. Three ways to clear it: fill in the
+// template's actual blanks (counterparty details, signatory) right here in
+// a form, download the template (assets/nda-template.pdf) and upload a
+// signed/scanned copy back, or upload an NDA of their own instead of ours
+// — the last two share the same upload control, since the system can't
+// tell (and doesn't need to) which one a given file is.
+function ndaSignFormHtml({ error, doeName, alreadySigned, companyName, filled } = {}) {
+  const f = filled ?? {};
   return `
     <div class="gc-sign-box">
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
       ${
         alreadySigned
-          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this NDA. You can still upload a copy for your own records, or accept again if needed.</p>`
+          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this NDA. You can fill in the form again to update the details, or upload a copy for your own records.</p>`
           : ""
       }
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
-      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;">
-        <form method="POST" action="/api/client-portal/nda/sign" style="margin:0;">
-          <label class="gc-checkbox-row">
-            <input type="checkbox" name="agree" required />
-            I have read and agree to the terms of this NDA
-          </label>
-          <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">I Am Accept It</button>
-        </form>
-        <form method="POST" action="/api/client-portal/nda/upload" enctype="multipart/form-data" style="margin:0;">
-          <label class="gc-btn-secondary">
-            Upload My NDA
-            <input
-              type="file"
-              name="file"
-              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-              required
-              class="gc-visually-hidden"
-              onchange="this.form.requestSubmit()"
-            />
-          </label>
-        </form>
+
+      <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#102246;">Option 1 — Fill in your details online</p>
+      <form method="POST" action="/api/client-portal/nda/fill-details" style="margin:0 0 22px;display:grid;gap:12px;max-width:480px;">
+        ${formField({ label: "Your company's legal name", name: "counterpartyLegalName", value: f.counterpartyLegalName ?? companyName ?? "" })}
+        ${formField({ label: "Country of registration", name: "counterpartyCountry", value: f.counterpartyCountry ?? "" })}
+        ${formField({ label: "Registered office address", name: "counterpartyAddress", value: f.counterpartyAddress ?? "" })}
+        ${formField({ label: "Agreement date", name: "agreementDate", type: "date", value: f.agreementDate ?? "" })}
+        ${formField({ label: "Signatory name", name: "signatoryName", value: f.signatoryName ?? "" })}
+        ${formField({ label: "Signatory title", name: "signatoryTitle", value: f.signatoryTitle ?? "" })}
+        <label class="gc-checkbox-row">
+          <input type="checkbox" name="agree" required />
+          I have read and agree to the terms of this NDA
+        </label>
+        <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">Submit &amp; Accept</button>
+      </form>
+
+      <div style="border-top:1px solid #e7edf5;padding-top:16px;">
+        <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#102246;">Prefer a document instead?</p>
+        <p style="margin:0 0 12px;font-size:13px;color:#5c6b87;line-height:1.6;">
+          Option 2 — download our template, sign it by hand, then upload it back. Option 3 — already have your own NDA? Upload that instead.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;">
+          <a href="/api/client-portal/nda/template" class="gc-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;">Download NDA Template</a>
+          <form method="POST" action="/api/client-portal/nda/upload" enctype="multipart/form-data" style="margin:0;">
+            <label class="gc-btn-secondary">
+              Upload My NDA
+              <input
+                type="file"
+                name="file"
+                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                required
+                class="gc-visually-hidden"
+                onchange="this.form.requestSubmit()"
+              />
+            </label>
+          </form>
+        </div>
       </div>
     </div>`;
 }
@@ -583,7 +615,13 @@ clientPortalRouter.get(
                 .map((s) => {
                   let extraHtml = "";
                   if (s.key === "nda" && ndaActionable) {
-                    extraHtml = ndaSignFormHtml({ error: ndaError, doeName: nda.owner, alreadySigned: nda.status === "SIGNED" });
+                    extraHtml = ndaSignFormHtml({
+                      error: ndaError,
+                      doeName: nda.owner,
+                      alreadySigned: nda.status === "SIGNED",
+                      companyName: req.clientUser.lead.company,
+                      filled: ndaFilledValues(nda)
+                    });
                   } else if (s.key === "dataRoom") {
                     extraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
                   }
@@ -618,7 +656,13 @@ clientPortalRouter.get(
 
     let stageExtraHtml = "";
     if (stage.key === "nda" && ndaActionable) {
-      stageExtraHtml = ndaSignFormHtml({ error: ndaError, doeName: nda.owner, alreadySigned: nda.status === "SIGNED" });
+      stageExtraHtml = ndaSignFormHtml({
+        error: ndaError,
+        doeName: nda.owner,
+        alreadySigned: nda.status === "SIGNED",
+        companyName: req.clientUser.lead.company,
+        filled: ndaFilledValues(nda)
+      });
     } else if (stage.key === "dataRoom") {
       stageExtraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
     }
@@ -752,6 +796,66 @@ clientPortalRouter.post(
 
     res.redirect("/api/client-portal/dashboard");
   })
+);
+
+// --- NDA fill-in-details (Option 1 — see ndaSignFormHtml) ----------------
+
+const ndaFillDetailsSchema = z.object({
+  agree: z.string().min(1),
+  counterpartyLegalName: z.string().trim().min(1, "Enter your company's legal name."),
+  counterpartyCountry: z.string().trim().min(1, "Enter the country of registration."),
+  counterpartyAddress: z.string().trim().min(1, "Enter the registered office address."),
+  agreementDate: z.string().trim().min(1, "Choose the agreement date."),
+  signatoryName: z.string().trim().min(1, "Enter the signatory's name."),
+  signatoryTitle: z.string().trim().min(1, "Enter the signatory's title.")
+});
+
+clientPortalRouter.post(
+  "/nda/fill-details",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const leadId = req.clientUser.leadId;
+    const parsed = ndaFillDetailsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? "Fill in every field and confirm you agree.";
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent(message)}`);
+    }
+
+    const nda = await prisma.ndaRecord.findUnique({ where: { leadId } });
+    if (!nda || !nda.sentAt || ["DECLINED", "EXPIRED"].includes(nda.status)) {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA isn't available to accept right now.")}`);
+    }
+
+    await prisma.ndaRecord.update({
+      where: { leadId },
+      data: {
+        status: "SIGNED",
+        signedAt: new Date(),
+        signerName: req.clientUser.name,
+        signerEmail: req.clientUser.email,
+        counterpartyLegalName: parsed.data.counterpartyLegalName,
+        counterpartyCountry: parsed.data.counterpartyCountry,
+        counterpartyAddress: parsed.data.counterpartyAddress,
+        agreementDate: new Date(parsed.data.agreementDate),
+        signatoryName: parsed.data.signatoryName,
+        signatoryTitle: parsed.data.signatoryTitle
+      }
+    });
+
+    res.redirect("/api/client-portal/dashboard");
+  })
+);
+
+// --- NDA template download (Options 2 & 3 start here) ---------------------
+
+const NDA_TEMPLATE_PATH = path.join(import.meta.dirname, "..", "..", "assets", "nda-template.pdf");
+
+clientPortalRouter.get(
+  "/nda/template",
+  requireClientAuth,
+  (_req, res) => {
+    res.download(NDA_TEMPLATE_PATH, "Global-Capital-BV-Reciprocal-NDA-Template.pdf");
+  }
 );
 
 // --- NDA upload (client-side alternative to typing/clicking accept) ------

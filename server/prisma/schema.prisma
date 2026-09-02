@@ -648,6 +648,20 @@ model NdaRecord {
   owner       String?
   notes       String?
 
+  // Filled in by the client via the "fill in your details online" option
+  // (server/src/routes/clientPortal.js's POST /nda/fill-details) — the
+  // reciprocal NDA template's actual blanks (see assets/nda-template.pdf).
+  // signerName/signerEmail above stay as the authenticated account that
+  // took the action; these are the legal signatory named on the document,
+  // which can be a different person. Null for the other two acceptance
+  // paths (checkbox accept, upload a document) — there's nothing to fill.
+  counterpartyLegalName String?
+  counterpartyCountry   String?
+  counterpartyAddress   String?
+  agreementDate         DateTime?
+  signatoryName         String?
+  signatoryTitle        String?
+
   // The signed copy, kept in the Data Room rather than a second upload path.
   document   Document? @relation("NdaDocument", fields: [documentId], references: [id], onDelete: SetNull)
   documentId String?
