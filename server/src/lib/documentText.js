@@ -66,7 +66,24 @@ export async function extractText(filePath, mimeType, originalName) {
     }
 
     if (mimeType.startsWith("image/")) {
-      return { text: null, note: "Images aren't read as text — stored and downloadable, but the AI can't quote from it." };
+      // Imported lazily, same reasoning as pdf-parse/mammoth above — OCR
+      // pulls in a real dependency tree and most uploads aren't images.
+      // Tesseract.js runs entirely locally (no API key, no external OCR
+      // service), same self-contained-dependency pattern as the other
+      // extractors here, at the cost of being noticeably slower on a large
+      // image (real OCR, not a quick parse).
+      const { createWorker } = await import("tesseract.js");
+      const worker = await createWorker("eng");
+      let data;
+      try {
+        ({ data } = await worker.recognize(filePath));
+      } finally {
+        await worker.terminate();
+      }
+      const text = tidy(data.text ?? "");
+      return text
+        ? { text: text.slice(0, MAX_STORED_CHARS), note: null }
+        : { text: null, note: "OCR ran but found no readable text in this image." };
     }
 
     // .doc (the pre-2007 binary format) is deliberately not handled:
