@@ -18,12 +18,6 @@ const labelClass = "mb-1.5 block text-[13px] font-semibold text-[#334463]";
 
 const BASE_CATEGORY_PRESETS = ["General", "Financials", "Legal", "Pitch & Marketing", "Due Diligence", "Portfolio", "HR"];
 
-const gapStatusStyle = {
-  covered: { icon: "✓", badge: "border-[#cce7d6] bg-[#f1fbf5]", pill: "bg-[#2b9b60] text-white" },
-  partial: { icon: "!", badge: "border-[#ffe9d0] bg-[#fff8ee]", pill: "bg-[#f29b3a] text-white" },
-  missing: { icon: "—", badge: "border-[#e7edf5] bg-white", pill: "bg-[#edf1f6] text-[#9aa6bd]" }
-};
-
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -90,7 +84,6 @@ function DocumentPreviewModal({ doc, html, loading, error, onClose }) {
 export function DataRoomModule() {
   const [documents, setDocuments] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [requiredDocuments, setRequiredDocuments] = useState([]);
   const [activeCategory, setActiveCategory] = useState("All");
   const [query, setQuery] = useState("");
 
@@ -119,38 +112,6 @@ export function DataRoomModule() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(null);
 
-  // Per-checklist-item "Insert doc" button — one shared hidden input rather
-  // than one per row, since only ever one row's button is clicked at a time.
-  // pendingItem records which row's category the next chosen file(s) should
-  // be tagged with; insertingFor drives that row's own "Uploading…" state.
-  const insertFileInputRef = useRef(null);
-  const [pendingItem, setPendingItem] = useState(null);
-  const [insertingFor, setInsertingFor] = useState(null);
-
-  // AI gap check: null until run, then either a results array or a
-  // "not configured" message — kept separate from the plain category-count
-  // check below so a stale AI verdict is never shown for a checklist that's
-  // since changed without an explicit re-run.
-  const [gapResults, setGapResults] = useState(null);
-  const [gapGeneratedAt, setGapGeneratedAt] = useState(null);
-  const [gapLoading, setGapLoading] = useState(false);
-  const [gapMessage, setGapMessage] = useState(null);
-  // A gap check run for one lead (or the company library) is meaningless
-  // once the picker switches scope — cleared rather than shown stale.
-  useEffect(() => {
-    setGapResults(null);
-    setGapMessage(null);
-  }, [selectedLeadId]);
-
-  // Real numbers for the Data Room KPI framework's completion formula
-  // (Verified ÷ Requested × 100) — refetched after anything that could
-  // change them (upload, delete, verify toggle).
-  const [kpis, setKpis] = useState(null);
-  const loadKpis = useCallback(() => {
-    documentsApi.kpis(selectedLeadId || undefined).then(setKpis).catch(() => {});
-  }, [selectedLeadId]);
-  useEffect(loadKpis, [loadKpis]);
-
   const load = useCallback(() => {
     setLoading(true);
     Promise.all([
@@ -171,29 +132,6 @@ export function DataRoomModule() {
     const t = setTimeout(load, query ? 300 : 0);
     return () => clearTimeout(t);
   }, [load, query]);
-
-  useEffect(() => {
-    documentsApi.requiredDocuments().then(setRequiredDocuments).catch(() => {});
-  }, []);
-
-  const handleGapCheck = async () => {
-    setGapLoading(true);
-    setGapMessage(null);
-    try {
-      const result = await documentsApi.gapCheck(selectedLeadId || undefined);
-      if (!result.configured) {
-        setGapMessage(result.message);
-        setGapResults(null);
-      } else {
-        setGapResults(result.results);
-        setGapGeneratedAt(result.generatedAt);
-      }
-    } catch (err) {
-      setGapMessage(`Gap check failed: ${err.message}`);
-    } finally {
-      setGapLoading(false);
-    }
-  };
 
   const handleFiles = async (files) => {
     if (!files?.length) return;
@@ -222,36 +160,7 @@ export function DataRoomModule() {
           ? `Uploaded ${results.length} file(s) — the AI Assistant can now answer from them.`
           : `Uploaded ${results.length} file(s). ${unreadable.length} can't be read as text, so the AI can list them but not quote from them.`
       );
-      // A previous gap check no longer reflects what's actually uploaded —
-      // cleared rather than left stale until someone re-runs it.
-      setGapResults(null);
       load();
-      loadKpis();
-    }
-  };
-
-  const handleInsertForItem = async (item, files) => {
-    if (!files?.length) return;
-    setInsertingFor(item.label);
-    setUploadError(null);
-    setNotice(null);
-
-    const results = [];
-    for (const file of files) {
-      try {
-        const doc = await documentsApi.upload(file, { category: item.label, description: "", leadId: selectedLeadId || undefined });
-        results.push(doc);
-      } catch (err) {
-        setUploadError(`${file.name}: ${err.message}`);
-      }
-    }
-
-    setInsertingFor(null);
-    if (results.length) {
-      setNotice(`Uploaded ${results.length} file(s) for "${item.label}".`);
-      setGapResults(null);
-      load();
-      loadKpis();
     }
   };
 
@@ -260,8 +169,6 @@ export function DataRoomModule() {
       await documentsApi.remove(doc.id);
       setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
       setNotice(`Deleted ${doc.originalName}.`);
-      setGapResults(null);
-      loadKpis();
     } catch (err) {
       setError(err.message);
     }
@@ -298,7 +205,6 @@ export function DataRoomModule() {
     try {
       const updated = await documentsApi.verify(doc.id, !doc.verified);
       setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)));
-      loadKpis();
     } catch (err) {
       setError(err.message);
     }
@@ -354,124 +260,6 @@ export function DataRoomModule() {
       </section>
 
       <Card className="px-5 py-5">
-        <SectionTitle
-          icon={CheckCircleIcon}
-          iconClass="text-[#2b9b60]"
-          subtitle={
-            gapResults
-              ? `AI gap check ran ${new Date(gapGeneratedAt).toLocaleString()} — verdicts below are based on real document content, not just category tags.`
-              : selectedLead
-                ? `The standard due-diligence request list, checked against ${selectedLead.company}'s own uploads only — upload a file tagged with one of these categories to mark it received.`
-                : "The standard due-diligence request list — upload a file tagged with one of these categories to mark it received (leave Category as \"General\" and the AI will try to tag it for you). Reference only, not tied to a specific deal — pick a deal above to check one lead's own documents."
-          }
-          action={
-            <ActionButton
-              label={gapLoading ? "Checking…" : "Run AI gap check"}
-              icon={SparklesIcon}
-              small
-              disabled={gapLoading}
-              onClick={handleGapCheck}
-            />
-          }
-        >
-          Required documents checklist
-        </SectionTitle>
-
-        {gapMessage ? <p className="mt-3 text-[13px] font-medium text-[#c47f1a]">{gapMessage}</p> : null}
-
-        {kpis ? (
-          <div className="mt-4 grid gap-3 sm:grid-cols-4">
-            <StatCard card={{ label: "Requested", value: String(kpis.requested), note: "Checklist items", noteTone: "blue" }} />
-            <StatCard card={{ label: "Received", value: String(kpis.received), note: "At least 1 upload", noteTone: "amber" }} />
-            <StatCard card={{ label: "Verified", value: String(kpis.verified), note: "Reviewed & approved", noteTone: "green" }} />
-            <StatCard
-              card={{
-                label: "Completion",
-                value: `${kpis.completionPercent}%`,
-                note: "Verified ÷ Requested",
-                noteTone: kpis.completionPercent === 100 ? "green" : "violet"
-              }}
-            />
-          </div>
-        ) : null}
-
-        <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
-          {requiredDocuments.map((item) => {
-            const gapVerdict = gapResults?.find((r) => r.label === item.label);
-            // Falls back to the plain "was a file uploaded under this exact
-            // category" check until a gap check has actually been run —
-            // that's real too, just less discerning about content.
-            const status = gapVerdict?.status ?? (categories.find((c) => c.category === item.label)?.count ? "covered" : "missing");
-            const style = gapStatusStyle[status] ?? gapStatusStyle.missing;
-            const matchCount = categories.find((c) => c.category === item.label)?.count ?? 0;
-            // Who actually put this checklist item's file(s) in place — the
-            // admin needs to see this at a glance here, not just in the full
-            // document list further down the page. Most-recent upload wins
-            // when more than one file has landed under this category.
-            // uploadedBy is only ever set for a staff upload — a client
-            // upload always has uploadedById: null (ClientUser isn't a
-            // staff User) and instead names the uploader in `description`
-            // (see routes/clientPortal.js), which already reads naturally
-            // ("Uploaded by X via the client portal") so it's shown as-is.
-            const matchingDocs = documents
-              .filter((d) => d.category === item.label)
-              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-            const latestUploader = matchingDocs[0]
-              ? matchingDocs[0].uploadedBy?.name
-                ? `Uploaded by ${matchingDocs[0].uploadedBy.name}`
-                : (matchingDocs[0].description ?? null)
-              : null;
-
-            return (
-              <div
-                key={item.label}
-                className={`flex items-start justify-between gap-3 rounded-[14px] border px-4 py-3 ${style.badge}`}
-                title={item.description}
-              >
-                <div className="flex min-w-0 flex-1 items-start gap-3">
-                  <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full text-[12px] font-bold ${style.pill}`}>
-                    {style.icon}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[14px] font-medium text-[#102246]">{item.label}</p>
-                    <p className="mt-0.5 text-[12px] text-[#8592ab]">
-                      {gapVerdict ? gapVerdict.reason : matchCount ? `${matchCount} file(s) uploaded` : "Not yet uploaded"}
-                    </p>
-                    {latestUploader ? <p className="mt-0.5 text-[11px] text-[#5f6f89]">{latestUploader}</p> : null}
-                    {gapVerdict?.matchedFilenames?.length ? (
-                      <p className="mt-1 text-[11px] text-[#5f6f89]">From: {gapVerdict.matchedFilenames.join(", ")}</p>
-                    ) : null}
-                  </div>
-                </div>
-                <ActionButton
-                  label={insertingFor === item.label ? "Uploading…" : "Insert doc"}
-                  icon={UploadIcon}
-                  small
-                  disabled={insertingFor !== null}
-                  onClick={() => {
-                    setPendingItem(item);
-                    insertFileInputRef.current?.click();
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-
-        <input
-          ref={insertFileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            const files = [...e.target.files];
-            e.target.value = "";
-            if (pendingItem) handleInsertForItem(pendingItem, files);
-          }}
-        />
-      </Card>
-
-      <Card className="px-5 py-5">
         <SectionTitle icon={UploadIcon} iconClass="text-[#3046b2]" subtitle="PDF, Word, text, CSV and images up to 25 MB each. Text is extracted automatically where the format allows.">
           Upload
         </SectionTitle>
@@ -487,7 +275,7 @@ export function DataRoomModule() {
               placeholder="General"
             />
             <datalist id="data-room-categories">
-              {[...new Set([...BASE_CATEGORY_PRESETS, ...requiredDocuments.map((d) => d.label), ...categories.map((c) => c.category)])].map(
+              {[...new Set([...BASE_CATEGORY_PRESETS, ...categories.map((c) => c.category)])].map(
                 (c) => (
                   <option key={c} value={c} />
                 )
