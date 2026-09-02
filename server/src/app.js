@@ -121,7 +121,14 @@ const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
   "/api/email/segments",
   "/api/email/templates",
   "/api/email/ai-agent",
-  "/api/market-intelligence"
+  "/api/market-intelligence",
+  "/api/leads",
+  "/api/documents",
+  "/api/nda-records",
+  "/api/ioi-records",
+  "/api/visit-plans",
+  "/api/ageing-report",
+  "/api/outreach-doe"
 ];
 app.use((req, res, next) => {
   if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
@@ -185,11 +192,19 @@ app.use(
     // rejected as "no access" before it ever reaches the route's own
     // x-api-key check.
     if (req.method === "POST" && req.path === "/inbound") return next();
+    // A Channel Partner reaches only the read-only, per-partner-scoped
+    // routes leads.js itself refuses everything else for (see
+    // blockChannelPartner there) — this just checks the module grant, the
+    // actual scoping/write-refusal lives in the route handlers.
+    if (req.channelPartner) {
+      if (hasChannelPartnerModule(req.channelPartner, "crm-workspace")) return next();
+      return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+    }
     return requireModule("crm-workspace", "leads")(req, res, next);
   },
   leadsRouter
 );
-app.use("/api/documents", requireModule("data-room"), documentsRouter);
+app.use("/api/documents", outreachOrChannelPartnerModule("data-room"), documentsRouter);
 // One router serves all seven stages (the stage is a filter, not a route),
 // so it unlocks for anyone holding any of the stage modules; the screens
 // themselves are still gated individually in the sidebar.
@@ -202,12 +217,12 @@ app.use(
 // module id since it can be granted independently of the stage screens it
 // reports on. Per-DOE activity itself lives in outreachDoeRouter below, not
 // duplicated here.
-app.use("/api/ageing-report", requireModule("ageing-report"), ageingReportRouter);
+app.use("/api/ageing-report", outreachOrChannelPartnerModule("ageing-report"), ageingReportRouter);
 // NDA tracking and visit planning outgrew the shared deal-stage table, so
 // they have dedicated routers. Note this is not "/api/nda" — that path is
 // the public token-based signing page and must stay unauthenticated.
-app.use("/api/nda-records", requireModule("nda"), ndaRecordsRouter);
-app.use("/api/visit-plans", requireModule("visit-planning"), visitPlansRouter);
+app.use("/api/nda-records", outreachOrChannelPartnerModule("nda"), ndaRecordsRouter);
+app.use("/api/visit-plans", outreachOrChannelPartnerModule("visit-planning"), visitPlansRouter);
 app.use("/api/channel-partners", requireModule("channel-partner"), channelPartnersRouter);
 // Public token-based signing page (same pattern as /api/nda) — not
 // "/api/channel-partners" plus a subpath, since that's the authenticated
@@ -216,7 +231,7 @@ app.use("/api/channel-partner-agreement", channelPartnerAgreementRouter);
 // The portal's own login/me — see the PUBLIC_PREFIXES comment above for why
 // this path is unauthenticated at the global-gate level.
 app.use("/api/channel-partner-portal-auth", channelPartnerPortalAuthRouter);
-app.use("/api/ioi-records", requireModule("ioi"), ioiRecordsRouter);
+app.use("/api/ioi-records", outreachOrChannelPartnerModule("ioi"), ioiRecordsRouter);
 app.use("/api/executive-dashboard", requireModule("command-center"), executiveDashboardRouter);
 app.use("/api/universal-filters", requireModule("universal-filters"), universalFiltersRouter);
 app.use("/api/ai", aiChatRouter);
@@ -239,20 +254,25 @@ function outreachOrChannelPartner(req, res, next) {
   return outreach(req, res, next);
 }
 // Unlike campaigns/leads above (unconditional for any channel-partner
-// token, since they share one non-separable API surface), these three are
+// token, since they share one non-separable API surface), these are
 // genuinely optional per-partner grants -- refused unless
 // ChannelPartnerUser.permissions actually includes this module id, not
-// just reached via CHANNEL_PARTNER_ELIGIBLE_PREFIXES.
-function outreachOrChannelPartnerModule(moduleId) {
+// just reached via CHANNEL_PARTNER_ELIGIBLE_PREFIXES. `staffModuleIds`
+// defaults to [moduleId] -- pass it explicitly whenever the staff-side
+// module id differs from the channel-partner one (e.g. Templates/Segments/
+// AI Agent are all really staff module "cold-bulk-mailing" since they're
+// tabs inside MailX, not separate staff module ids of their own).
+function outreachOrChannelPartnerModule(moduleId, ...staffModuleIds) {
+  const staffCheck = requireModule(...(staffModuleIds.length ? staffModuleIds : [moduleId]));
   return (req, res, next) => {
     if (req.channelPartner) {
       if (hasChannelPartnerModule(req.channelPartner, moduleId)) return next();
       return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
     }
-    return requireModule("cold-bulk-mailing")(req, res, next);
+    return staffCheck(req, res, next);
   };
 }
-app.use("/api/outreach-doe", outreach, outreachDoeRouter);
+app.use("/api/outreach-doe", outreachOrChannelPartnerModule("leads", "cold-bulk-mailing", "leads"), outreachDoeRouter);
 app.use("/api/email/campaigns", outreachOrChannelPartner, emailCampaignsRouter);
 app.use(
   "/api/email/leads",
@@ -269,11 +289,11 @@ app.use(
 // Templates & Cadences is a tab inside MailX now (see
 // EmailOutreachModule.jsx), not its own nav entry, so it shares MailX's
 // module id rather than needing one of its own.
-app.use("/api/email/templates", outreachOrChannelPartnerModule("templates"), emailTemplatesRouter);
+app.use("/api/email/templates", outreachOrChannelPartnerModule("templates", "cold-bulk-mailing"), emailTemplatesRouter);
 // Segments and AI Agent are tabs inside MailX too — same module id as
 // Templates & Cadences above, for the same reason.
-app.use("/api/email/segments", outreachOrChannelPartnerModule("segments"), emailSegmentsRouter);
-app.use("/api/email/ai-agent", outreachOrChannelPartnerModule("ai-agent"), emailAiAgentRouter);
+app.use("/api/email/segments", outreachOrChannelPartnerModule("segments", "cold-bulk-mailing"), emailSegmentsRouter);
+app.use("/api/email/ai-agent", outreachOrChannelPartnerModule("ai-agent", "cold-bulk-mailing"), emailAiAgentRouter);
 // Not module-gated: everyone manages their own mailbox from Admin Panel →
 // My Account, and the router itself already scopes non-admins to the
 // mailboxes they own.

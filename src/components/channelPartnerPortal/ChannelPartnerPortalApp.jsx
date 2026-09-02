@@ -2,6 +2,11 @@ import { useState } from "react";
 import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context/ChannelPartnerAuthContext";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
 import { MarketIntelligenceModule } from "../marketIntelligence/MarketIntelligenceModule.jsx";
+import { PartnerLeadsView } from "./PartnerLeadsView.jsx";
+import { PartnerDocumentsView } from "./PartnerDocumentsView.jsx";
+import { PartnerDealRecordsView } from "./PartnerDealRecordsView.jsx";
+import { PartnerAgeingReportView } from "./PartnerAgeingReportView.jsx";
+import { PartnerOutreachView } from "./PartnerOutreachView.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
 
 const inputClass =
@@ -78,10 +83,31 @@ function PartnerLoginView() {
   );
 }
 
+// Extra top-level sections beyond Email Automation (always shown) — each
+// is a separate top-level module in the staff app (App.jsx), not a tab
+// inside EmailOutreachModule like Segments/Templates/AI Agent are, so they
+// need their own nav entries here rather than more visibleTabs ids.
+// matchIds (instead of a single id) is for Deal Records, which folds NDA/
+// IOI/Visit Planning into one section with internal tabs rather than three
+// separate nav entries -- shown if ANY of the three is granted, and the
+// component itself (via the permissions prop below) only renders tabs for
+// the ones actually granted.
+const EXTRA_SECTIONS = [
+  { id: "crm-workspace", label: "CRM Workspace", Component: PartnerLeadsView },
+  { id: "data-room", label: "Data Room", Component: PartnerDocumentsView },
+  { id: "deal-records", label: "Deal Records", matchIds: ["nda", "ioi", "visit-planning"], Component: PartnerDealRecordsView },
+  { id: "ageing-report", label: "Ageing Report", Component: PartnerAgeingReportView },
+  { id: "leads", label: "Outreach / DOE", Component: PartnerOutreachView },
+  { id: "market-intelligence", label: "Market Intelligence", Component: MarketIntelligenceModule }
+];
+
 function PartnerShell() {
   const { partnerUser, logout } = useChannelPartnerAuth();
   const [section, setSection] = useState("email");
-  const hasMarketIntelligence = (partnerUser.permissions ?? []).includes("market-intelligence");
+  const permissions = partnerUser.permissions ?? [];
+  const grantedExtraSections = EXTRA_SECTIONS.filter((s) => (s.matchIds ?? [s.id]).some((id) => permissions.includes(id)));
+  const activeSection = grantedExtraSections.find((s) => s.id === section);
+  const ActiveExtraSection = activeSection?.Component ?? null;
 
   return (
     <div className="min-h-screen bg-[#f7f9fc] px-6 py-6 lg:px-10">
@@ -106,16 +132,10 @@ function PartnerShell() {
         </header>
 
         {/* Only shown at all once there's a second real section to switch
-            to — Market Intelligence is a separate top-level module in the
-            staff app (App.jsx), not a tab inside EmailOutreachModule like
-            Segments/Templates/AI Agent are, so it needs its own nav here
-            rather than another visibleTabs entry. */}
-        {hasMarketIntelligence ? (
+            to. */}
+        {grantedExtraSections.length ? (
           <div className="flex gap-1.5 rounded-[14px] border border-[#d6deea] bg-white p-1.5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-            {[
-              { id: "email", label: "Email Automation" },
-              { id: "market-intelligence", label: "Market Intelligence" }
-            ].map((s) => (
+            {[{ id: "email", label: "Email Automation" }, ...grantedExtraSections].map((s) => (
               <button
                 key={s.id}
                 type="button"
@@ -130,8 +150,8 @@ function PartnerShell() {
           </div>
         ) : null}
 
-        {section === "market-intelligence" && hasMarketIntelligence ? (
-          <MarketIntelligenceModule />
+        {ActiveExtraSection ? (
+          <ActiveExtraSection permissions={permissions} />
         ) : (
           // The existing staff module, unchanged — Dashboard/Campaigns/Leads/
           // Automation are the always-included baseline (one shared API
@@ -142,7 +162,7 @@ function PartnerShell() {
           // EmailOutreachModule's visibleTabs prop.
           <EmailOutreachModule
             initialTab="dashboard"
-            visibleTabs={["dashboard", "campaigns", "leads", "automation", ...(partnerUser.permissions ?? [])]}
+            visibleTabs={["dashboard", "campaigns", "leads", "automation", ...permissions]}
           />
         )}
       </div>

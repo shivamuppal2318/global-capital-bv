@@ -3,7 +3,6 @@ import {
   FunnelIcon,
   MailIcon,
   PencilIcon,
-  PhoneIcon,
   PlusIcon,
   RadarIcon,
   SendIcon,
@@ -99,7 +98,6 @@ function LeadDetailModal({
           <div className="flex flex-wrap gap-3">
             <ActionButton label="Send Mail" icon={MailIcon} primary />
             <ActionButton label="WhatsApp" icon={SendIcon} />
-            <ActionButton label="Call" icon={PhoneIcon} />
             <ActionButton label="Convert" icon={UserCheckIcon} />
             <ActionButton label={editing ? "Editing…" : "Edit"} icon={PencilIcon} onClick={startEdit} disabled={editing} />
             <ActionButton label="Tags" icon={TagIcon} />

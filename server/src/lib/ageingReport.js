@@ -37,26 +37,34 @@ function daysSince(date) {
 //     SIGNED/DECLINED/EXPIRED, aged from sentAt (or generatedAt if never sent).
 //   - Term Sheet: DealStageRecord(stage=TERM_SHEET) still open — this is
 //     the one stage that hasn't outgrown the shared table yet.
-export async function computeAgeingReport() {
+// `channelPartner` (optional): a { id, businessName } pair -- scopes every
+// phase to just that partner's own referred leads when passed (Outreach
+// via EmailCampaign.ownerChannelPartnerId, everything else via
+// Lead.channelPartner), full company-wide view otherwise. See
+// server/src/routes/ageingReport.js.
+export async function computeAgeingReport(channelPartner = null) {
+  const outreachWhere = channelPartner ? { campaign: { ownerChannelPartnerId: channelPartner.id } } : {};
+  const leadWhere = channelPartner ? { lead: { channelPartner: channelPartner.businessName } } : {};
+
   const [openOutreachLeads, openNdaRecords, dataRoomStageRecords, openIoiRecords, termSheetStageRecords] = await Promise.all([
     prisma.emailLead.findMany({
-      where: { replyType: "NO_REPLY", unsubscribed: false, bounced: false },
+      where: { replyType: "NO_REPLY", unsubscribed: false, bounced: false, ...outreachWhere },
       select: { id: true, name: true, company: true, owner: true, createdAt: true }
     }),
     prisma.ndaRecord.findMany({
-      where: { status: { notIn: ["SIGNED", "DECLINED", "EXPIRED"] } },
+      where: { status: { notIn: ["SIGNED", "DECLINED", "EXPIRED"] }, ...leadWhere },
       select: { id: true, sentAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
     }),
     prisma.dealStageRecord.findMany({
-      where: { stage: "DATA_ROOM", status: { in: ["NOT_STARTED", "IN_PROGRESS"] } },
+      where: { stage: "DATA_ROOM", status: { in: ["NOT_STARTED", "IN_PROGRESS"] }, ...leadWhere },
       select: { id: true, scheduledAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
     }),
     prisma.ioiRecord.findMany({
-      where: { status: { notIn: ["SIGNED", "DECLINED", "EXPIRED"] } },
+      where: { status: { notIn: ["SIGNED", "DECLINED", "EXPIRED"] }, ...leadWhere },
       select: { id: true, sentAt: true, generatedAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
     }),
     prisma.dealStageRecord.findMany({
-      where: { stage: "TERM_SHEET", status: { in: ["NOT_STARTED", "IN_PROGRESS"] } },
+      where: { stage: "TERM_SHEET", status: { in: ["NOT_STARTED", "IN_PROGRESS"] }, ...leadWhere },
       select: { id: true, scheduledAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
     })
   ]);
