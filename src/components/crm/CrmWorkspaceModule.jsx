@@ -48,7 +48,11 @@ function LeadDetailModal({
   lead, overview, pipeline, pipelineLoading, onClose,
   editing, editForm, setEditForm, saving, saveError, startEdit, setEditing, saveEdit,
   activeTab, setActiveTab, facets, inviting, inviteResult, onSendInvite,
-  previewLoading, previewError, onViewClientDashboard
+  previewLoading, previewError, onViewClientDashboard,
+  onConvert, converting, convertError,
+  onOpenSendMail,
+  tagsEditing, tagsDraft, setTagsDraft, onOpenTags, onCloseTags, onSaveTags, savingTags, tagsError,
+  timeline, timelineLoading, interactions, interactionsLoading
 }) {
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -79,6 +83,15 @@ function LeadDetailModal({
               <p className="mt-1 truncate text-[14px] text-[#5f6f89]">
                 {lead.company} · Owner {lead.owner ?? "Unassigned"}
               </p>
+              {lead.tags?.length ? (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {lead.tags.map((tag) => (
+                    <span key={tag} className="rounded-full bg-[#eef1ff] px-2 py-0.5 text-[11px] font-semibold text-[#4766cc]">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -96,11 +109,16 @@ function LeadDetailModal({
 
         <div className="max-h-[80vh] overflow-y-auto px-6 py-5">
           <div className="flex flex-wrap gap-3">
-            <ActionButton label="Send Mail" icon={MailIcon} primary />
+            <ActionButton label="Send Mail" icon={MailIcon} primary onClick={onOpenSendMail} disabled={!lead.email} />
             <ActionButton label="WhatsApp" icon={SendIcon} />
-            <ActionButton label="Convert" icon={UserCheckIcon} />
+            <ActionButton
+              label={converting ? "Converting…" : "Convert"}
+              icon={UserCheckIcon}
+              onClick={onConvert}
+              disabled={converting || lead.status === "CONVERTED"}
+            />
             <ActionButton label={editing ? "Editing…" : "Edit"} icon={PencilIcon} onClick={startEdit} disabled={editing} />
-            <ActionButton label="Tags" icon={TagIcon} />
+            <ActionButton label="Tags" icon={TagIcon} active={tagsEditing} onClick={onOpenTags} />
             <ActionButton
               label={inviting ? "Inviting…" : "Send Portal Invite"}
               icon={SendIcon}
@@ -108,6 +126,43 @@ function LeadDetailModal({
               disabled={inviting || Boolean(lead.clientUser)}
             />
           </div>
+
+          {!lead.email ? <p className="mt-2 text-[12px] text-[#8592ab]">Send Mail needs an email address on file for this lead.</p> : null}
+          {convertError ? <p className="mt-2 text-[13px] font-medium text-[#e0483f]">{convertError}</p> : null}
+
+          {tagsEditing ? (
+            <div className="mt-3 rounded-[14px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
+              <label className="mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Tags</label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {tagsDraft.map((tag) => (
+                  <span key={tag} className="flex items-center gap-1 rounded-full bg-[#eef1ff] px-2.5 py-1 text-[12px] font-semibold text-[#4766cc]">
+                    {tag}
+                    <button type="button" onClick={() => setTagsDraft(tagsDraft.filter((t) => t !== tag))} className="text-[#8592ab] hover:text-[#e0483f]">
+                      ×
+                    </button>
+                  </span>
+                ))}
+                <input
+                  type="text"
+                  placeholder="Type a tag, press Enter"
+                  className="min-w-[140px] flex-1 rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] text-[#102246] outline-none focus:border-[#3046b2]"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && e.target.value.trim()) {
+                      e.preventDefault();
+                      const value = e.target.value.trim();
+                      if (!tagsDraft.includes(value)) setTagsDraft([...tagsDraft, value]);
+                      e.target.value = "";
+                    }
+                  }}
+                />
+              </div>
+              {tagsError ? <p className="mt-2 text-[13px] font-medium text-[#e0483f]">{tagsError}</p> : null}
+              <div className="mt-3 flex gap-2">
+                <ActionButton label={savingTags ? "Saving…" : "Save"} primary small onClick={onSaveTags} disabled={savingTags} />
+                <ActionButton label="Cancel" small onClick={onCloseTags} disabled={savingTags} />
+              </div>
+            </div>
+          ) : null}
 
           {lead.clientUser ? (
             <div className="mt-4 rounded-[14px] border border-[#e7edf5] bg-[#f8faff] px-4 py-4">
@@ -290,12 +345,50 @@ function LeadDetailModal({
                   </div>
                 ) : null}
               </div>
+            ) : activeTab === "Timeline" ? (
+              <EventList loading={timelineLoading} events={timeline} emptyText="No deal-progression events recorded yet." />
             ) : (
-              <p className="mt-6 text-[14px] text-[#8592ab]">Nothing recorded yet.</p>
+              <EventList
+                loading={interactionsLoading}
+                events={interactions?.map((a) => ({ at: a.createdAt, title: a.title, detail: a.detail }))}
+                emptyText="No emails sent or status changes recorded yet."
+              />
             )}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Shared renderer for both the Timeline and Interactions tabs — same
+// dot-and-connector convention as RepliesTab.jsx's "Lead activity timeline"
+// card, just inline within this modal's already-labeled tab instead of a
+// separately titled section.
+function EventList({ loading, events, emptyText }) {
+  if (loading) {
+    return <p className="mt-6 text-[14px] text-[#8592ab]">Loading…</p>;
+  }
+  if (!events?.length) {
+    return <p className="mt-6 text-[14px] text-[#8592ab]">{emptyText}</p>;
+  }
+  return (
+    <div className="mt-6 space-y-4">
+      {events.map((event, index) => (
+        <div key={`${event.at}-${event.title}-${index}`} className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[#3046b2]" />
+            {index !== events.length - 1 ? <span className="mt-2 h-full w-px bg-[#d9e2ef]" /> : null}
+          </div>
+          <div className="min-w-0 flex-1 pb-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[14px] font-semibold text-[#102246]">{event.title}</p>
+              <span className="text-[12px] text-[#6a7790]">{new Date(event.at).toLocaleString()}</span>
+            </div>
+            {event.detail ? <p className="mt-1 text-[13px] leading-5 text-[#435471]">{event.detail}</p> : null}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -344,6 +437,30 @@ export function CrmWorkspaceModule() {
   // since every lead's status is already in `leads`.
   const [viewsOpen, setViewsOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("ALL");
+  // Convert: promotes a lead to CONVERTED — a single-field shortcut from the
+  // action bar onto the same PATCH the Edit form already uses.
+  const [converting, setConverting] = useState(false);
+  const [convertError, setConvertError] = useState(null);
+  // Tags editor — a draft array edited inline, only PATCHed to the lead on
+  // explicit Save, so closing without saving discards changes (same pattern
+  // as Edit).
+  const [tagsEditing, setTagsEditing] = useState(false);
+  const [tagsDraft, setTagsDraft] = useState([]);
+  const [savingTags, setSavingTags] = useState(false);
+  const [tagsError, setTagsError] = useState(null);
+  // Timeline / Interactions tabs — fetched per lead, same load-on-selection
+  // lifecycle as `pipeline` below rather than on every render.
+  const [timeline, setTimeline] = useState(null);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [interactions, setInteractions] = useState(null);
+  const [interactionsLoading, setInteractionsLoading] = useState(false);
+  // Send Mail — a lightweight subject+body composer straight to the lead's
+  // own email address, distinct from the cold-outreach campaign machinery in
+  // Email Automation (no unsubscribe/bounce/daily-cap handling needed here).
+  const [sendMailOpen, setSendMailOpen] = useState(false);
+  const [sendMailForm, setSendMailForm] = useState({ subject: "", body: "" });
+  const [sendMailSaving, setSendMailSaving] = useState(false);
+  const [sendMailError, setSendMailError] = useState(null);
 
   function refreshLeads() {
     return leadsApi
@@ -438,6 +555,27 @@ export function CrmWorkspaceModule() {
       .finally(() => setPipelineLoading(false));
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setTimeline(null);
+      setInteractions(null);
+      return;
+    }
+    setTimelineLoading(true);
+    leadsApi
+      .timeline(selectedId)
+      .then(setTimeline)
+      .catch(() => setTimeline(null))
+      .finally(() => setTimelineLoading(false));
+
+    setInteractionsLoading(true);
+    leadsApi
+      .interactions(selectedId)
+      .then(setInteractions)
+      .catch(() => setInteractions(null))
+      .finally(() => setInteractionsLoading(false));
+  }, [selectedId]);
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -523,6 +661,68 @@ export function CrmWorkspaceModule() {
       setPreviewError(err.message);
     } finally {
       setPreviewLoading(false);
+    }
+  };
+
+  const handleConvert = async () => {
+    setConverting(true);
+    setConvertError(null);
+    try {
+      const updated = await leadsApi.patch(selectedLead.id, { status: "CONVERTED" });
+      setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+      leadsApi.dealBoard().then(setDealBoard).catch(() => {});
+      leadsApi.timeline(selectedLead.id).then(setTimeline).catch(() => {});
+      leadsApi.interactions(selectedLead.id).then(setInteractions).catch(() => {});
+    } catch (err) {
+      setConvertError(err.message);
+    } finally {
+      setConverting(false);
+    }
+  };
+
+  const openTags = () => {
+    setTagsDraft(selectedLead?.tags ?? []);
+    setTagsError(null);
+    setTagsEditing(true);
+  };
+
+  const closeTags = () => setTagsEditing(false);
+
+  const saveTags = async () => {
+    setSavingTags(true);
+    setTagsError(null);
+    try {
+      const updated = await leadsApi.patch(selectedLead.id, { tags: tagsDraft });
+      setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+      setTagsEditing(false);
+    } catch (err) {
+      setTagsError(err.message);
+    } finally {
+      setSavingTags(false);
+    }
+  };
+
+  const openSendMail = () => {
+    setSendMailForm({ subject: "", body: "" });
+    setSendMailError(null);
+    setSendMailOpen(true);
+  };
+
+  const submitSendMail = async () => {
+    if (!sendMailForm.subject.trim() || !sendMailForm.body.trim()) {
+      setSendMailError("Subject and message are both required.");
+      return;
+    }
+    setSendMailSaving(true);
+    setSendMailError(null);
+    try {
+      await leadsApi.sendMail(selectedLead.id, sendMailForm);
+      setSendMailOpen(false);
+      leadsApi.interactions(selectedLead.id).then(setInteractions).catch(() => {});
+    } catch (err) {
+      setSendMailError(err.message);
+    } finally {
+      setSendMailSaving(false);
     }
   };
 
@@ -707,6 +907,34 @@ export function CrmWorkspaceModule() {
           previewLoading={previewLoading}
           previewError={previewError}
           onViewClientDashboard={viewClientDashboard}
+          onConvert={handleConvert}
+          converting={converting}
+          convertError={convertError}
+          onOpenSendMail={openSendMail}
+          tagsEditing={tagsEditing}
+          tagsDraft={tagsDraft}
+          setTagsDraft={setTagsDraft}
+          onOpenTags={openTags}
+          onCloseTags={closeTags}
+          onSaveTags={saveTags}
+          savingTags={savingTags}
+          tagsError={tagsError}
+          timeline={timeline}
+          timelineLoading={timelineLoading}
+          interactions={interactions}
+          interactionsLoading={interactionsLoading}
+        />
+      ) : null}
+
+      {sendMailOpen ? (
+        <SendMailModal
+          to={selectedLead?.email}
+          form={sendMailForm}
+          setForm={setSendMailForm}
+          saving={sendMailSaving}
+          error={sendMailError}
+          onClose={() => setSendMailOpen(false)}
+          onSend={submitSendMail}
         />
       ) : null}
 
@@ -967,6 +1195,62 @@ function ImportLeadsModal({ text, setText, busy, result, onClose, onImport }) {
         <div className="flex justify-end gap-3 border-t border-[#e7edf5] px-6 py-4">
           <ActionButton label="Close" small onClick={onClose} disabled={busy} />
           <ActionButton label={busy ? "Importing…" : "Import"} primary small onClick={onImport} disabled={busy || !text.trim()} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// A lightweight subject+body composer straight to a lead's own email —
+// distinct from the cold-outreach campaign machinery in Email Automation
+// (no unsubscribe/bounce/daily-cap handling applies to a direct CRM send).
+function SendMailModal({ to, form, setForm, saving, error, onClose, onSend }) {
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0f1f3d]/40 px-4 py-10" onClick={onClose}>
+      <div
+        className="w-full max-w-[560px] rounded-[22px] border border-[#d6deea] bg-white shadow-[0_20px_60px_rgba(15,31,61,0.25)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between border-b border-[#e7edf5] px-6 py-5">
+          <div>
+            <p className="text-[18px] font-semibold text-[#102246]">Send Mail</p>
+            <p className="mt-1 text-[13px] text-[#8592ab]">To {to}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid size-8 place-items-center rounded-[10px] text-[#8592ab] transition hover:bg-[#f4f7fb] hover:text-[#102246]"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="space-y-3 px-6 py-5">
+          <EditField label="Subject" value={form.subject} onChange={(v) => setForm((c) => ({ ...c, subject: v }))} />
+          <div>
+            <label className="mb-1.5 block text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Message</label>
+            <textarea
+              value={form.body}
+              onChange={(event) => setForm((c) => ({ ...c, body: event.target.value }))}
+              rows={8}
+              className="w-full rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[14px] text-[#102246] outline-none focus:border-[#3046b2]"
+            />
+          </div>
+          {error ? <p className="text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-[#e7edf5] px-6 py-4">
+          <ActionButton label="Cancel" small onClick={onClose} disabled={saving} />
+          <ActionButton label={saving ? "Sending…" : "Send"} primary small onClick={onSend} disabled={saving} />
         </div>
       </div>
     </div>

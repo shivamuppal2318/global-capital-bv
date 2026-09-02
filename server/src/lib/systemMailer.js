@@ -55,7 +55,7 @@ export async function sendSystemEmail({ to, subject, html, text }) {
   }
 }
 
-const shell = (title, bodyHtml) => `
+export const shell = (title, bodyHtml) => `
 <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f4f7fb;padding:32px">
   <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #d6deea;border-radius:16px;padding:32px">
     <h1 style="margin:0 0 16px;font-size:20px;color:#102246">${title}</h1>

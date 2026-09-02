@@ -27,5 +27,14 @@ export const leadsApi = {
   pipelineSummary: () => request("/pipeline-summary"),
   // Kanban board — one column per stage, one card per lead in its current
   // stage. See the same file.
-  dealBoard: () => request("/deal-board")
+  dealBoard: () => request("/deal-board"),
+  // A dated, chronological event list for one lead (Timeline tab) — see
+  // server/src/lib/leadPipeline.js's computeLeadTimeline.
+  timeline: (id) => request(`/${id}/timeline`),
+  // Direct communications with this lead (Interactions tab) — Send Mail
+  // sends and status changes, from LeadActivityLog.
+  interactions: (id) => request(`/${id}/interactions`),
+  // Free-text subject+body straight to this lead's email — the "Send
+  // Mail" quick action.
+  sendMail: (id, body) => request(`/${id}/send-mail`, { method: "POST", body })
 };
