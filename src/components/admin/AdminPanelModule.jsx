@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { LinkIcon, LockIcon, MailIcon, RadarIcon, ShieldIcon, SparklesIcon, UsersIcon, VideoIcon } from "../Icons";
 import { EmployeesPanel } from "./EmployeesPanel";
+import { ChannelPartnerUsersPanel } from "./ChannelPartnerUsersPanel";
 import { WhatsappApiPanel } from "./WhatsappApiPanel";
 import { MailboxManager } from "./MailboxManager";
 import { MyAccountPanel } from "./MyAccountPanel";
@@ -13,6 +14,7 @@ import { ZoomConnectionPanel } from "../meetings/ZoomConnectionPanel";
 
 const ADMIN_TABS = [
   { id: "employees", label: "Employees", icon: UsersIcon },
+  { id: "channel-partners", label: "Channel Partners", icon: LinkIcon },
   { id: "ai-assistant", label: "AI Assistant", icon: SparklesIcon },
   { id: "market-intelligence-api", label: "Market Intelligence", icon: RadarIcon },
   { id: "whatsapp-api", label: "WhatsApp API", icon: LinkIcon },
@@ -70,6 +72,7 @@ export function AdminPanelModule() {
       </div>
 
       {currentTab.id === "employees" ? <EmployeesPanel /> : null}
+      {currentTab.id === "channel-partners" ? <ChannelPartnerUsersPanel /> : null}
       {currentTab.id === "ai-assistant" ? <AiSettingsPanel /> : null}
       {currentTab.id === "market-intelligence-api" ? <MarketIntelSettingsPanel /> : null}
       {currentTab.id === "whatsapp-api" ? <WhatsappApiPanel /> : null}

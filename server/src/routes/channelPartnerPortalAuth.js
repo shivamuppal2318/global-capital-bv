@@ -13,6 +13,7 @@ function publicChannelPartnerUser(channelPartnerUser) {
     name: channelPartnerUser.name,
     email: channelPartnerUser.email,
     status: channelPartnerUser.status,
+    permissions: channelPartnerUser.permissions,
     channelPartner: { id: channelPartnerUser.channelPartner.id, name: channelPartnerUser.channelPartner.name }
   };
 }

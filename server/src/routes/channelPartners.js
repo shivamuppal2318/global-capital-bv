@@ -1,9 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
+import crypto from "node:crypto";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { STANDARD_COMMISSION_TIERS, computeChannelPartnerCommission, isMaintenanceFeeEligible } from "../lib/channelPartnerCommission.js";
 import { signChannelPartnerToken } from "../lib/channelPartnerSignToken.js";
+import { hashPassword } from "../lib/auth.js";
+import { CHANNEL_PARTNER_OPTIONAL_MODULES, CHANNEL_PARTNER_OPTIONAL_MODULE_IDS } from "../lib/channelPartnerPermissions.js";
 
 export const channelPartnersRouter = Router();
 
@@ -150,6 +153,73 @@ channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
     leadCount,
     lastSentAt: lastSent?.createdAt ?? null
   });
+}));
+
+function publicPortalUser(portalUser) {
+  return {
+    id: portalUser.id,
+    name: portalUser.name,
+    email: portalUser.email,
+    status: portalUser.status,
+    permissions: portalUser.permissions,
+    lastLoginAt: portalUser.lastLoginAt,
+    createdAt: portalUser.createdAt,
+    channelPartnerId: portalUser.channelPartnerId,
+    channelPartnerName: portalUser.channelPartner.name
+  };
+}
+
+function generatePortalPassword() {
+  return crypto.randomBytes(9).toString("base64url");
+}
+
+// Served from the backend so the Admin Panel's checkbox list can't drift
+// from what app.js actually enforces -- same reasoning as admin.js's
+// GET /modules for staff.
+channelPartnersRouter.get("/optional-modules", (_req, res) => res.json(CHANNEL_PARTNER_OPTIONAL_MODULES));
+
+// Every Channel Partner Portal login, for Admin Panel -> Channel Partners
+// (the same home Employees has for staff logins) -- a partner may only
+// exist for one ChannelPartner (1:1, see schema), so this is also a
+// company-wide list of every portal account that exists.
+channelPartnersRouter.get("/portal-users", asyncHandler(async (_req, res) => {
+  const portalUsers = await prisma.channelPartnerUser.findMany({
+    include: { channelPartner: { select: { name: true } } },
+    orderBy: { createdAt: "asc" }
+  });
+  res.json(portalUsers.map(publicPortalUser));
+}));
+
+const updatePortalUserSchema = z.object({
+  status: z.enum(["ACTIVE", "SUSPENDED"]).optional(),
+  permissions: z.array(z.enum(CHANNEL_PARTNER_OPTIONAL_MODULE_IDS)).optional()
+});
+
+channelPartnersRouter.patch("/portal-users/:id", asyncHandler(async (req, res) => {
+  const parsed = updatePortalUserSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const portalUser = await prisma.channelPartnerUser
+    .update({ where: { id: req.params.id }, data: parsed.data, include: { channelPartner: { select: { name: true } } } })
+    .catch(() => null);
+  if (!portalUser) return res.status(404).json({ error: "Portal account not found" });
+  res.json(publicPortalUser(portalUser));
+}));
+
+// Admin-driven counterpart to the self-service flow a partner doesn't have
+// (there's no forgot-password page for this tier yet) -- same
+// generate-once-and-reveal pattern as admin.js's employee reset-password.
+channelPartnersRouter.post("/portal-users/:id/reset-password", asyncHandler(async (req, res) => {
+  const temporaryPassword = generatePortalPassword();
+  const portalUser = await prisma.channelPartnerUser
+    .update({
+      where: { id: req.params.id },
+      data: { passwordHash: await hashPassword(temporaryPassword) },
+      include: { channelPartner: { select: { name: true } } }
+    })
+    .catch(() => null);
+  if (!portalUser) return res.status(404).json({ error: "Portal account not found" });
+  res.json({ ...publicPortalUser(portalUser), temporaryPassword });
 }));
 
 const upsertSchema = z.object({

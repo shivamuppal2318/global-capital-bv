@@ -557,6 +557,14 @@ model ChannelPartnerUser {
   passwordHash     String
   status           ChannelPartnerUserStatus @default(ACTIVE)
   lastLoginAt      DateTime?
+
+  // Optional extras beyond the always-included Dashboard/Campaigns/Leads/
+  // Automation baseline (ids from lib/channelPartnerPermissions.js) --
+  // those four are one shared API surface every portal account gets
+  // unconditionally, not separately gatable, so they're never in this
+  // array. Empty = exactly today's behavior.
+  permissions String[] @default([])
+
   createdAt        DateTime                 @default(now())
   updatedAt        DateTime                 @updatedAt
 }
