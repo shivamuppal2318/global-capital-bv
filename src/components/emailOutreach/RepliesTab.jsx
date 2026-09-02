@@ -13,6 +13,10 @@ const replyTypeToneClass = {
   interested: noteToneClass.green,
   "zoom-request": noteToneClass.indigo,
   "info-request": noteToneClass.amber,
+  // A real reply that didn't match a recognized keyword — genuinely
+  // different from "no-reply" (nothing back at all), so it gets its own
+  // neutral tone rather than reusing the "still waiting" amber.
+  other: noteToneClass.slate,
   "no-reply": noteToneClass.amber
 };
 

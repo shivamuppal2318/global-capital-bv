@@ -42,6 +42,7 @@ import { webhooksRouter } from "./routes/webhooks.js";
 import { bouncesRouter } from "./routes/bounces.js";
 import { unsubscribeRouter } from "./routes/unsubscribe.js";
 import { ndaRouter } from "./routes/nda.js";
+import { interestedRouter } from "./routes/interested.js";
 import { clientPortalRouter } from "./routes/clientPortal.js";
 import { calendlyWebhookRouter } from "./routes/calendlyWebhook.js";
 import { marketIntelligenceRouter } from "./routes/marketIntelligence.js";
@@ -83,6 +84,7 @@ const PUBLIC_PREFIXES = [
   "/api/webhooks",
   "/api/unsubscribe",
   "/api/nda",
+  "/api/interested",
   "/api/track",
   "/api/client-portal",
   "/api/channel-partner-agreement",
@@ -256,6 +258,7 @@ app.use("/api/webhooks/calendly", calendlyWebhookRouter);
 app.use("/api/webhooks", webhooksRouter);
 app.use("/api/unsubscribe", unsubscribeRouter);
 app.use("/api/nda", ndaRouter);
+app.use("/api/interested", interestedRouter);
 // Its own auth (a per-lead invite token, then a session cookie) rather
 // than the staff JWT gate above — see requireClientAuth.
 app.use("/api/client-portal", clientPortalRouter);

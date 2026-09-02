@@ -6,6 +6,8 @@ import { isUnderDailyCap } from "../lib/sendCap.js";
 import { isAccountUnderDailyCap } from "../lib/accountSendCap.js";
 import { resolveEmailAccount } from "../lib/accountRouting.js";
 import { isLeadEligibleForCadenceStep } from "../lib/cadenceEligibility.js";
+import { unsubscribeUrlFor, interestButtonHtml, plainTextToHtml } from "../lib/leadSender.js";
+import { injectTrackingPixel, wrapLinksForClickTracking } from "../lib/emailTracking.js";
 
 const QUEUE_NAME = "cadence-steps";
 
@@ -114,16 +116,38 @@ export function startCadenceWorker() {
         throw new Error(`Daily send cap reached for mailbox "${resolvedAccount.label}".`);
       }
 
-      const { providerMessageId } = await emailProvider.send({ to: lead.email, subject, body, replyTo: campaign.replyTo });
+      // The activity row has to exist *before* sending — open/click tracking
+      // and the "I'm Interested" button both embed this row's own id in
+      // their URLs. Previously this only got created *after* a successful
+      // send, which also meant these cadence emails went out as bare plain
+      // text with no HTML at all: no open/click tracking, no unsubscribe
+      // header, and no way to add the Interested button — unlike every
+      // other send path in this app (see leadSender.js's sendRawEmail/
+      // sendTemplateEmail, which this now mirrors).
+      const pendingActivity = await prisma.emailActivityLog.create({
+        data: { leadId, kind: "BRANCH_EMAIL_SENT", title: subject, detail: "Sending…", emailAccountId: resolvedAccount?.id ?? null }
+      });
 
-      await prisma.emailActivityLog.create({
-        data: {
-          leadId,
-          kind: "BRANCH_EMAIL_SENT",
-          title: subject,
-          detail: `Sent via ${emailProvider.name} provider (message id ${providerMessageId}).`,
-          emailAccountId: resolvedAccount?.id ?? null
-        }
+      const unsubscribeUrl = unsubscribeUrlFor(leadId);
+      const htmlWithClickTracking = wrapLinksForClickTracking(
+        plainTextToHtml(body) + interestButtonHtml(leadId),
+        pendingActivity.id,
+        { skipUrl: unsubscribeUrl }
+      );
+      const html = injectTrackingPixel(htmlWithClickTracking, pendingActivity.id);
+
+      const { providerMessageId } = await emailProvider.send({
+        to: lead.email,
+        subject,
+        body,
+        html,
+        unsubscribeUrl,
+        replyTo: campaign.replyTo
+      });
+
+      await prisma.emailActivityLog.update({
+        where: { id: pendingActivity.id },
+        data: { detail: `Sent via ${emailProvider.name} provider (message id ${providerMessageId}).` }
       });
     },
     { connection: workerConnection }

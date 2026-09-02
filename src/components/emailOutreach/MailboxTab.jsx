@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "../ui.jsx";
 import { RefreshIcon, CogIcon, InboxIcon, SearchIcon, PlusIcon } from "../Icons.jsx";
 import { emailAccountsApi } from "../../lib/emailAccountsApi.js";
+import { RepliesTab } from "./RepliesTab.jsx";
 
 export function MailboxTab({ mailing, onNavigateTab }) {
   const { emailAccounts, repliedLeads, handleAddEmailAccount, newAccountForm, setNewAccountForm } = mailing;
@@ -203,6 +204,8 @@ export function MailboxTab({ mailing, onNavigateTab }) {
           </table>
         </div>
       </div>
+
+      <RepliesTab mailing={mailing} />
 
       {!emailAccounts.length ? (
         <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">

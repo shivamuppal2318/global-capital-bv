@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { adminApi } from "../../lib/adminApi";
 import { useAuth } from "../../context/AuthContext";
 import { ActionButton, Badge, Card, SectionTitle } from "../ui";
-import { CheckCircleIcon, CopyIcon, PlusIcon, RefreshIcon, SlidersIcon, UsersIcon, XIcon } from "../Icons";
+import { CheckCircleIcon, CopyIcon, PlusIcon, RefreshIcon, SlidersIcon, UsersIcon, VideoIcon, XIcon } from "../Icons";
 import { PermissionsEditor } from "./PermissionsEditor";
 
 const inputClass =
@@ -26,6 +26,9 @@ export function EmployeesPanel() {
   const [copied, setCopied] = useState(null);
   const [modules, setModules] = useState([]);
   const [editingAccessFor, setEditingAccessFor] = useState(null);
+  const [editingZoomFor, setEditingZoomFor] = useState(null);
+  const [zoomDraft, setZoomDraft] = useState("");
+  const [savingZoom, setSavingZoom] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -45,6 +48,19 @@ export function EmployeesPanel() {
     const updated = await adminApi.updateEmployee(employeeId, { permissions });
     setEmployees((prev) => prev.map((e) => (e.id === employeeId ? updated : e)));
     setEditingAccessFor(null);
+  };
+
+  const handleSaveZoomHost = async (employeeId) => {
+    setSavingZoom(true);
+    try {
+      const updated = await adminApi.updateEmployee(employeeId, { zoomHostEmail: zoomDraft.trim() });
+      setEmployees((prev) => prev.map((e) => (e.id === employeeId ? updated : e)));
+      setEditingZoomFor(null);
+    } catch (err) {
+      setError(typeof err.message === "string" ? err.message : "Could not save Zoom host email.");
+    } finally {
+      setSavingZoom(false);
+    }
   };
 
   const handleCreate = async (e) => {
@@ -169,6 +185,11 @@ export function EmployeesPanel() {
                       ) : (
                         <span className="ml-2">· {employee.permissions?.length ?? 0} module{(employee.permissions?.length ?? 0) === 1 ? "" : "s"}</span>
                       )}
+                      {employee.zoomHostEmail ? (
+                        <span className="ml-2">· Zoom: {employee.zoomHostEmail}</span>
+                      ) : (
+                        <span className="ml-2 text-[#c47f1a]">· no Zoom host assigned (falls back to the shared account)</span>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -181,6 +202,16 @@ export function EmployeesPanel() {
                         onClick={() => setEditingAccessFor(editingAccessFor === employee.id ? null : employee.id)}
                       />
                     ) : null}
+                    <ActionButton
+                      label="Zoom host"
+                      icon={VideoIcon}
+                      small
+                      active={editingZoomFor === employee.id}
+                      onClick={() => {
+                        setZoomDraft(employee.zoomHostEmail ?? "");
+                        setEditingZoomFor(editingZoomFor === employee.id ? null : employee.id);
+                      }}
+                    />
                     <ActionButton label="Reset password" icon={RefreshIcon} small onClick={() => handleResetPassword(employee.id)} />
                     {!isSelf ? (
                       <>
@@ -229,6 +260,33 @@ export function EmployeesPanel() {
                     onSave={(permissions) => handleSavePermissions(employee.id, permissions)}
                     onCancel={() => setEditingAccessFor(null)}
                   />
+                ) : null}
+                {editingZoomFor === employee.id ? (
+                  <div className="mt-3 rounded-[12px] border border-[#e7edf5] p-3">
+                    <label className={labelClass}>Zoom host email</label>
+                    <p className="mb-2 text-[12px] text-[#8592ab]">
+                      Meetings this employee creates schedule under this Zoom user instead of the shared account, so it can run at the same time as
+                      everyone else's. Must be a user already added under the connected Zoom account (Admin Panel → Zoom API). Leave blank to fall back
+                      to the shared account.
+                    </p>
+                    <input
+                      type="email"
+                      className={inputClass}
+                      placeholder="employee@yourcompany.com"
+                      value={zoomDraft}
+                      onChange={(e) => setZoomDraft(e.target.value)}
+                    />
+                    <div className="mt-3 flex gap-2">
+                      <ActionButton
+                        label={savingZoom ? "Saving…" : "Save"}
+                        primary
+                        small
+                        disabled={savingZoom}
+                        onClick={() => handleSaveZoomHost(employee.id)}
+                      />
+                      <ActionButton label="Cancel" small onClick={() => setEditingZoomFor(null)} />
+                    </div>
+                  </div>
                 ) : null}
               </div>
             );

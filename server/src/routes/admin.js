@@ -30,6 +30,7 @@ function publicUser(user) {
     role: user.role,
     status: user.status,
     permissions: liveModules(user.permissions),
+    zoomHostEmail: user.zoomHostEmail ?? null,
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt
   };
@@ -95,7 +96,9 @@ const updateEmployeeSchema = z.object({
   name: z.string().min(1).optional(),
   role: z.enum(["ADMIN", "EMPLOYEE"]).optional(),
   status: z.enum(["ACTIVE", "SUSPENDED"]).optional(),
-  permissions: z.array(z.enum(MODULE_IDS)).optional()
+  permissions: z.array(z.enum(MODULE_IDS)).optional(),
+  // Empty string clears it back to the global ZoomSettings.hostEmail fallback.
+  zoomHostEmail: z.union([z.string().email(), z.literal("")]).nullable().optional()
 });
 
 router.patch("/employees/:id", asyncHandler(async (req, res) => {
@@ -108,7 +111,10 @@ router.patch("/employees/:id", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "You can't demote or suspend your own account." });
   }
 
-  const user = await prisma.user.update({ where: { id: req.params.id }, data: parsed.data }).catch(() => null);
+  const data = { ...parsed.data };
+  if (data.zoomHostEmail === "") data.zoomHostEmail = null;
+
+  const user = await prisma.user.update({ where: { id: req.params.id }, data }).catch(() => null);
   if (!user) return res.status(404).json({ error: "Employee not found" });
   await recordAudit({
     req,

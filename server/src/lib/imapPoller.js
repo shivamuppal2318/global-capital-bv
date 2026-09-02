@@ -4,6 +4,48 @@ import { prisma } from "./prisma.js";
 import { recordReply } from "./replyRecorder.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 60_000;
+const POLL_STATE_KEY = "imap_poll_uid_state";
+
+// Persisted across restarts (the same generic key/value table AppSecret
+// already uses for the JWT secret) so the poller's own notion of "already
+// processed" survives a redeploy — unlike relying on the IMAP \Seen flag,
+// this can't be silently invalidated by anything else with access to the
+// same real mailbox (a human checking webmail, a phone's mail app) marking
+// a lead's reply as read before the poller gets to it. That's not
+// hypothetical: it's exactly how a real reply went permanently unprocessed
+// on a shared company mailbox — seen by a person first, so `{seen: false}`
+// never matched it again.
+async function getPollState() {
+  const row = await prisma.appSecret.findUnique({ where: { key: POLL_STATE_KEY } });
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return null;
+  }
+}
+
+async function savePollState(state) {
+  const value = JSON.stringify(state);
+  await prisma.appSecret.upsert({
+    where: { key: POLL_STATE_KEY },
+    create: { key: POLL_STATE_KEY, value },
+    update: { value }
+  });
+}
+
+// The actual decision of what to fetch this round, pulled out as a pure
+// function so it's testable without a live IMAP connection. A changed (or
+// missing) UIDVALIDITY means every UID previously remembered is meaningless
+// — the server reassigned them, most commonly because the mailbox got
+// rebuilt — so there's no safe range to resume from; start tracking fresh
+// from whatever's already in the mailbox right now (uidNext - 1) rather
+// than either replaying its entire history or misinterpreting stale UIDs
+// as new mail.
+export function nextFetchRange({ uidValidity, uidNext, savedState }) {
+  const lastUid = savedState && savedState.uidValidity === uidValidity ? savedState.lastUid : uidNext - 1;
+  return { lastUid, hasNew: uidNext - 1 > lastUid };
+}
 
 // This is what actually watches a real mailbox for replies — without it,
 // POST /webhooks/inbound-email only ever fires if something calls it, and
@@ -123,24 +165,35 @@ export async function pollOnce() {
   await client.connect();
   try {
     const lock = await client.getMailboxLock("INBOX");
-    let messages;
+    let messages = [];
+    let uidValidity;
+    let newLastUid;
     try {
-      // Phase 1: fully drain the fetch generator into an array before
-      // issuing any other command on the connection. Calling
-      // messageFlagsAdd() while still iterating a live fetch() generator
-      // deadlocks the IMAP connection (the FETCH command's response stream
-      // is still open server-side when the STORE command gets issued) —
-      // hit that hang for real, this two-phase split is the fix.
-      messages = [];
-      for await (const message of client.fetch({ seen: false }, { source: true, uid: true })) {
-        messages.push(message);
+      // Fully drain the fetch generator into an array before issuing any
+      // other command on the connection — a lesson from the old \Seen-flag
+      // version of this poller, which deadlocked issuing a STORE while a
+      // FETCH stream was still open. Nothing here issues another command
+      // mid-loop anymore (no more seen-marking), but keeping the same
+      // drain-then-process shape costs nothing and stays safe if that ever
+      // changes again.
+      uidValidity = client.mailbox.uidValidity.toString();
+      const uidNext = client.mailbox.uidNext;
+      const savedState = await getPollState();
+      const { lastUid, hasNew } = nextFetchRange({ uidValidity, uidNext, savedState });
+      newLastUid = lastUid;
+
+      if (hasNew) {
+        for await (const message of client.fetch(`${lastUid + 1}:*`, { source: true, uid: true }, { uid: true })) {
+          messages.push(message);
+          if (message.uid > newLastUid) {
+            newLastUid = message.uid;
+          }
+        }
       }
     } finally {
       lock.release();
     }
 
-    // Phase 2: process each message and mark it seen, now that the fetch
-    // command is fully closed out.
     for (const message of messages) {
       try {
         const parsed = await simpleParser(message.source);
@@ -157,21 +210,18 @@ export async function pollOnce() {
         }
       } catch (err) {
         // Isolated per message: a DB error or a malformed email shouldn't
-        // abort the whole poll and leave every other unseen message
+        // abort the whole poll and leave every other new message
         // unprocessed until the next cycle.
         console.error(`[imap-poller] failed to process message uid=${message.uid}:`, err.message);
       }
-
-      // Mark seen regardless of outcome, so a message that isn't from a
-      // known lead — or one that failed to process — doesn't get
-      // re-fetched and re-parsed forever.
-      const flagLock = await client.getMailboxLock("INBOX");
-      try {
-        await client.messageFlagsAdd(message.uid, ["\\Seen"], { uid: true });
-      } finally {
-        flagLock.release();
-      }
     }
+
+    // Advances past every message just examined, success or failure alike —
+    // same "don't retry a permanently-broken message forever" tradeoff the
+    // old \Seen-based marking made, just tracked ourselves now instead of a
+    // flag anything else touching this real mailbox could mutate out from
+    // under us.
+    await savePollState({ uidValidity, lastUid: newLastUid });
   } finally {
     await client.logout();
   }

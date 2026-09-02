@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { createZoomMeeting } from "../lib/zoomClient.js";
 import { callMetrics } from "../lib/relationshipMetrics.js";
 import { getAnthropicClient, getAnthropicModel } from "../lib/anthropic.js";
+import { sendSystemEmail, zoomMeetingInviteEmail } from "../lib/systemMailer.js";
 
 const router = Router();
 
@@ -62,6 +63,11 @@ router.post("/", async (req, res, next) => {
     try {
       zoomMeeting = await createZoomMeeting({
         ...settings,
+        // Each employee schedules as their own licensed Zoom user when one
+        // is assigned (Admin Panel -> Employees), so their meetings run
+        // concurrently under separate hosts instead of all landing on the
+        // one global fallback account.
+        hostEmail: req.user.zoomHostEmail || settings.hostEmail,
         topic,
         startTime,
         durationMinutes: durationMinutes ?? 30
@@ -84,6 +90,26 @@ router.post("/", async (req, res, next) => {
       include: { lead: true }
     });
 
+    // Best-effort: the meeting is already created on Zoom and saved either
+    // way, so a mail failure is reported alongside it rather than failing
+    // the whole request and leaving a meeting nobody was told about.
+    let inviteSent = false;
+    let inviteError = null;
+    if (lead?.email) {
+      const mail = zoomMeetingInviteEmail({
+        contactName: lead.name,
+        company: lead.company,
+        topic,
+        startTime,
+        durationMinutes: durationMinutes ?? 30,
+        joinUrl: zoomMeeting.joinUrl,
+        hostName: req.user.name
+      });
+      const delivery = await sendSystemEmail({ to: lead.email, ...mail });
+      inviteSent = delivery.sent;
+      inviteError = delivery.reason ?? null;
+    }
+
     res.status(201).json({
       id: meeting.id,
       topic: meeting.topic,
@@ -92,6 +118,8 @@ router.post("/", async (req, res, next) => {
       status: meeting.status,
       joinUrl: meeting.joinUrl,
       startUrl: meeting.startUrl,
+      inviteSent,
+      inviteError,
       lead: meeting.lead ? { id: meeting.lead.id, name: meeting.lead.name, company: meeting.lead.company } : null
     });
   } catch (err) {

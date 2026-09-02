@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { GridIcon, MailIcon, UsersIcon, InboxIcon, WorkflowIcon, TagIcon, CogIcon } from "../Icons.jsx";
+import { GridIcon, MailIcon, UsersIcon, WorkflowIcon, TagIcon, CogIcon } from "../Icons.jsx";
 import { noteToneClass } from "../ui.jsx";
 import { useEmailOutreachState } from "./useEmailOutreachState.js";
 import { DashboardTab } from "./DashboardTab.jsx";
 import { CampaignsTab } from "./CampaignsTab.jsx";
 import { LeadsTab } from "./LeadsTab.jsx";
-import { RepliesTab } from "./RepliesTab.jsx";
 import { AutomationTab } from "./AutomationTab.jsx";
 import { SettingsTab } from "./SettingsTab.jsx";
 import { MailboxTab } from "./MailboxTab.jsx";
@@ -17,7 +16,6 @@ const tabs = [
   { id: "dashboard", label: "Dashboard", icon: GridIcon },
   { id: "campaigns", label: "Campaigns", icon: MailIcon },
   { id: "leads", label: "Leads", icon: UsersIcon },
-  { id: "replies", label: "Replies", icon: InboxIcon },
   { id: "automation", label: "Automation", icon: WorkflowIcon },
   { id: "segments", label: "Segments", icon: UsersIcon },
   { id: "templates", label: "Templates", icon: TagIcon },
@@ -30,13 +28,16 @@ const tabContent = {
   dashboard: DashboardTab,
   campaigns: CampaignsTab,
   leads: LeadsTab,
-  replies: RepliesTab,
   automation: AutomationTab,
   segments: SegmentsTab,
   // Self-contained (fetches its own templates via emailTemplatesApi) — takes
   // no props, so the `mailing` prop every other tab needs is simply unused
   // here rather than requiring a separate render path.
   templates: EmailTemplatesCadencesModule,
+  // Replies used to be its own tab — folded into Mailbox instead, since
+  // "what came in" and "what to do about a reply" are the same concern from
+  // an inbox's point of view. MailboxTab renders the former RepliesTab
+  // content itself.
   mailbox: MailboxTab,
   "ai-agent": AiAgentTab,
   settings: SettingsTab
@@ -78,7 +79,7 @@ export function EmailOutreachModule({ initialTab = "dashboard", visibleTabs }) {
       <nav className="flex flex-wrap gap-1.5 rounded-[16px] border border-[#d6deea] bg-white p-1.5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         {shownTabs.map((tab) => {
           const active = tab.id === activeTab;
-          const badgeCount = tab.id === "replies" ? mailing.repliedLeads.length : null;
+          const badgeCount = tab.id === "mailbox" ? mailing.repliedLeads.length : null;
           return (
             <button
               key={tab.id}

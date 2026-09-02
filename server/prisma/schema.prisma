@@ -126,6 +126,12 @@ model User {
   // an admin's access means demoting them first.
   permissions String[] @default([])
 
+  // The Zoom user this employee schedules meetings as (must be a licensed
+  // user under the account tied to ZoomSettings' Server-to-Server app).
+  // Null falls back to ZoomSettings.hostEmail, so meetings keep working for
+  // employees no one has assigned a Zoom seat to yet.
+  zoomHostEmail String?
+
   // Personal SMTP mailboxes this employee owns (see EmailAccount.ownerId).
   emailAccounts EmailAccount[]
   passwordResets PasswordResetToken[]
@@ -255,6 +261,15 @@ model Document {
   uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   uploadedById String?
 
+  // Which deal this document belongs to. Null = the general company-wide
+  // library (company profile, standard terms, etc. — not deal-specific,
+  // used to ground the AI Assistant generally), same "null means legacy/
+  // unscoped" convention as EmailCampaign.ownerChannelPartnerId. SetNull
+  // rather than Cascade so deleting a Lead doesn't delete/orphan-on-disk a
+  // real uploaded file — it just falls back into the unscoped library.
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  leadId String?
+
   // Data Room KPI framework's status flow is Requested → Received →
   // Verified (see KPI Framework doc) — a document is "Received" the moment
   // it's uploaded, but only counts toward the completion % once someone
@@ -275,6 +290,7 @@ model Document {
 
   @@index([category])
   @@index([createdAt])
+  @@index([leadId])
 }
 
 // The deal progression a lead moves through: NDA -> Zoom call -> Data Room
@@ -436,6 +452,7 @@ model Lead {
   visitPlans VisitPlan[]
   ioiRecord  IoiRecord?
   clientUser ClientUser?
+  documents  Document[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -945,6 +962,12 @@ enum ReplyType {
   INTERESTED
   ZOOM_REQUEST
   INFO_REQUEST
+  // A genuine reply that classifyReply.js's keyword rules don't recognize
+  // (e.g. a plain "Ok") -- distinct from NO_REPLY, which means no reply has
+  // arrived at all. Conflating the two meant a lead who *did* reply, just
+  // not with a recognized keyword, still showed up everywhere ("no reply
+  // yet") as if they'd never responded.
+  OTHER
   NO_REPLY
 }
 

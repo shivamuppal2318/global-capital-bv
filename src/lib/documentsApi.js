@@ -8,24 +8,28 @@ function request(path, options = {}) {
 }
 
 export const documentsApi = {
-  list: ({ category, q } = {}) => {
+  // leadId is optional everywhere below — omitted, every call behaves
+  // exactly as before (the company-wide library); passed, it scopes
+  // strictly to that one deal's Data Room.
+  list: ({ category, q, leadId } = {}) => {
     const params = new URLSearchParams();
     if (category && category !== "All") params.set("category", category);
     if (q) params.set("q", q);
+    if (leadId) params.set("leadId", leadId);
     const suffix = params.toString();
     return request(suffix ? `?${suffix}` : "");
   },
-  categories: () => request("/categories"),
+  categories: (leadId) => request(leadId ? `/categories?leadId=${encodeURIComponent(leadId)}` : "/categories"),
   // Single source of truth for the checklist — served from the backend (see
   // server/src/lib/requiredDocuments.js) so it can never drift from what the
   // upload classifier and the AI gap check are matching against.
   requiredDocuments: () => request("/required-documents"),
   // Reads real document content (not just category tags) against the
   // checklist — returns { configured: false, message } if no AI key is set.
-  gapCheck: () => request("/gap-check", { method: "POST" }),
+  gapCheck: (leadId) => request("/gap-check", { method: "POST", body: leadId ? { leadId } : {} }),
   // Data Room KPI framework's real numbers: requested/received/verified
   // counts and the completion % (Verified ÷ Requested × 100).
-  kpis: () => request("/kpis"),
+  kpis: (leadId) => request(leadId ? `/kpis?leadId=${encodeURIComponent(leadId)}` : "/kpis"),
   verify: (id, verified) => request(`/${id}/verify`, { method: "POST", body: { verified } }),
   update: (id, body) => request(`/${id}`, { method: "PATCH", body }),
   remove: (id) => request(`/${id}`, { method: "DELETE" }),
@@ -33,11 +37,12 @@ export const documentsApi = {
   // Uploads go through raw fetch rather than apiFetch: the body is
   // FormData, and setting Content-Type ourselves would strip the multipart
   // boundary the server needs to parse it.
-  upload: async (file, { category, description } = {}) => {
+  upload: async (file, { category, description, leadId } = {}) => {
     const form = new FormData();
     form.append("file", file);
     if (category) form.append("category", category);
     if (description) form.append("description", description);
+    if (leadId) form.append("leadId", leadId);
 
     const token = getToken();
     const response = await fetch(API_BASE_URL, {

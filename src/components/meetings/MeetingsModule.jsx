@@ -34,6 +34,7 @@ export function MeetingsModule() {
   const [duration, setDuration] = useState(30);
   const [scheduling, setScheduling] = useState(false);
   const [scheduleError, setScheduleError] = useState(null);
+  const [inviteNote, setInviteNote] = useState(null);
   const [copied, setCopied] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [openCapture, setOpenCapture] = useState(null);
@@ -65,13 +66,24 @@ export function MeetingsModule() {
     e.preventDefault();
     setScheduling(true);
     setScheduleError(null);
+    setInviteNote(null);
     try {
-      await meetingsApi.create({
+      const created = await meetingsApi.create({
         leadId: leadId || undefined,
         topic: topic || "Investor call",
         startTime: new Date(startTime).toISOString(),
         durationMinutes: Number(duration)
       });
+      if (!leadId) {
+        setInviteNote(null);
+      } else if (created.inviteSent) {
+        setInviteNote({ tone: "green", text: "Invite emailed to the lead." });
+      } else {
+        setInviteNote({
+          tone: "amber",
+          text: `Meeting created, but the invite wasn't emailed — ${created.inviteError ?? "the lead has no email on file"}. Share the join link yourself.`
+        });
+      }
       setTopic("");
       setLeadId("");
       await refresh();
@@ -211,6 +223,9 @@ export function MeetingsModule() {
             </div>
             <ActionButton label={scheduling ? "Scheduling…" : "Schedule Zoom call"} icon={VideoIcon} primary onClick={handleSchedule} />
             {scheduleError ? <p className="text-[13px] font-medium text-[#e0483f]">{scheduleError}</p> : null}
+            {inviteNote ? (
+              <p className={`text-[13px] font-medium ${inviteNote.tone === "green" ? "text-[#2b9b60]" : "text-[#c47f1a]"}`}>{inviteNote.text}</p>
+            ) : null}
           </form>
         </Card>
 

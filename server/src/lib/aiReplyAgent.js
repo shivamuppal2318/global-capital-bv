@@ -13,6 +13,12 @@ const REPLY_TYPE_CONTEXT = {
   INTERESTED: "The lead replied expressing interest and readiness to move forward (e.g. asking about the NDA or next steps).",
   ZOOM_REQUEST: "The lead asked to have a call/Zoom meeting before going any further.",
   INFO_REQUEST: "The lead asked for more information, a deck, or a brochure before deciding anything.",
+  // A real reply that didn't match INTERESTED/ZOOM_REQUEST/INFO_REQUEST's
+  // keyword rules (e.g. a plain "Ok") — still a genuine reply, not a
+  // no-reply nudge, so the draft should read and respond to their actual
+  // message below rather than assuming a specific intent that was never
+  // stated.
+  OTHER: "The lead replied, but their message didn't clearly match interest, a call request, or an info request — read their actual reply below and respond to what they actually said.",
   NO_REPLY: "The lead has not replied yet — this is a proactive follow-up nudge, not a reply to a specific message."
 };
 

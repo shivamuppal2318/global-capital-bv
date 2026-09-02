@@ -2,6 +2,8 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { verifyCalendlyWebhookSignature } from "../lib/calendlyWebhookAuth.js";
+import { createZoomMeeting } from "../lib/zoomClient.js";
+import { sendRawEmail, plainTextToHtml } from "../lib/leadSender.js";
 
 export const calendlyWebhookRouter = Router();
 
@@ -16,6 +18,60 @@ function requireValidSignature(req, res, next) {
     return res.status(401).json({ error: "Invalid or missing Calendly webhook signature." });
   }
   next();
+}
+
+// Calendly only picks the time — it doesn't create a real video-call room.
+// Once a lead books, this creates the actual Zoom meeting (same
+// Server-to-Server app as the Meetings module) and emails them the real
+// join link. Best-effort: the booking itself is already recorded by the
+// caller regardless of whether this succeeds, since Calendly shouldn't
+// retry/fail the whole webhook over a Zoom hiccup.
+async function scheduleZoomForBooking(lead, scheduledFor, calendlyEvent) {
+  const settings = await prisma.zoomSettings.findFirst();
+  if (!settings?.accountId || !settings?.clientId || !settings?.clientSecret || !settings?.hostEmail) {
+    return { created: false, reason: "Zoom isn't connected (Admin Panel → Zoom API)." };
+  }
+
+  const startTime = calendlyEvent?.start_time;
+  const endTime = calendlyEvent?.end_time;
+  const durationMinutes = startTime && endTime ? Math.max(15, Math.round((new Date(endTime) - new Date(startTime)) / 60000)) : 30;
+
+  let zoomMeeting;
+  try {
+    zoomMeeting = await createZoomMeeting({
+      ...settings,
+      topic: `Intro call with ${lead.name} (${lead.company})`,
+      startTime: scheduledFor,
+      durationMinutes
+    });
+  } catch (err) {
+    return { created: false, reason: err.message };
+  }
+
+  await prisma.emailActivityLog.create({
+    data: {
+      leadId: lead.id,
+      kind: "CALL_BOOKED",
+      title: "Zoom meeting created for booked call",
+      detail: `${zoomMeeting.joinUrl}`
+    }
+  });
+
+  if (lead.email) {
+    const when = new Date(scheduledFor).toLocaleString("en-US", {
+      weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short"
+    });
+    const body = `Hi ${lead.name},\n\nYour call is confirmed for ${when} (${durationMinutes} minutes).\n\nJoin here: ${zoomMeeting.joinUrl}\n\nLooking forward to speaking.\n\nBest regards,\nGlobal Capital BV`;
+    try {
+      await sendRawEmail(lead.id, { subject: "Confirmed — your call with Global Capital BV", body, html: plainTextToHtml(body) });
+    } catch (err) {
+      // The meeting exists either way — a suppressed/capped send just means
+      // the join link only lives in the activity log above, not a lost booking.
+      return { created: true, joinUrl: zoomMeeting.joinUrl, emailReason: err.message };
+    }
+  }
+
+  return { created: true, joinUrl: zoomMeeting.joinUrl };
 }
 
 // Calendly's actual payload shape (per their v2 webhook docs, not verified
@@ -54,7 +110,9 @@ calendlyWebhookRouter.post("/", requireValidSignature, asyncHandler(async (req, 
         }
       })
     ]);
-    return res.status(201).json({ matched: true, leadId: lead.id, event });
+
+    const zoomResult = scheduledFor ? await scheduleZoomForBooking(lead, scheduledFor, payload.scheduled_event) : { created: false };
+    return res.status(201).json({ matched: true, leadId: lead.id, event, zoom: zoomResult });
   }
 
   if (event === "invitee.canceled") {
