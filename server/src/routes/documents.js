@@ -200,7 +200,11 @@ documentsRouter.get("/:id/download", asyncHandler(async (req, res) => {
   // passes ?download=1 when it wants a save prompt instead.
   const disposition = req.query.download ? "attachment" : "inline";
   res.setHeader("Content-Disposition", `${disposition}; filename="${encodeURIComponent(doc.originalName)}"`);
-  res.sendFile(filePath);
+  // path.resolve (not just join) so this also works on Windows dev, where
+  // UPLOAD_DIR's Docker-style "/app/uploads" default joins into a
+  // drive-less "\app\uploads\..." that res.sendFile's absolute-path check
+  // rejects outright.
+  res.sendFile(path.resolve(filePath));
 }));
 
 // Marks a document as reviewed/approved (or reverts that) — the human step
