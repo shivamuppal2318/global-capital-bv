@@ -17,9 +17,6 @@ export const leadsApi = {
   // Converts a cold-outreach EmailLead into a real CRM Lead and fires the
   // portal invite on it in the same step — see server/src/routes/leads.js.
   convertFromEmailLead: (emailLeadId) => request(`/from-email-lead/${emailLeadId}`, { method: "POST" }),
-  // Admin-driven counterpart to the client's own forgot-password flow —
-  // returns { email, temporaryPassword } once, never retrievable again.
-  resetClientPassword: (id) => request(`/${id}/client-portal/reset-password`, { method: "POST" }),
   // A short-lived (10 min) signed link to open in a new tab — see
   // routes/clientPortal.js's GET /preview/:leadId.
   clientPortalPreviewLink: (id) => request(`/${id}/client-portal/preview-link`, { method: "POST" }),

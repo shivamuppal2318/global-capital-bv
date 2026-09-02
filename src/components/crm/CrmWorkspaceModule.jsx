@@ -49,7 +49,7 @@ function LeadDetailModal({
   lead, overview, pipeline, pipelineLoading, onClose,
   editing, editForm, setEditForm, saving, saveError, startEdit, setEditing, saveEdit,
   activeTab, setActiveTab, facets, inviting, inviteResult, onSendInvite,
-  resettingPassword, resetResult, onResetPassword, previewLoading, previewError, onViewClientDashboard
+  previewLoading, previewError, onViewClientDashboard
 }) {
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -139,34 +139,12 @@ function LeadDetailModal({
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <ActionButton
-                  label={resettingPassword ? "Resetting…" : "Reset Password"}
-                  icon={SendIcon}
-                  onClick={onResetPassword}
-                  disabled={resettingPassword}
-                />
-                <ActionButton
                   label={previewLoading ? "Opening…" : "View Client Dashboard"}
                   icon={RadarIcon}
                   onClick={onViewClientDashboard}
                   disabled={previewLoading}
                 />
               </div>
-              {resetResult ? (
-                <div className="mt-3 rounded-[10px] border border-[#e7edf5] bg-white px-3 py-2.5 text-[12.5px]">
-                  {resetResult.ok ? (
-                    <div>
-                      <p className="text-[#2a9c60]">
-                        New password for {resetResult.email} — share it with them directly, it won't be shown again:
-                      </p>
-                      <p className="mt-1.5 break-all rounded-[8px] bg-[#f7f9fc] px-3 py-2 font-mono text-[12px] text-[#3046b2]">
-                        {resetResult.temporaryPassword}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-[#e0483f]">{resetResult.error}</p>
-                  )}
-                </div>
-              ) : null}
               {previewError ? <p className="mt-2 text-[12.5px] text-[#e0483f]">{previewError}</p> : null}
             </div>
           ) : null}
@@ -336,8 +314,6 @@ export function CrmWorkspaceModule() {
   const [saveError, setSaveError] = useState(null);
   const [inviting, setInviting] = useState(false);
   const [inviteResult, setInviteResult] = useState(null);
-  const [resettingPassword, setResettingPassword] = useState(false);
-  const [resetResult, setResetResult] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(null);
   const [pipeline, setPipeline] = useState(null);
@@ -539,19 +515,6 @@ export function CrmWorkspaceModule() {
     }
   };
 
-  const resetClientPassword = async () => {
-    setResettingPassword(true);
-    setResetResult(null);
-    try {
-      const result = await leadsApi.resetClientPassword(selectedLead.id);
-      setResetResult({ ok: true, ...result });
-    } catch (err) {
-      setResetResult({ ok: false, error: err.message });
-    } finally {
-      setResettingPassword(false);
-    }
-  };
-
   const viewClientDashboard = async () => {
     setPreviewLoading(true);
     setPreviewError(null);
@@ -743,9 +706,6 @@ export function CrmWorkspaceModule() {
           inviting={inviting}
           inviteResult={inviteResult}
           onSendInvite={sendPortalInvite}
-          resettingPassword={resettingPassword}
-          resetResult={resetResult}
-          onResetPassword={resetClientPassword}
           previewLoading={previewLoading}
           previewError={previewError}
           onViewClientDashboard={viewClientDashboard}
