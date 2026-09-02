@@ -66,7 +66,13 @@ function pageStyles() {
     .gc-shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
     .gc-shell main { min-width: 0; }
 
-    .gc-sidebar { background: #1b295f; color: #fff; padding: 16px; display: flex; flex-direction: column; }
+    /* Pinned to the viewport (not just min-height: 100vh, which only sets a
+       floor — once the Overview page's stacked stages made the page taller
+       than one screen, the whole grid row stretched to match and scrolling
+       carried the logo/nav out of view with it, leaving a blank navy gap).
+       overflow-y: auto is a safety net, not the expected case — the nav
+       list itself is short enough to never need its own scroll. */
+    .gc-sidebar { background: #1b295f; color: #fff; padding: 16px; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
     .gc-sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
     .gc-sidebar-logo { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 16px; background: #fff; overflow: hidden; flex-shrink: 0; }
     .gc-sidebar-logo-inner { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: #ebf6ef; color: #2b9b60; font-size: 12px; font-weight: 700; }
