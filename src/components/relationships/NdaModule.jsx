@@ -103,6 +103,12 @@ export function NdaModule() {
     documentsApi.list().then(setDocuments).catch(() => {});
   }, []);
 
+  // Seeded once at boot (prisma/ensureDefaults.js) as a company-wide
+  // (leadId: null) Document — matched by name here rather than a hardcoded
+  // id, since the id is only known once that seed has actually run.
+  const NDA_TEMPLATE_NAME = "Global Capital BV — Reciprocal NDA Template.pdf";
+  const ndaTemplateDoc = documents.find((d) => d.originalName === NDA_TEMPLATE_NAME);
+
   const blankRecord = () => ({
     leadId: "",
     status: "DRAFT",
@@ -116,7 +122,10 @@ export function NdaModule() {
     // of one DOE setting up an NDA on behalf of another.
     owner: user?.name ?? "",
     notes: "",
-    documentId: ""
+    // Defaults to the standard template rather than "None" — that's what
+    // goes out on nearly every send; still changeable per-record for the
+    // rarer case of a custom NDA.
+    documentId: ndaTemplateDoc?.id ?? ""
   });
 
   const startQuickAdd = () => {
