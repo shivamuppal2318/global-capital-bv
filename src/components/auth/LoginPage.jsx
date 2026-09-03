@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { authApi } from "../../lib/authApi";
 import { ShieldIcon, LockIcon, GlobeIcon } from "../Icons";
+import logoUrl from "../../assets/global-capital-logo.png";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
@@ -27,7 +28,7 @@ export function AuthShell({ children }) {
         <div className="w-full max-w-[380px]">
           <div className="mb-8 flex items-center gap-3">
             <div className="grid size-11 place-items-center rounded-2xl bg-[#ebf6ef]">
-              <div className="grid size-7 place-items-center rounded-full bg-white text-[12px] font-bold text-[#2b9b60]">GC</div>
+              <img src={logoUrl} alt="Global Capital BV" className="size-8 object-contain" />
             </div>
             <p className="text-[14px] font-semibold text-[#102246]">Global Capital BV</p>
           </div>
