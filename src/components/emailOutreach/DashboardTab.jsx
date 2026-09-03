@@ -120,13 +120,6 @@ export function DashboardTab({ mailing, onNavigateTab }) {
               </button>
               <button
                 type="button"
-                onClick={() => onNavigateTab?.("segments")}
-                className="w-full rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#102246]"
-              >
-                New List
-              </button>
-              <button
-                type="button"
                 onClick={() => onNavigateTab?.("templates")}
                 className="w-full rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#102246]"
               >

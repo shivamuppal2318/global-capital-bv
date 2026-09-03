@@ -296,24 +296,27 @@ function PartnerShell() {
         {ActiveExtraSection ? (
           <ActiveExtraSection permissions={permissions} />
         ) : (
-          // The existing staff module, unchanged — Dashboard/Campaigns/Leads/
-          // Automation are the always-included baseline (one shared API
-          // surface every partner gets); Segments/Templates/AI Agent are
-          // one combined optional grant ("cold-bulk-mailing", same id
-          // Employees use for the whole module — see Admin Panel ->
-          // Channel Partners -> Feature access, and app.js's matching
-          // enforcement), so all three tabs show together or not at all
-          // rather than being individually grantable. Mailbox/Settings
-          // stay staff-only regardless — see EmailOutreachModule's
-          // visibleTabs prop.
+          // The existing staff module, unchanged — Dashboard/Campaigns/Leads
+          // are the always-included baseline (one shared API surface every
+          // partner gets); Templates is the "cold-bulk-mailing" optional
+          // grant (same id Employees use for the whole module — see Admin
+          // Panel -> Channel Partners -> Feature access, and app.js's
+          // matching enforcement). Automation/Segments/AI Agent were
+          // removed from the module's nav entirely (see tabs in
+          // EmailOutreachModule.jsx), so there's nothing left to gate for
+          // them. Mailbox/Settings stay staff-only regardless — see
+          // EmailOutreachModule's visibleTabs prop.
           <EmailOutreachModule
             initialTab="dashboard"
             visibleTabs={[
               "dashboard",
               "campaigns",
               "leads",
-              "automation",
-              ...(permissions.includes("cold-bulk-mailing") ? ["segments", "templates", "ai-agent"] : [])
+              // "automation"/"segments"/"ai-agent" no longer exist in
+              // EmailOutreachModule's own tabs list at all (removed from
+              // the nav entirely) — listing them here would just be dead,
+              // misleading ids that can never match.
+              ...(permissions.includes("cold-bulk-mailing") ? ["templates"] : [])
             ]}
           />
         )}
