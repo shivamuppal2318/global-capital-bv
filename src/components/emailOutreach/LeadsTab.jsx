@@ -1,9 +1,26 @@
 import { useState } from "react";
 import { ActionButton, Field } from "../ui.jsx";
 import { SearchIcon } from "../Icons.jsx";
+import { buildLeadsCsv } from "../../lib/csvLeads.js";
+
+function downloadSampleLeadsCsv() {
+  const csv = buildLeadsCsv([{ name: "Jane Doe", company: "Acme Inc", email: "jane@acme.com", owner: "", country: "" }]);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "sample-subscribers.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export function LeadsTab({ mailing }) {
-  const { campaigns, allLeads, automationForm, handleFormChange, handleSaveAutomation, automationNotice } = mailing;
+  const {
+    campaigns, allLeads, automationForm, handleFormChange, handleSaveAutomation, automationNotice,
+    selectedCampaign, selectedCampaignId, setSelectedCampaignId,
+    newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
+    csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, handleImportCsv, csvPreviewBusy, csvImportBusy
+  } = mailing;
   const [viewMode, setViewMode] = useState("list");
   const [searchText, setSearchText] = useState("");
   const [doubleOptIn, setDoubleOptIn] = useState(false);
@@ -169,6 +186,29 @@ export function LeadsTab({ mailing }) {
     );
   }
 
+  if (viewMode === "subscribers") {
+    return (
+      <SubscribersView
+        selectedCampaign={selectedCampaign}
+        selectedCampaignId={selectedCampaignId}
+        allLeads={allLeads}
+        newLeadForm={newLeadForm}
+        setNewLeadForm={setNewLeadForm}
+        handleAddLead={handleAddLead}
+        handleDeleteLead={handleDeleteLead}
+        csvText={csvText}
+        handleCsvTextChange={handleCsvTextChange}
+        csvPreview={csvPreview}
+        handlePreviewCsv={handlePreviewCsv}
+        handleImportCsv={handleImportCsv}
+        csvPreviewBusy={csvPreviewBusy}
+        csvImportBusy={csvImportBusy}
+        automationNotice={automationNotice}
+        onBack={() => setViewMode("list")}
+      />
+    );
+  }
+
   return (
     <section className="space-y-4">
       <div className="rounded-[24px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
@@ -230,16 +270,28 @@ export function LeadsTab({ mailing }) {
                     <td className="px-4 py-3">{row.leadCount ?? allLeads.length}</td>
                     <td className="px-4 py-3">—</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleFormChange("campaignName", row.name);
-                          setViewMode("form");
-                        }}
-                        className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#3046b2]"
-                      >
-                        Open
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCampaignId(row.id);
+                            setViewMode("subscribers");
+                          }}
+                          className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#3046b2]"
+                        >
+                          Open
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleFormChange("campaignName", row.name);
+                            setViewMode("form");
+                          }}
+                          className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#435471]"
+                        >
+                          Settings
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -252,6 +304,158 @@ export function LeadsTab({ mailing }) {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="rounded-[18px] border border-[#d6deea] bg-white px-4 py-4">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#5f6f89]">Status</p>
+        <p className="mt-2 text-[15px] font-medium text-[#102246]">{automationNotice}</p>
+      </div>
+    </section>
+  );
+}
+
+// One list's subscribers — the screen a "New List"/"Open" is actually
+// missing today: add one subscriber at a time, or a whole CSV, and see
+// who's already on the list. Every field here (allLeads, newLeadForm,
+// handleAddLead, the CSV preview/import pair) already existed in
+// useEmailOutreachState.js — built for this screen but never rendered
+// anywhere, so this wires up existing plumbing rather than adding new
+// backend surface.
+function SubscribersView({
+  selectedCampaign, selectedCampaignId, allLeads,
+  newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
+  csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, handleImportCsv, csvPreviewBusy, csvImportBusy,
+  automationNotice, onBack
+}) {
+  const inputClass = "w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none";
+
+  function handleCsvFileChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => handleCsvTextChange(String(reader.result ?? ""));
+    reader.readAsText(file);
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-2 rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-medium text-[#435471] shadow-[0_2px_8px_rgba(30,48,87,0.04)]"
+        >
+          <span aria-hidden="true">←</span>
+          Back to lists
+        </button>
+        <p className="text-[13px] text-[#6a7790]">{selectedCampaign?.name ?? "List"}</p>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[0.85fr_1.4fr] xl:items-start">
+        <div className="rounded-[24px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+          <h2 className="text-[15px] font-semibold text-[#222347]">Add Subscriber</h2>
+          <div className="mt-3 space-y-3">
+            <Field label="Email">
+              <input
+                type="email"
+                value={newLeadForm.email}
+                onChange={(event) => setNewLeadForm((current) => ({ ...current, email: event.target.value }))}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Name">
+              <input
+                value={newLeadForm.name}
+                onChange={(event) => setNewLeadForm((current) => ({ ...current, name: event.target.value }))}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Company Name">
+              <input
+                value={newLeadForm.company}
+                onChange={(event) => setNewLeadForm((current) => ({ ...current, company: event.target.value }))}
+                className={inputClass}
+              />
+            </Field>
+            <ActionButton label="Add Subscriber" primary onClick={handleAddLead} disabled={!selectedCampaignId} />
+          </div>
+
+          <div className="mt-5 border-t border-[#e7edf5] pt-4">
+            <h3 className="text-[13px] font-semibold text-[#222347]">Import (CSV)</h3>
+            <input type="file" accept=".csv,text/csv" onChange={handleCsvFileChange} className="mt-2 text-[13px] text-[#5d6286]" />
+            <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
+              CSV columns: name, company, email, owner (optional), country (optional). A header row is required.
+            </p>
+            <button type="button" onClick={downloadSampleLeadsCsv} className="mt-1 text-[12px] font-medium text-[#3046b2] hover:underline">
+              Download sample CSV
+            </button>
+
+            {csvText ? (
+              <div className="mt-3 space-y-2">
+                {csvPreview ? (
+                  <p className="text-[12px] text-[#5d6286]">
+                    {csvPreview.readyCount} ready · {csvPreview.duplicateCount} duplicate(s) · {csvPreview.invalidCount} invalid
+                  </p>
+                ) : null}
+                <ActionButton
+                  label={csvPreviewBusy ? "Checking…" : csvImportBusy ? "Importing…" : csvPreview ? "Import CSV" : "Preview CSV"}
+                  primary
+                  disabled={csvPreviewBusy || csvImportBusy || !selectedCampaignId}
+                  onClick={csvPreview ? handleImportCsv : handlePreviewCsv}
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="rounded-[24px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+          <h2 className="text-[15px] font-semibold text-[#222347]">
+            {selectedCampaign?.name ?? "List"} ({allLeads.length} Subscribers)
+          </h2>
+          <div className="mt-3 overflow-x-auto rounded-[18px] border border-[#e7edf5] bg-[#f8faff]">
+            <table className="w-full min-w-[640px] text-left">
+              <thead>
+                <tr className="bg-[#eef4fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8a8fe8]">
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Company</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Subscribed</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allLeads.length ? (
+                  allLeads.map((lead) => (
+                    <tr key={lead.id} className="border-t border-[#e7edf5] bg-white text-[13px] text-[#5d6286]">
+                      <td className="px-4 py-3 font-medium text-[#102246]">{lead.email}</td>
+                      <td className="px-4 py-3">{lead.name}</td>
+                      <td className="px-4 py-3">{lead.company}</td>
+                      <td className="px-4 py-3">{lead.stage}</td>
+                      <td className="px-4 py-3">{lead.unsubscribed ? "No" : "Yes"}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteLead(lead)}
+                          className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#e0483f]"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="6" className="px-4 py-5 text-[13px] text-[#7a7d9c]">
+                      No subscribers yet — add one above or import a CSV.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
