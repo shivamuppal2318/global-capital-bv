@@ -11,7 +11,7 @@ const campaignToneClass = {
 
 export function CampaignsTab({ mailing }) {
   const {
-    campaigns, segments, allLeads, selectedCampaignId, setSelectedCampaignId, setAutomationForm, startNewCampaign,
+    campaigns, segments, allLeads, selectedCampaignId, selectCampaign, startNewCampaign,
     selectedCampaign, emailAccounts, handleAssignAccountToCampaign, handleToggleCampaignStatus,
     automationForm, handleFormChange, handleSaveAutomation, handleSendNow, automationNotice, systemStatus
   } = mailing;
@@ -77,29 +77,7 @@ export function CampaignsTab({ mailing }) {
   }
 
   function openCampaign(campaign) {
-    setSelectedCampaignId(campaign.id);
-    // Loads this campaign's own real saved settings into the form — previously
-    // only campaignName was set here, so Save could silently overwrite a
-    // campaign's real audience/dailyLimit/delayDays/followUpCount/abTest/
-    // autoPause/replyTo with whatever was left in the form from before.
-    setAutomationForm((current) => ({
-      ...current,
-      campaignName: campaign.name,
-      audience: campaign.audience,
-      template: campaign.template,
-      dailyLimit: campaign.dailyLimit,
-      delayDays: campaign.delayDays,
-      followUpCount: campaign.followUpCount,
-      abTest: campaign.abTest,
-      autoPause: campaign.autoPause,
-      replyTo: campaign.replyTo ?? "",
-      subject: campaign.subject ?? "",
-      bodyHtml: campaign.bodyHtml ?? "",
-      segmentId: "",
-      selectedLeadIds: [],
-      scheduledAt: "",
-      delayBetweenMinutes: "0"
-    }));
+    selectCampaign(campaign);
     setViewMode("composer");
   }
 
