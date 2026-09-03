@@ -581,6 +581,15 @@ model ChannelPartner {
   agreementSignedName String?
   agreementSignedIp   String?
 
+  // Filled in by the partner directly in the agreement text itself at
+  // signing time (see lib/signedDocumentRenderer.js's
+  // channelPartnerAgreementFillFormFragment) — the blanks the template
+  // otherwise leaves as "[Partner's Address]" / "[monthly/quarterly]".
+  // region already covers the Territory blank, so no separate field for
+  // that.
+  agreementAddress         String?
+  agreementPaymentSchedule String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
