@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { verifyInterestToken } from "../lib/interestToken.js";
 import { sendTemplateEmail } from "../lib/leadSender.js";
+import { LOGO_DATA_URI } from "../lib/brandLogo.js";
 
 export const interestedRouter = Router();
 
@@ -37,7 +38,7 @@ function pageShell(body) {
     <div style="max-width:520px;margin:0 auto;">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
         <div style="width:44px;height:44px;border-radius:16px;background:#ebf6ef;display:flex;align-items:center;justify-content:center;">
-          <div style="width:28px;height:28px;border-radius:999px;background:#ffffff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#2b9b60;">GC</div>
+          <img src="${LOGO_DATA_URI}" alt="Global Capital BV" style="width:32px;height:32px;object-fit:contain;" />
         </div>
         <p style="font-size:14px;font-weight:600;color:#102246;margin:0;">Global Capital BV</p>
       </div>

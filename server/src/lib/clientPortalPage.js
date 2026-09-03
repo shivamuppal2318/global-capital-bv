@@ -8,6 +8,8 @@
 // LoginPage.jsx's Shell) so a client jumping from an email link to the
 // portal, and a rep looking at the SPA, are clearly the same product.
 
+import { LOGO_DATA_URI } from "./brandLogo.js";
+
 export function escapeHtml(str) {
   return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -25,7 +27,7 @@ function pageStyles() {
     .gc-split-left-inner { width: 100%; max-width: 380px; }
     .gc-split-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
     .gc-split-logo { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 16px; background: #ebf6ef; flex-shrink: 0; }
-    .gc-split-logo-inner { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: #fff; color: #2b9b60; font-size: 12px; font-weight: 700; }
+    .gc-split-logo img { width: 32px; height: 32px; object-fit: contain; }
     .gc-split-brand-name { font-size: 14px; font-weight: 600; color: #102246; }
     .gc-split-right { display: none; flex-direction: column; justify-content: space-between; background: #1b295f; color: #fff; padding: 64px 48px; }
     .gc-split-right-label { margin: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.24em; color: rgba(255,255,255,0.5); }
@@ -75,7 +77,7 @@ function pageStyles() {
     .gc-sidebar { background: #1b295f; color: #fff; padding: 16px; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
     .gc-sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
     .gc-sidebar-logo { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 16px; background: #fff; overflow: hidden; flex-shrink: 0; }
-    .gc-sidebar-logo-inner { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: #ebf6ef; color: #2b9b60; font-size: 12px; font-weight: 700; }
+    .gc-sidebar-logo img { width: 30px; height: 30px; object-fit: contain; }
     .gc-sidebar-name { margin: 0; font-size: 15px; font-weight: 600; }
     .gc-sidebar-tagline { margin: 0; font-size: 13px; color: rgba(255,255,255,0.65); }
     .gc-sidebar-section-label { margin: 0 0 8px; padding: 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.22em; color: rgba(255,255,255,0.36); }
@@ -93,7 +95,7 @@ function pageStyles() {
     .gc-topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
     .gc-brand { display: flex; align-items: center; gap: 10px; }
     .gc-brand-logo { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 12px; background: #fff; border: 1px solid #e7edf5; }
-    .gc-brand-logo-inner { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; background: #ebf6ef; color: #2b9b60; font-size: 10px; font-weight: 700; }
+    .gc-brand-logo img { width: 24px; height: 24px; object-fit: contain; }
     .gc-brand-name { font-size: 15px; font-weight: 600; color: #18263e; }
     .gc-pill-green { border-radius: 999px; background: #d9f4df; color: #179150; padding: 4px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; }
     .gc-topbar-right { display: flex; align-items: center; gap: 12px; }
@@ -189,7 +191,7 @@ export function authShell({ title, subtitle, bodyHtml }) {
       <div class="gc-split-left">
         <div class="gc-split-left-inner">
           <div class="gc-split-brand">
-            <div class="gc-split-logo"><div class="gc-split-logo-inner">GC</div></div>
+            <div class="gc-split-logo"><img src="${LOGO_DATA_URI}" alt="Global Capital BV" /></div>
             <span class="gc-split-brand-name">Global Capital BV</span>
           </div>
           <h1 class="gc-auth-title">${escapeHtml(title)}</h1>
@@ -273,7 +275,7 @@ export function dashboardShell({ title, clientName, companyName, stages = [], ac
     <div class="gc-shell">
       <aside class="gc-sidebar">
         <div class="gc-sidebar-brand">
-          <div class="gc-sidebar-logo"><div class="gc-sidebar-logo-inner">GC</div></div>
+          <div class="gc-sidebar-logo"><img src="${LOGO_DATA_URI}" alt="Global Capital BV" /></div>
           <div>
             <p class="gc-sidebar-name">Global Capital BV</p>
             <p class="gc-sidebar-tagline">Funding &amp; Investment OS</p>
@@ -304,7 +306,7 @@ export function dashboardShell({ title, clientName, companyName, stages = [], ac
         <div class="gc-topbar">
           <div class="gc-topbar-inner">
             <div class="gc-brand">
-              <div class="gc-brand-logo"><div class="gc-brand-logo-inner">GC</div></div>
+              <div class="gc-brand-logo"><img src="${LOGO_DATA_URI}" alt="Global Capital BV" /></div>
               <span class="gc-brand-name">Global Capital BV</span>
               <span class="gc-pill-green">Client Portal</span>
             </div>

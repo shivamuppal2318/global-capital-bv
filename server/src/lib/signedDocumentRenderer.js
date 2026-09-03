@@ -12,23 +12,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { escapeHtml } from "./clientPortalPage.js";
+import { LOGO_DATA_URI } from "./brandLogo.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = path.join(__dirname, "..", "..", "assets");
-
-// The real Global Capital BV logo mark, extracted from the source NDA PDF
-// and cropped/quantized down to ~8KB. Cached as a data URI (read once,
-// reused for every render) so both the downloadable signed document and
-// the client-portal's live fill-in form -- and the .html file itself once
-// downloaded, with no further server round-trip -- show the actual logo
-// instead of a plain text wordmark.
-let logoDataUriPromise;
-function logoDataUri() {
-  if (!logoDataUriPromise) {
-    logoDataUriPromise = fs.readFile(path.join(ASSETS_DIR, "global-capital-logo.png")).then((buf) => `data:image/png;base64,${buf.toString("base64")}`);
-  }
-  return logoDataUriPromise;
-}
 
 export function slugify(text) {
   return (
@@ -75,8 +62,8 @@ function renderBody(rawText) {
   return { mainHtml: toParagraphHtml(mainPart, substitute), signatureHtml: toParagraphHtml(signaturePart, substitute) };
 }
 
-async function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
-  const logo = await logoDataUri();
+function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
+  const logo = LOGO_DATA_URI;
   return `<!doctype html>
 <html>
 <head>
@@ -207,8 +194,8 @@ function renderInteractiveBody(rawText, fieldSpecs) {
   return { mainHtml, signatureHtml, script };
 }
 
-async function fillFormShell({ mainHtml, signatureHtml, script }) {
-  const logo = await logoDataUri();
+function fillFormShell({ mainHtml, signatureHtml, script }) {
+  const logo = LOGO_DATA_URI;
   return `
     <div class="gc-doc-frame">
       <div class="gc-doc-scroll">

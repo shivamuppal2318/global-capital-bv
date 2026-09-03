@@ -10,6 +10,7 @@ import { PartnerDealRecordsView } from "./PartnerDealRecordsView.jsx";
 import { PartnerAgeingReportView } from "./PartnerAgeingReportView.jsx";
 import { PartnerOutreachView } from "./PartnerOutreachView.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
+import logoUrl from "../../assets/global-capital-logo.png";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
@@ -257,7 +258,7 @@ function PartnerShell() {
         <header className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#d6deea] bg-white px-5 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
           <div className="flex items-center gap-3">
             <div className="grid size-10 place-items-center rounded-2xl bg-[#ebf6ef]">
-              <div className="grid size-6 place-items-center rounded-full bg-white text-[11px] font-bold text-[#2b9b60]">GC</div>
+              <img src={logoUrl} alt="Global Capital BV" className="size-7 object-contain" />
             </div>
             <div>
               <p className="text-[15px] font-semibold text-[#102246]">{partnerUser.channelPartner.name}</p>

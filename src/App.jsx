@@ -22,6 +22,7 @@ import {
   UsersIcon
 } from "./components/Icons";
 import { ActionButton, StatCard } from "./components/ui";
+import logoUrl from "./assets/global-capital-logo.png";
 import { WhatsappBusinessModule } from "./components/whatsapp/WhatsappBusinessModule";
 import { AiChatPanel } from "./components/ai/AiChatPanel";
 import { CrmWorkspaceModule } from "./components/crm/CrmWorkspaceModule";
@@ -233,9 +234,7 @@ function Sidebar({ navSections, onChange }) {
       <div className="flex min-h-screen flex-col p-4">
         <div className="mb-5 flex items-center gap-3">
           <div className="grid size-10 place-items-center overflow-hidden rounded-2xl bg-white">
-            <div className="grid size-7 place-items-center rounded-full bg-[#ebf6ef] text-[12px] font-bold text-[#2b9b60]">
-              GC
-            </div>
+            <img src={logoUrl} alt="Global Capital BV" className="size-7 object-contain" />
           </div>
           <div>
             <p className="text-[15px] font-semibold">Global Capital BV</p>
