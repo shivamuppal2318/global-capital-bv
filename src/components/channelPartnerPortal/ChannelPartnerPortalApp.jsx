@@ -297,14 +297,23 @@ function PartnerShell() {
         ) : (
           // The existing staff module, unchanged — Dashboard/Campaigns/Leads/
           // Automation are the always-included baseline (one shared API
-          // surface every partner gets), Segments/Templates/AI Agent are
-          // optional per-partner grants (see Admin Panel -> Channel
-          // Partners -> Feature access, and app.js's matching enforcement).
-          // Mailbox/Settings stay staff-only regardless — see
-          // EmailOutreachModule's visibleTabs prop.
+          // surface every partner gets); Segments/Templates/AI Agent are
+          // one combined optional grant ("cold-bulk-mailing", same id
+          // Employees use for the whole module — see Admin Panel ->
+          // Channel Partners -> Feature access, and app.js's matching
+          // enforcement), so all three tabs show together or not at all
+          // rather than being individually grantable. Mailbox/Settings
+          // stay staff-only regardless — see EmailOutreachModule's
+          // visibleTabs prop.
           <EmailOutreachModule
             initialTab="dashboard"
-            visibleTabs={["dashboard", "campaigns", "leads", "automation", ...permissions]}
+            visibleTabs={[
+              "dashboard",
+              "campaigns",
+              "leads",
+              "automation",
+              ...(permissions.includes("cold-bulk-mailing") ? ["segments", "templates", "ai-agent"] : [])
+            ]}
           />
         )}
       </div>

@@ -23,21 +23,22 @@
 // about themselves. Universal Filters/Zoom Call/Field Visit/Term Sheet now
 // have real scoping (same Lead.channelPartner match as everything else
 // here) alongside NDA/IOI/Visit Planning/Ageing Report/Outreach-DOE.
-// Same 3 groups, in the same order, as lib/permissions.js's employee
-// MODULES list (Intelligence / CRM & Outreach / Relationships) —
-// PermissionsEditor.jsx renders columns in first-seen order, so matching
-// both the group names and this array's ordering is what makes the two
-// Feature access panels lay out identically. Employees have no separate
-// "Email Automation" group either (MailX sits under CRM & Outreach there
-// too), so Segments/Templates/AI Agent go under CRM & Outreach here too.
+// Same items, same groups, same order as lib/permissions.js's employee
+// MODULES list wherever the same feature-concept exists (Intelligence /
+// CRM & Outreach / Relationships) — PermissionsEditor.jsx renders columns
+// in first-seen order, so matching both the group names and this array's
+// ordering is what makes the two Feature access panels lay out
+// identically. "cold-bulk-mailing" is the exact same id/label Employees
+// use for the whole Email Automation module (previously split into
+// Segments/Templates/AI Agent as three separate grants here, unlike
+// Employees' single checkbox — merged into one to match exactly; see
+// app.js's three /api/email/* mounts, all now gated on this one id).
 export const CHANNEL_PARTNER_OPTIONAL_MODULES = [
   { id: "universal-filters", label: "Universal Filters", group: "Intelligence" },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence" },
   { id: "leads", label: "Outreach / DOE", group: "Intelligence" },
-  { id: "segments", label: "Segments", group: "CRM & Outreach" },
-  { id: "templates", label: "Templates", group: "CRM & Outreach" },
-  { id: "ai-agent", label: "AI Agent", group: "CRM & Outreach" },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },
+  { id: "cold-bulk-mailing", label: "Email Automation", group: "CRM & Outreach" },
   { id: "nda", label: "NDA", group: "Relationships" },
   { id: "meetings", label: "Zoom Call", group: "Relationships" },
   { id: "data-room", label: "Data Room", group: "Relationships" },
