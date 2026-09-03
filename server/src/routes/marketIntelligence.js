@@ -10,8 +10,20 @@ import { isGoogleNewsConfigured } from "../lib/marketIntelligence/sources/google
 import { isApolloConfigured } from "../lib/marketIntelligence/sources/apolloSource.js";
 import { isAiProcessorConfigured } from "../lib/marketIntelligence/aiProcessor.js";
 import { askChatAssistant, isChatAssistantConfigured } from "../lib/marketIntelligence/chatAssistant.js";
+import { getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
+import { getAccessToken } from "../lib/zoominfoClient.js";
+import { lookupCompanyInZoomInfo, hasAnyZoomInfoMatch } from "../lib/zoominfoEnrichment.js";
 
 export const marketIntelligenceRouter = Router();
+
+// ZoomInfo enrichment spends real API credits — staff-only, same reasoning
+// as leads.js's POST /:id/enrich.
+function blockChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Your account has read-only access to captured signals." });
+  }
+  next();
+}
 
 // No real inbound trigger exists yet (no source has a webhook wired up the
 // way the email/Calendly integrations do) — this is a manual/cron-callable
@@ -28,7 +40,15 @@ marketIntelligenceRouter.get("/status", asyncHandler(async (_req, res) => {
     isApolloConfigured(),
     isAiProcessorConfigured()
   ]);
-  res.json({ newsApi, exa, firecrawl, googleNews: isGoogleNewsConfigured(), apollo, aiProcessor });
+  res.json({
+    newsApi,
+    exa,
+    firecrawl,
+    googleNews: isGoogleNewsConfigured(),
+    apollo,
+    aiProcessor,
+    zoomInfo: Boolean(await getZoomInfoCredentials())
+  });
 }));
 
 const runSchema = z.object({
@@ -55,6 +75,49 @@ marketIntelligenceRouter.get("/signals", asyncHandler(async (req, res) => {
     take: 100
   });
   res.json(signals);
+}));
+
+// Real ZoomInfo company profile + recent buying-trigger activity for one
+// captured signal, looked up by its entityName directly — independent of
+// whether it ever matched/created an EmailLead (plenty of real signals,
+// e.g. IGNORED with no default campaign to route into, never get one).
+// Mirrors leads.js's POST /:id/enrich: check credentials configured, mint
+// one token, look up, persist on a match.
+marketIntelligenceRouter.post("/signals/:id/enrich", blockChannelPartner, asyncHandler(async (req, res) => {
+  const signal = await prisma.marketSignal.findUnique({ where: { id: req.params.id } });
+  if (!signal) return res.status(404).json({ error: "Signal not found" });
+
+  if (!signal.entityName) {
+    return res.status(400).json({ error: "This signal hasn't been identified yet — there's no company name to look up in ZoomInfo." });
+  }
+
+  const credentials = await getZoomInfoCredentials();
+  if (!credentials) {
+    return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
+  }
+
+  const token = await getAccessToken(credentials);
+  const result = await lookupCompanyInZoomInfo({ token, companyName: signal.entityName });
+
+  if (!hasAnyZoomInfoMatch({ ...result, contactAttributes: undefined })) {
+    return res.json({ matched: false, message: `No confident ZoomInfo match found for "${signal.entityName}".` });
+  }
+
+  const updated = await prisma.marketSignal.update({
+    where: { id: signal.id },
+    data: {
+      ...(result.companyAttributes ? { zoomInfoCompanyData: result.companyAttributes } : {}),
+      ...(result.scoops.length ? { zoomInfoScoops: result.scoops } : {}),
+      zoomInfoEnrichedAt: new Date()
+    }
+  });
+
+  res.json({
+    matched: true,
+    companyMatched: Boolean(result.companyAttributes),
+    scoopsMatched: result.scoops.length > 0,
+    signal: updated
+  });
 }));
 
 const chatMessageSchema = z.object({

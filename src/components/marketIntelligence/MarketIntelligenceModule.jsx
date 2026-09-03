@@ -87,6 +87,10 @@ export function MarketIntelligenceModule() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  // ZoomInfo enrichment — keyed by signal id, not one shared slot, since
+  // several signal cards can each be enriched independently.
+  const [enrichingId, setEnrichingId] = useState(null);
+  const [enrichNotices, setEnrichNotices] = useState({});
 
   const loadStatusAndSignals = () => {
     marketIntelligenceApi
@@ -132,6 +136,27 @@ export function MarketIntelligenceModule() {
     }
   }
 
+  async function handleEnrichSignal(signal) {
+    setEnrichingId(signal.id);
+    setEnrichNotices((current) => ({ ...current, [signal.id]: null }));
+    try {
+      const result = await marketIntelligenceApi.enrichSignal(signal.id);
+      if (result.matched) {
+        setSignals((current) => current.map((s) => (s.id === signal.id ? result.signal : s)));
+        const parts = [];
+        if (result.companyMatched) parts.push("company profile");
+        if (result.scoopsMatched) parts.push("recent activity");
+        setEnrichNotices((current) => ({ ...current, [signal.id]: `Enriched ${parts.join(" and ")} from ZoomInfo.` }));
+      } else {
+        setEnrichNotices((current) => ({ ...current, [signal.id]: result.message }));
+      }
+    } catch (error) {
+      setEnrichNotices((current) => ({ ...current, [signal.id]: `Could not enrich via ZoomInfo (${error.message}).` }));
+    } finally {
+      setEnrichingId(null);
+    }
+  }
+
   const services = status
     ? [
         { key: "googleNews", label: "Google News RSS" },
@@ -139,7 +164,8 @@ export function MarketIntelligenceModule() {
         { key: "exa", label: "Exa Search" },
         { key: "firecrawl", label: "Firecrawl" },
         { key: "apollo", label: "Apollo" },
-        { key: "aiProcessor", label: "AI processing (Claude)" }
+        { key: "aiProcessor", label: "AI processing (Claude)" },
+        { key: "zoomInfo", label: "ZoomInfo" }
       ]
     : [];
 
@@ -442,7 +468,66 @@ export function MarketIntelligenceModule() {
                         View article ↗
                       </a>
                     ) : null}
+                    {hasAiData ? (
+                      <button
+                        type="button"
+                        onClick={() => handleEnrichSignal(signal)}
+                        disabled={enrichingId === signal.id}
+                        className="ml-auto rounded-full border border-[#d6deea] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#3046b2] transition hover:bg-[#f4f7fb] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {enrichingId === signal.id ? "Enriching…" : signal.zoomInfoEnrichedAt ? "Re-enrich (ZoomInfo)" : "Enrich (ZoomInfo)"}
+                      </button>
+                    ) : null}
                   </div>
+
+                  {enrichNotices[signal.id] ? (
+                    <p className="mt-2 text-[12px] text-[#5f6f89]">{enrichNotices[signal.id]}</p>
+                  ) : null}
+
+                  {signal.zoomInfoCompanyData ? (
+                    <div className="mt-3 rounded-[14px] border border-[#e7edf5] bg-[#fbfcfe] px-4 py-3">
+                      <p className="text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Company Info (ZoomInfo)</p>
+                      <div className="mt-3 grid gap-x-6 gap-y-2 text-[13px] text-[#334463] sm:grid-cols-2">
+                        {signal.zoomInfoCompanyData.website ? <p><span className="text-[#8592ab]">Website</span> — {signal.zoomInfoCompanyData.website}</p> : null}
+                        {signal.zoomInfoCompanyData.phone ? <p><span className="text-[#8592ab]">Phone</span> — {signal.zoomInfoCompanyData.phone}</p> : null}
+                        {signal.zoomInfoCompanyData.employeeCount ? <p><span className="text-[#8592ab]">Employees</span> — {signal.zoomInfoCompanyData.employeeCount}</p> : null}
+                        {signal.zoomInfoCompanyData.revenue ? <p><span className="text-[#8592ab]">Revenue</span> — ${Number(signal.zoomInfoCompanyData.revenue).toLocaleString()}k</p> : null}
+                        {signal.zoomInfoCompanyData.foundedYear ? <p><span className="text-[#8592ab]">Founded</span> — {signal.zoomInfoCompanyData.foundedYear}</p> : null}
+                        {signal.zoomInfoCompanyData.primaryIndustry?.length ? (
+                          <p><span className="text-[#8592ab]">Industry</span> — {signal.zoomInfoCompanyData.primaryIndustry.join(", ")}</p>
+                        ) : null}
+                      </div>
+                      {signal.zoomInfoCompanyData.description ? (
+                        <p className="mt-3 text-[13px] leading-6 text-[#435471]">{signal.zoomInfoCompanyData.description}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {signal.zoomInfoScoops?.length ? (
+                    <div className="mt-3 rounded-[14px] border border-[#e7edf5] bg-[#fbfcfe] px-4 py-3">
+                      <p className="text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Recent Company Activity (ZoomInfo)</p>
+                      <div className="mt-3 space-y-3">
+                        {signal.zoomInfoScoops.map((scoop) => (
+                          <div key={scoop.id} className="border-b border-dashed border-[#d9e2ef] pb-3 last:border-0 last:pb-0">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#3046b2]">
+                                {scoop.types?.join(", ") || "Update"}
+                              </span>
+                              <span className="text-[12px] text-[#8592ab]">
+                                {scoop.publishedDate ? new Date(scoop.publishedDate).toLocaleDateString() : ""}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[13px] leading-6 text-[#334463]">{scoop.description}</p>
+                            {scoop.link ? (
+                              <a href={scoop.link} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[12px] font-semibold text-[#3046b2] underline">
+                                {scoop.linkText || "See details"}
+                              </a>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

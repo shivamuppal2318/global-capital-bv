@@ -1382,6 +1382,17 @@ model MarketSignal {
   // opportunity today. See lib/marketIntelligence/aiProcessor.js.
   isSeekingFunding Boolean?
 
+  // Real ZoomInfo company profile + recent buying-trigger activity
+  // ("Scoops"), looked up by entityName directly — independent of
+  // matchedLeadId/createdLeadId below, since plenty of real signals
+  // (IGNORED: no lead match, no default campaign to create one in) never
+  // get an EmailLead at all. Manual, one-click action (POST
+  // /signals/:id/enrich), not automatic — same "real API credits spent is
+  // a rep's explicit choice" reasoning as the Lead enrichment action.
+  zoomInfoCompanyData Json?
+  zoomInfoScoops      Json?
+  zoomInfoEnrichedAt  DateTime?
+
   // Routing outcome: either an existing lead this signal updated, or a
   // newly-created one from an Apollo lookup — never both.
   matchedLeadId String?
