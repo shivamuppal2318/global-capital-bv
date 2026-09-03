@@ -429,6 +429,10 @@ emailCampaignsRouter.delete("/:id/cadence-steps/:stepId", asyncHandler(async (re
 }));
 
 const sendNowSchema = z.object({
+  // A manual pick of specific leads by id — takes priority over segmentId
+  // below when given (checking any lead in the composer's checklist means
+  // "just these", overriding the Send To dropdown).
+  leadIds: z.array(z.string()).optional(),
   // Null/omitted = every one of this campaign's own leads (its "List").
   // Given, it narrows that same set via segmentMatching.js's
   // filterMatchingLeads — a segment is used purely as a condition-filter
@@ -467,7 +471,10 @@ emailCampaignsRouter.post("/:id/send-now", asyncHandler(async (req, res) => {
     where: { campaignId: campaign.id, unsubscribed: false, bounced: false }
   });
 
-  if (parsed.data.segmentId) {
+  if (parsed.data.leadIds?.length) {
+    const idSet = new Set(parsed.data.leadIds);
+    leads = leads.filter((lead) => idSet.has(lead.id));
+  } else if (parsed.data.segmentId) {
     const segment = await prisma.emailSegment.findUnique({ where: { id: parsed.data.segmentId } });
     if (!segment) {
       return res.status(404).json({ error: "Segment not found" });

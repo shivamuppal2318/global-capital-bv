@@ -11,7 +11,7 @@ const campaignToneClass = {
 
 export function CampaignsTab({ mailing }) {
   const {
-    campaigns, segments, selectedCampaignId, setSelectedCampaignId, setAutomationForm, startNewCampaign,
+    campaigns, segments, allLeads, selectedCampaignId, setSelectedCampaignId, setAutomationForm, startNewCampaign,
     selectedCampaign, emailAccounts, handleAssignAccountToCampaign, handleToggleCampaignStatus,
     automationForm, handleFormChange, handleSaveAutomation, handleSendNow, automationNotice, systemStatus
   } = mailing;
@@ -37,6 +37,18 @@ export function CampaignsTab({ mailing }) {
   function fillSampleMergeFields(text) {
     const sample = { leadName: "Sample Lead", company: "Sample Company Ltd", email: "sample@example.com", unsubscribeUrl: "#unsubscribe" };
     return (text ?? "").replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => (key in sample ? sample[key] : match));
+  }
+
+  // Picking specific leads by name is a manual override of the Send To
+  // dropdown above — checking any lead here means "just these", regardless
+  // of whether "All leads" or a Segment is selected there (see
+  // handleSendNow, which only sends selectedLeadIds when non-empty).
+  function toggleLeadSelection(leadId) {
+    const current = automationForm.selectedLeadIds ?? [];
+    handleFormChange(
+      "selectedLeadIds",
+      current.includes(leadId) ? current.filter((id) => id !== leadId) : [...current, leadId]
+    );
   }
 
   function handlePreviewBlast() {
@@ -84,6 +96,7 @@ export function CampaignsTab({ mailing }) {
       subject: campaign.subject ?? "",
       bodyHtml: campaign.bodyHtml ?? "",
       segmentId: "",
+      selectedLeadIds: [],
       scheduledAt: "",
       delayBetweenMinutes: "0"
     }));
@@ -231,6 +244,37 @@ export function CampaignsTab({ mailing }) {
                     </option>
                   ))}
                 </select>
+              </Field>
+
+              <Field label={`Or pick specific leads (${(automationForm.selectedLeadIds ?? []).length} of ${allLeads.length} selected)`}>
+                <div className="max-h-[220px] overflow-y-auto rounded-[12px] border border-[#dfe5f1] bg-white">
+                  {allLeads.length ? (
+                    allLeads.map((lead) => (
+                      <label key={lead.id} className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0">
+                        <input
+                          type="checkbox"
+                          checked={(automationForm.selectedLeadIds ?? []).includes(lead.id)}
+                          onChange={() => toggleLeadSelection(lead.id)}
+                          className="h-4 w-4 rounded border-[#b9c4d8]"
+                        />
+                        <span className="min-w-0 flex-1 truncate">{lead.name} — {lead.company}</span>
+                        <span className="shrink-0 truncate text-[12px] text-[#8593ac]">{lead.email}</span>
+                      </label>
+                    ))
+                  ) : (
+                    <p className="px-3 py-3 text-[12px] text-[#9aa6ba]">
+                      No leads in this campaign yet — add some from the Leads tab first.
+                    </p>
+                  )}
+                </div>
+                {(automationForm.selectedLeadIds ?? []).length > 0 ? (
+                  <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                    Overrides Send To above — sending only to the {(automationForm.selectedLeadIds ?? []).length} checked lead(s).{" "}
+                    <button type="button" onClick={() => handleFormChange("selectedLeadIds", [])} className="font-semibold text-[#3046b2] hover:underline">
+                      Clear selection
+                    </button>
+                  </p>
+                ) : null}
               </Field>
 
               <Field label="Schedule (leave empty to send now)">

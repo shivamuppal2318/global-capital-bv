@@ -38,6 +38,7 @@ const DEFAULT_AUTOMATION_FORM = {
   subject: "",
   bodyHtml: "",
   segmentId: "",
+  selectedLeadIds: [],
   scheduledAt: "",
   delayBetweenMinutes: "0"
 };
@@ -1051,6 +1052,9 @@ export function useEmailOutreachState() {
 
     try {
       const result = await emailCampaignsApi.sendNow(saved.id, {
+        // Picking specific leads overrides the segment/all-leads choice —
+        // see toggleLeadSelection in CampaignsTab.jsx.
+        leadIds: automationForm.selectedLeadIds?.length ? automationForm.selectedLeadIds : undefined,
         segmentId: automationForm.segmentId || null,
         scheduledAt: automationForm.scheduledAt ? new Date(automationForm.scheduledAt).toISOString() : null,
         delayBetweenMinutes: Number(automationForm.delayBetweenMinutes) || 0
