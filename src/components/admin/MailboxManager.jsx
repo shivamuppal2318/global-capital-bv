@@ -38,6 +38,7 @@ export function MailboxManager({ scope }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
   const [testState, setTestState] = useState({});
+  const [rowError, setRowError] = useState({});
 
   const load = () => {
     setLoading(true);
@@ -94,12 +95,20 @@ export function MailboxManager({ scope }) {
     load();
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id, label) => {
+    if (!window.confirm(`Delete the mailbox "${label}"? This can't be undone.`)) {
+      return;
+    }
+    setRowError((prev) => ({ ...prev, [id]: null }));
     try {
       await emailAccountsApi.remove(id);
       load();
     } catch (err) {
-      setError(err.message);
+      // Per-row, not the list-level `error` — that one replaces the whole
+      // mailbox list, which would hide every other account just because
+      // deleting this one hit the backend's still-in-use guard (409 when a
+      // campaign is still assigned to it).
+      setRowError((prev) => ({ ...prev, [id]: err.message }));
     }
   };
 
@@ -220,13 +229,15 @@ export function MailboxManager({ scope }) {
                     />
                     {account.isActive ? (
                       <ActionButton label="Deactivate" icon={RefreshIcon} small onClick={() => handleDeactivate(account.id)} />
-                    ) : (
-                      <ActionButton label="Delete" icon={XIcon} small onClick={() => handleDelete(account.id)} />
-                    )}
+                    ) : null}
+                    <ActionButton label="Delete" icon={XIcon} small onClick={() => handleDelete(account.id, account.label)} />
                   </div>
                 </div>
                 {test && !test.testing ? (
                   <p className={`mt-2 text-[13px] font-medium ${test.success ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>{test.message}</p>
+                ) : null}
+                {rowError[account.id] ? (
+                  <p className="mt-2 text-[13px] font-medium text-[#e0483f]">{rowError[account.id]}</p>
                 ) : null}
               </div>
             );
