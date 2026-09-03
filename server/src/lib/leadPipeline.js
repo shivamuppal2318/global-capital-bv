@@ -1,4 +1,5 @@
 import { prisma } from "../db.js";
+import { deriveZoomStage2 } from "./clientPortalStages.js";
 
 // A single CRM lead's real journey across the full deal lifecycle — a
 // per-record complement to Executive Dashboard's company-wide Funnel
@@ -13,13 +14,19 @@ import { prisma } from "../db.js";
 // this CRM Lead, so it's approximated from the lead's own status instead
 // of left out — status past "NEW" is real evidence contact was made, even
 // though it can't say exactly when the first email went out.
-export const STAGES = ["OUTREACH", "NDA", "ZOOM_CALL", "DATA_ROOM", "IOI", "FIELD_VISIT", "TERM_SHEET"];
+// Zoom Call 2 sits after IOI, not right after Zoom Call (1) — same
+// ordering/reasoning as the client portal's own stepper (see
+// clientPortalStages.js's PORTAL_STAGES comment): the second call is the
+// deeper due-diligence conversation that happens once a lead has actually
+// committed to an IOI, not a generic "second meeting of any kind".
+export const STAGES = ["OUTREACH", "NDA", "ZOOM_CALL", "DATA_ROOM", "IOI", "ZOOM_CALL_2", "FIELD_VISIT", "TERM_SHEET"];
 export const STAGE_LABELS = {
   OUTREACH: "Outreach",
   NDA: "NDA",
   ZOOM_CALL: "Zoom Call",
   DATA_ROOM: "Data Room",
   IOI: "IOI",
+  ZOOM_CALL_2: "Zoom Call 2",
   FIELD_VISIT: "Field Visit",
   TERM_SHEET: "Term Sheet"
 };
@@ -68,12 +75,25 @@ export async function computeLeadPipeline(leadId) {
     return { status: "in_progress", detail: ioi.status.toLowerCase() };
   })();
 
+  // Reuses clientPortalStages.js's deriveZoomStage2 as-is (already tested,
+  // already the source of truth for "which meeting counts as the second
+  // call" — chronologically the 2nd meeting, regardless of how the first
+  // one went) rather than a second, separately-maintained implementation.
+  // Its vocabulary ("completed") is mapped onto this file's own
+  // ("done") — everything else it returns (not_started/in_progress) is
+  // already identical.
+  const zoomCall2 = (() => {
+    const { status, detail } = deriveZoomStage2(meetings);
+    return { status: status === "completed" ? "done" : status, detail };
+  })();
+
   const summaries = {
     OUTREACH: outreach,
     NDA: nda_,
     ZOOM_CALL: zoomCall,
     DATA_ROOM: stageRecordSummary(dataRoomRecord),
     IOI: ioi_,
+    ZOOM_CALL_2: zoomCall2,
     FIELD_VISIT: stageRecordSummary(fieldVisitRecord),
     TERM_SHEET: stageRecordSummary(termSheetRecord)
   };
