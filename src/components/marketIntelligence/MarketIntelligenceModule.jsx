@@ -175,7 +175,15 @@ export function MarketIntelligenceModule() {
   // actionable class of signal for a rep to act on today.
   const seekingFundingSignals = signals.filter((s) => s.isSeekingFunding);
 
+  // FAILED means the AI pipeline itself errored out on this signal (a bad
+  // LLM response, an API error) — an internal processing failure, not a
+  // real business outcome like PENDING/PROCESSED/IGNORED. Showing it in the
+  // main feed just reads as noise ("Not yet identified" + a red FAILED
+  // badge with nothing a rep can act on); the aggregate signalStats.failed
+  // count above still reflects these so they aren't silently lost, just
+  // kept out of the browsable list.
   const filteredSignals = signals
+    .filter((s) => s.status !== "FAILED")
     .filter((s) => !seekingOnly || s.isSeekingFunding)
     .filter((s) => !searchText.trim() || `${s.entityName ?? ""} ${s.rawTitle}`.toLowerCase().includes(searchText.trim().toLowerCase()));
 
