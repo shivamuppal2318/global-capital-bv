@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context/ChannelPartnerAuthContext";
+import { channelPartnerPortalAuthApi } from "../../lib/channelPartnerPortalAuthApi";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
 import { MarketIntelligenceModule } from "../marketIntelligence/MarketIntelligenceModule.jsx";
 import { PartnerLeadsView } from "./PartnerLeadsView.jsx";
@@ -12,10 +13,11 @@ import { AuthShell } from "../auth/LoginPage.jsx";
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
 const labelClass = "mb-1.5 block text-[13px] font-semibold text-[#334463]";
+const linkClass = "text-[13px] font-medium text-[#3046b2] hover:underline";
 const primaryButtonClass =
   "w-full rounded-[12px] bg-[#1b295f] px-5 py-3.5 text-[15px] font-semibold text-white transition hover:bg-[#142050] disabled:cursor-not-allowed disabled:opacity-60";
 
-function PartnerLoginView() {
+function PartnerLoginView({ onForgot }) {
   const { login } = useChannelPartnerAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -56,7 +58,10 @@ function PartnerLoginView() {
           />
         </div>
         <div>
-          <label className={labelClass}>Password</label>
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <label className={labelClass + " mb-0"}>Password</label>
+            <button type="button" onClick={onForgot} className={linkClass}>Forgot password?</button>
+          </div>
           <input
             type="password"
             required
@@ -79,6 +84,132 @@ function PartnerLoginView() {
       <p className="mt-4 text-[12px] leading-5 text-[#8592ab]">
         Don't have an account yet? Your portal login is created when you sign the Channel Partner Agreement.
       </p>
+    </AuthShell>
+  );
+}
+
+// Mirrors LoginPage.jsx's ForgotPasswordView/ResetPasswordView one level
+// down (channelPartnerPortalAuthApi instead of authApi) — kept as its own
+// copy rather than a shared component, same reasoning as PartnerLoginView
+// above: this portal's auth is deliberately self-contained, never coupled
+// to the staff app's.
+function PartnerForgotPasswordView({ onBack }) {
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await channelPartnerPortalAuthApi.forgotPassword(email.trim());
+      setSent(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (sent) {
+    return (
+      <AuthShell>
+        <h1 className="text-[26px] font-semibold text-[#102246]">Check your email</h1>
+        <p className="mt-2 text-[14px] text-[#5f6f89]">If that address has an account</p>
+        <p className="mt-6 rounded-[12px] bg-[#eef7f1] px-4 py-3 text-[13px] leading-6 text-[#2b7a4b]">
+          We've sent a reset link to <strong>{email}</strong>. It's valid for 60 minutes and can only be used once.
+        </p>
+        <p className="mt-4 text-[12px] leading-5 text-[#8592ab]">
+          Nothing arrived? Check spam, or ask Global Capital BV to reset it for you from Admin Panel → Channel Partners.
+        </p>
+        <button type="button" onClick={onBack} className={`${linkClass} mt-6 block w-full text-center`}>Back to sign in</button>
+      </AuthShell>
+    );
+  }
+
+  return (
+    <AuthShell>
+      <h1 className="text-[26px] font-semibold text-[#102246]">Forgot password</h1>
+      <p className="mt-2 text-[14px] text-[#5f6f89]">We'll email you a reset link</p>
+      <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+        <div>
+          <label className={labelClass}>Email</label>
+          <input type="email" required autoFocus className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@partner.com" />
+        </div>
+        {error ? <p className="rounded-[12px] bg-[#fdeceb] px-3.5 py-2.5 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
+        <button type="submit" disabled={submitting} className={primaryButtonClass}>
+          {submitting ? "Sending…" : "Send reset link"}
+        </button>
+      </form>
+      <button type="button" onClick={onBack} className={`${linkClass} mt-6 block w-full text-center`}>Back to sign in</button>
+    </AuthShell>
+  );
+}
+
+function PartnerResetPasswordView({ token, onDone }) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(onDone, 2500);
+    return () => clearTimeout(t);
+  }, [done, onDone]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (newPassword !== confirm) {
+      setError("Both passwords must match.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await channelPartnerPortalAuthApi.resetPassword(token, newPassword);
+      setDone(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <AuthShell>
+        <h1 className="text-[26px] font-semibold text-[#102246]">Password updated</h1>
+        <p className="mt-2 text-[14px] text-[#5f6f89]">You can sign in now</p>
+        <p className="mt-6 rounded-[12px] bg-[#eef7f1] px-4 py-3 text-center text-[13px] leading-6 text-[#2b7a4b]">
+          Taking you back to sign in…
+        </p>
+      </AuthShell>
+    );
+  }
+
+  return (
+    <AuthShell>
+      <h1 className="text-[26px] font-semibold text-[#102246]">Choose a new password</h1>
+      <p className="mt-2 text-[14px] text-[#5f6f89]">At least 8 characters</p>
+      <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+        <div>
+          <label className={labelClass}>New password</label>
+          <input type="password" required minLength={8} autoFocus className={inputClass} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+        </div>
+        <div>
+          <label className={labelClass}>Confirm new password</label>
+          <input type="password" required minLength={8} className={inputClass} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        </div>
+        {error ? <p className="rounded-[12px] bg-[#fdeceb] px-3.5 py-2.5 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
+        <button type="submit" disabled={submitting} className={primaryButtonClass}>
+          {submitting ? "Updating…" : "Update password"}
+        </button>
+      </form>
+      <button type="button" onClick={onDone} className={`${linkClass} mt-6 block w-full text-center`}>Back to sign in</button>
     </AuthShell>
   );
 }
@@ -172,8 +303,32 @@ function PartnerShell() {
 
 function ChannelPartnerPortalShell() {
   const { partnerUser, loading } = useChannelPartnerAuth();
+  // A reset link lands on /partner?reset=<token> — same "just another view
+  // of this same screen" approach as LoginPage.jsx, since this SPA has no
+  // router either.
+  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get("reset"));
+  const [view, setView] = useState(() => (resetToken ? "reset" : "login"));
+
+  const clearResetParam = () => {
+    window.history.replaceState({}, "", window.location.pathname);
+    setResetToken(null);
+  };
+
   if (loading) return null;
-  return partnerUser ? <PartnerShell /> : <PartnerLoginView />;
+  if (partnerUser) return <PartnerShell />;
+  if (view === "forgot") return <PartnerForgotPasswordView onBack={() => setView("login")} />;
+  if (view === "reset" && resetToken) {
+    return (
+      <PartnerResetPasswordView
+        token={resetToken}
+        onDone={() => {
+          clearResetParam();
+          setView("login");
+        }}
+      />
+    );
+  }
+  return <PartnerLoginView onForgot={() => setView("forgot")} />;
 }
 
 // A second, minimal SPA shell — entirely separate from App.jsx's staff
