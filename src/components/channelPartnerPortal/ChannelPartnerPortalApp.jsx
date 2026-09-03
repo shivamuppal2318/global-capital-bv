@@ -3,6 +3,7 @@ import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context
 import { channelPartnerPortalAuthApi } from "../../lib/channelPartnerPortalAuthApi";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
 import { MarketIntelligenceModule } from "../marketIntelligence/MarketIntelligenceModule.jsx";
+import { UniversalFiltersModule } from "../universalFilters/UniversalFiltersModule.jsx";
 import { PartnerLeadsView } from "./PartnerLeadsView.jsx";
 import { PartnerDocumentsView } from "./PartnerDocumentsView.jsx";
 import { PartnerDealRecordsView } from "./PartnerDealRecordsView.jsx";
@@ -226,10 +227,20 @@ function PartnerResetPasswordView({ token, onDone }) {
 const EXTRA_SECTIONS = [
   { id: "crm-workspace", label: "CRM Workspace", Component: PartnerLeadsView },
   { id: "data-room", label: "Data Room", Component: PartnerDocumentsView },
-  { id: "deal-records", label: "Deal Records", matchIds: ["nda", "ioi", "visit-planning"], Component: PartnerDealRecordsView },
+  {
+    id: "deal-records",
+    label: "Deal Records",
+    matchIds: ["nda", "ioi", "visit-planning", "meetings", "field-visit", "term-sheet"],
+    Component: PartnerDealRecordsView
+  },
   { id: "ageing-report", label: "Ageing Report", Component: PartnerAgeingReportView },
   { id: "leads", label: "Outreach / DOE", Component: PartnerOutreachView },
-  { id: "market-intelligence", label: "Market Intelligence", Component: MarketIntelligenceModule }
+  { id: "market-intelligence", label: "Market Intelligence", Component: MarketIntelligenceModule },
+  // Zero-wrapper reuse of the staff component directly -- it takes no
+  // props, has no edit/write affordances, and the backend already scopes
+  // everything it returns to this partner's own referred leads (see
+  // leadOwnerWhereClause in universalFilters.js).
+  { id: "universal-filters", label: "Universal Filters", Component: UniversalFiltersModule }
 ];
 
 function PartnerShell() {

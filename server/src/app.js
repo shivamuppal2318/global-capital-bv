@@ -128,7 +128,10 @@ const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
   "/api/ioi-records",
   "/api/visit-plans",
   "/api/ageing-report",
-  "/api/outreach-doe"
+  "/api/outreach-doe",
+  "/api/meetings",
+  "/api/deal-stages",
+  "/api/universal-filters"
 ];
 app.use((req, res, next) => {
   if (req.method === "POST" && INBOUND_WEBHOOK_PATHS.includes(req.path)) return next();
@@ -207,10 +210,23 @@ app.use(
 app.use("/api/documents", outreachOrChannelPartnerModule("data-room"), documentsRouter);
 // One router serves all seven stages (the stage is a filter, not a route),
 // so it unlocks for anyone holding any of the stage modules; the screens
-// themselves are still gated individually in the sidebar.
+// themselves are still gated individually in the sidebar. A Channel
+// Partner only ever reaches the two stages that don't already have a
+// dedicated, separately-scoped router (field-visit/term-sheet) — the
+// route handler itself checks which specific stage was requested (see
+// blockChannelPartner/CHANNEL_PARTNER_DEAL_STAGES in dealStages.js); this
+// just checks whether either module was granted at all.
 app.use(
   "/api/deal-stages",
-  requireModule("nda", "meetings", "data-room", "ioi", "visit-planning", "field-visit", "term-sheet"),
+  (req, res, next) => {
+    if (req.channelPartner) {
+      if (hasChannelPartnerModule(req.channelPartner, "field-visit") || hasChannelPartnerModule(req.channelPartner, "term-sheet")) {
+        return next();
+      }
+      return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+    }
+    return requireModule("nda", "meetings", "data-room", "ioi", "visit-planning", "field-visit", "term-sheet")(req, res, next);
+  },
   dealStagesRouter
 );
 // A cross-cutting report over the same deal-stage data — gated on its own
@@ -233,10 +249,13 @@ app.use("/api/channel-partner-agreement", channelPartnerAgreementRouter);
 app.use("/api/channel-partner-portal-auth", channelPartnerPortalAuthRouter);
 app.use("/api/ioi-records", outreachOrChannelPartnerModule("ioi"), ioiRecordsRouter);
 app.use("/api/executive-dashboard", requireModule("command-center"), executiveDashboardRouter);
-app.use("/api/universal-filters", requireModule("universal-filters"), universalFiltersRouter);
+app.use("/api/universal-filters", outreachOrChannelPartnerModule("universal-filters"), universalFiltersRouter);
 app.use("/api/ai", aiChatRouter);
+// Meeting scheduling/host management stays staff-only -- a Channel Partner's
+// access to /api/meetings itself is read-only (see blockChannelPartner in
+// meetings.js).
 app.use("/api/zoom", requireModule("meetings"), zoomRouter);
-app.use("/api/meetings", requireModule("meetings"), meetingsRouter);
+app.use("/api/meetings", outreachOrChannelPartnerModule("meetings"), meetingsRouter);
 
 // Email cold-outreach domain. Everything here already passed the global
 // requireAuth gate above except the four public-facing routers at the
