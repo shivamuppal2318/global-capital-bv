@@ -14,7 +14,7 @@
 import { outreachMetrics } from "./executiveMetrics.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const SEND_KINDS = new Set(["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT"]);
+const SEND_KINDS = new Set(["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"]);
 
 function round(n, places = 1) {
   const f = 10 ** places;

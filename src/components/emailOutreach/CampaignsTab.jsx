@@ -11,9 +11,9 @@ const campaignToneClass = {
 
 export function CampaignsTab({ mailing }) {
   const {
-    campaigns, selectedCampaignId, setSelectedCampaignId, setAutomationForm, startNewCampaign,
+    campaigns, segments, selectedCampaignId, setSelectedCampaignId, setAutomationForm, startNewCampaign,
     selectedCampaign, emailAccounts, handleAssignAccountToCampaign, handleToggleCampaignStatus,
-    automationForm, handleFormChange, handleSaveAutomation, automationNotice, systemStatus
+    automationForm, handleFormChange, handleSaveAutomation, handleSendNow, automationNotice, systemStatus
   } = mailing;
 
   // The real "from" address this campaign will actually send as — its
@@ -27,6 +27,26 @@ export function CampaignsTab({ mailing }) {
 
   const [viewMode, setViewMode] = useState("list");
   const [searchText, setSearchText] = useState("");
+  const [blastPreviewHtml, setBlastPreviewHtml] = useState(null);
+
+  // Read-only preview convenience — same {{fieldName}} substitution as the
+  // backend's fillMergeFields (renderTemplate.js), duplicated here (not
+  // imported: that module lives server-side) so composing content can be
+  // previewed instantly with sample data, without a save-then-fetch round
+  // trip. The actual send always merges real lead data server-side.
+  function fillSampleMergeFields(text) {
+    const sample = { leadName: "Sample Lead", company: "Sample Company Ltd", email: "sample@example.com", unsubscribeUrl: "#unsubscribe" };
+    return (text ?? "").replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => (key in sample ? sample[key] : match));
+  }
+
+  function handlePreviewBlast() {
+    if (!automationForm.subject?.trim() && !automationForm.bodyHtml?.trim()) {
+      return;
+    }
+    setBlastPreviewHtml(
+      `<div style="font-family:'Segoe UI',Arial,sans-serif;padding:16px;"><p style="font-size:12px;color:#8593ac;margin:0 0 12px;">Subject: ${fillSampleMergeFields(automationForm.subject)}</p>${fillSampleMergeFields(automationForm.bodyHtml)}</div>`
+    );
+  }
 
   useEffect(() => {
     if (selectedCampaignId) {
@@ -60,7 +80,12 @@ export function CampaignsTab({ mailing }) {
       followUpCount: campaign.followUpCount,
       abTest: campaign.abTest,
       autoPause: campaign.autoPause,
-      replyTo: campaign.replyTo ?? ""
+      replyTo: campaign.replyTo ?? "",
+      subject: campaign.subject ?? "",
+      bodyHtml: campaign.bodyHtml ?? "",
+      segmentId: "",
+      scheduledAt: "",
+      delayBetweenMinutes: "0"
     }));
     setViewMode("composer");
   }
@@ -113,9 +138,56 @@ export function CampaignsTab({ mailing }) {
 
               <p className="rounded-[10px] bg-[#f7f9fc] px-4 py-3 text-[12px] leading-5 text-[#6a7790]">
                 A short descriptive name for this campaign's approach (not an email subject line, and not the email
-                body) — shown in campaign lists. Email bodies are edited per reply-type under the Templates tab; a
-                campaign sends whichever template matches how a lead replies, not a single fixed body typed here.
+                body) — shown in campaign lists.
               </p>
+
+              <Field label="Subject">
+                <input
+                  value={automationForm.subject}
+                  onChange={(event) => handleFormChange("subject", event.target.value)}
+                  placeholder="e.g. Q4 renewables mandate — quick intro"
+                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                />
+              </Field>
+
+              <Field label="Email Content">
+                <textarea
+                  rows={9}
+                  value={automationForm.bodyHtml}
+                  onChange={(event) => handleFormChange("bodyHtml", event.target.value)}
+                  placeholder="<p>Hi {{leadName}},</p><p>...</p>"
+                  className="w-full resize-none rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[13px] font-mono leading-5 text-[#435471] outline-none"
+                />
+                <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
+                  Raw HTML. Merge tags: <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{leadName}}"}</code>{" "}
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{company}}"}</code>{" "}
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{email}}"}</code>{" "}
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{unsubscribeUrl}}"}</code>. This is the one-
+                  time campaign send below — reply-triggered follow-ups still come from the Templates tab, unchanged.
+                </p>
+              </Field>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={handlePreviewBlast}
+                  className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#3046b2]"
+                >
+                  Preview
+                </button>
+              </div>
+
+              {blastPreviewHtml ? (
+                <div className="rounded-[14px] border border-[#d6deea] bg-white px-4 py-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#5f6f89]">Preview (sample data)</p>
+                    <button type="button" onClick={() => setBlastPreviewHtml(null)} className="text-[12px] font-semibold text-[#5f6f89]">
+                      Close
+                    </button>
+                  </div>
+                  <iframe title="Campaign email preview" srcDoc={blastPreviewHtml} sandbox="" className="mt-3 h-[320px] w-full rounded-[12px] border border-[#d6deea]" />
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -148,25 +220,41 @@ export function CampaignsTab({ mailing }) {
 
               <Field label="Send To">
                 <select
-                  value={automationForm.audience}
-                  onChange={(event) => handleFormChange("audience", event.target.value)}
+                  value={automationForm.segmentId}
+                  onChange={(event) => handleFormChange("segmentId", event.target.value)}
                   className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none"
                 >
-                  <option>Mailing List / Segment</option>
-                  <option>Renewables founders</option>
-                  <option>Family offices</option>
-                  <option>Manufacturing buyouts</option>
+                  <option value="">All leads in this campaign</option>
+                  {segments.map((segment) => (
+                    <option key={segment.id} value={segment.id}>
+                      {segment.name} ({segment.matchingCount})
+                    </option>
+                  ))}
                 </select>
               </Field>
 
-
               <Field label="Schedule (leave empty to send now)">
-                <div className="flex items-center gap-2">
-                  <input className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none" />
-                  <div className="grid h-[42px] w-[42px] place-items-center rounded-[10px] border border-[#dfe5f1] text-[#6c7690]">
-                    ▣
-                  </div>
-                </div>
+                <input
+                  type="datetime-local"
+                  value={automationForm.scheduledAt}
+                  onChange={(event) => handleFormChange("scheduledAt", event.target.value)}
+                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                />
+              </Field>
+
+              <Field label="Delay Between Emails (minutes)">
+                <input
+                  type="number"
+                  min="0"
+                  value={automationForm.delayBetweenMinutes}
+                  onChange={(event) => handleFormChange("delayBetweenMinutes", event.target.value)}
+                  placeholder="0"
+                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                />
+                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                  Only applies once the campaign is saved — staggers each recipient's send. Needs the sending queue
+                  running; ignored (sends immediately, no stagger) if it isn't.
+                </p>
               </Field>
 
               <Field label="Daily Send Limit">
@@ -220,7 +308,7 @@ export function CampaignsTab({ mailing }) {
                 </div>
               ) : null}
 
-              <div className="border-t border-[#e7edf5] pt-3">
+              <div className="border-t border-[#e7edf5] pt-3 space-y-2.5">
                 <button
                   type="button"
                   onClick={handleSaveAutomation}
@@ -228,6 +316,16 @@ export function CampaignsTab({ mailing }) {
                 >
                   Save
                 </button>
+                {selectedCampaign ? (
+                  <button
+                    type="button"
+                    onClick={handleSendNow}
+                    disabled={!automationForm.subject?.trim() || !automationForm.bodyHtml?.trim()}
+                    className="w-full rounded-[14px] bg-[#1b295f] px-4 py-3 text-[15px] font-semibold text-white shadow-[0_8px_18px_rgba(27,41,95,0.22)] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Send Now
+                  </button>
+                ) : null}
               </div>
 
               <p className="text-[11px] leading-4 text-[#8593ac]">{automationNotice}</p>

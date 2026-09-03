@@ -24,6 +24,9 @@ export const emailCampaignsApi = {
   // Pass emailAccountId: null to clear the assignment and fall back to the
   // single global env-configured provider.
   assignEmailAccount: (id, emailAccountId) => request(`/${id}/email-account`, { method: "POST", body: { emailAccountId } }),
+  // Sends this campaign's own composed subject/bodyHtml to its own leads,
+  // optionally narrowed by a Segment. body: { segmentId?, scheduledAt?, delayBetweenMinutes? }
+  sendNow: (id, body) => request(`/${id}/send-now`, { method: "POST", body }),
   // A campaign's real follow-up sequence — see routes/emailLeads.js's
   // scheduleCadenceSteps, which is what actually reads these when a lead
   // is added. Add-to-end/edit/delete only; no reordering yet.
