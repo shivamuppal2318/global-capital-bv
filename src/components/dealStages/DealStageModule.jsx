@@ -33,6 +33,12 @@ export function DealStageModule({ stage }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
   const [notice, setNotice] = useState(null);
+  // Uploading a new document directly from this form — a real upload, not
+  // just picking one already sitting in the Data Room. Reuses the same
+  // documentsApi.upload the Data Room screen itself uses, so the file
+  // lands there too (leadId-scoped), not a second, separate store.
+  const [documentUploading, setDocumentUploading] = useState(false);
+  const [documentUploadError, setDocumentUploadError] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -85,7 +91,8 @@ export function DealStageModule({ stage }) {
       .catch(() => {});
   }, [stage]);
 
-  const startNew = () =>
+  const startNew = () => {
+    setDocumentUploadError(null);
     setEditing({
       leadId: "",
       status: "IN_PROGRESS",
@@ -101,8 +108,10 @@ export function DealStageModule({ stage }) {
       notes: "",
       documentId: ""
     });
+  };
 
-  const startEdit = (r) =>
+  const startEdit = (r) => {
+    setDocumentUploadError(null);
     setEditing({
       id: r.id,
       leadId: r.lead?.id ?? "",
@@ -119,6 +128,25 @@ export function DealStageModule({ stage }) {
       notes: r.notes ?? "",
       documentId: r.document?.id ?? ""
     });
+  };
+
+  // Uploads straight from this form via the real Data Room upload route —
+  // the new document lands in the Data Room too (leadId-scoped), and is
+  // immediately selected here, same as picking an existing one.
+  const handleUploadDocument = async (file) => {
+    if (!file) return;
+    setDocumentUploading(true);
+    setDocumentUploadError(null);
+    try {
+      const doc = await documentsApi.upload(file, { leadId: editing.leadId || undefined, category: config.label });
+      setDocuments((current) => [doc, ...current]);
+      setEditing((current) => ({ ...current, documentId: doc.id }));
+    } catch (err) {
+      setDocumentUploadError(err.message);
+    } finally {
+      setDocumentUploading(false);
+    }
+  };
 
   const handleSave = async (e) => {
     e?.preventDefault();
@@ -354,7 +382,22 @@ export function DealStageModule({ stage }) {
                       <option key={d.id} value={d.id}>{d.originalName}</option>
                     ))}
                   </select>
-                  <p className="mt-1 text-[12px] text-[#8592ab]">Pulled from the Data Room — upload it there first.</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx"
+                      disabled={documentUploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        handleUploadDocument(file);
+                      }}
+                      className="text-[13px] text-[#5f6f89] file:mr-3 file:rounded-[8px] file:border-0 file:bg-[#eef1ff] file:px-3 file:py-1.5 file:text-[13px] file:font-semibold file:text-[#3046b2]"
+                    />
+                    {documentUploading ? <span className="text-[12px] text-[#8592ab]">Uploading…</span> : null}
+                  </div>
+                  {documentUploadError ? <p className="mt-1 text-[12px] font-medium text-[#e0483f]">{documentUploadError}</p> : null}
+                  <p className="mt-1 text-[12px] text-[#8592ab]">Upload a new file here, or pick one already in the Data Room above.</p>
                 </div>
               ) : null}
 
