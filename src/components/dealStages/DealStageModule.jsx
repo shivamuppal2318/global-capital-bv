@@ -20,6 +20,12 @@ const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : "—");
 // labels each one shows.
 export function DealStageModule({ stage }) {
   const config = STAGE_CONFIG[stage];
+  // Most stages use the full 5-value status vocabulary; a stage's own
+  // config can narrow it (see FIELD_VISIT in stageConfig.js) and relabel
+  // whichever values it kept, without touching the shared enum or the
+  // other stages that still use it in full.
+  const stageStatuses = config.statuses ?? STATUSES;
+  const stageStatusLabel = { ...STATUS_LABEL, ...config.statusLabels };
 
   const [records, setRecords] = useState([]);
   const [leads, setLeads] = useState([]);
@@ -246,12 +252,21 @@ export function DealStageModule({ stage }) {
         <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">{config.label}</h1>
         <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">{config.blurb}</p>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-4">
-          <StatCard card={{ label: "Records", value: String(stageSummary?.total ?? 0), note: "At this stage", noteTone: "blue" }} />
-          <StatCard card={{ label: "In progress", value: String(stageSummary?.IN_PROGRESS ?? 0), note: "Open now", noteTone: "amber" }} />
-          <StatCard card={{ label: "Completed", value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
-          <StatCard card={{ label: "Declined", value: String(stageSummary?.DECLINED ?? 0), note: "Not proceeding", noteTone: "red" }} />
-        </div>
+        {stage === "FIELD_VISIT" ? (
+          // Only two real states for a visit — see stageConfig.js's note
+          // on FIELD_VISIT.statuses.
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <StatCard card={{ label: "Planned", value: String(stageSummary?.NOT_STARTED ?? 0), note: "Not yet visited", noteTone: "amber" }} />
+            <StatCard card={{ label: "Completed", value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-4 sm:grid-cols-4">
+            <StatCard card={{ label: "Records", value: String(stageSummary?.total ?? 0), note: "At this stage", noteTone: "blue" }} />
+            <StatCard card={{ label: "In progress", value: String(stageSummary?.IN_PROGRESS ?? 0), note: "Open now", noteTone: "amber" }} />
+            <StatCard card={{ label: "Completed", value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
+            <StatCard card={{ label: "Declined", value: String(stageSummary?.DECLINED ?? 0), note: "Not proceeding", noteTone: "red" }} />
+          </div>
+        )}
 
         {fieldVisitKpis ? (
           <div className="mt-4 grid gap-4 sm:grid-cols-3 xl:grid-cols-5">
@@ -330,8 +345,8 @@ export function DealStageModule({ stage }) {
               <div>
                 <label className={labelClass}>Status</label>
                 <select className={inputClass} value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}>
-                  {STATUSES.map((s) => (
-                    <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                  {stageStatuses.map((s) => (
+                    <option key={s} value={s}>{stageStatusLabel[s]}</option>
                   ))}
                 </select>
               </div>
@@ -424,7 +439,7 @@ export function DealStageModule({ stage }) {
         </div>
 
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {["All", ...STATUSES].map((s) => (
+          {["All", ...stageStatuses].map((s) => (
             <button
               key={s}
               type="button"
@@ -433,7 +448,7 @@ export function DealStageModule({ stage }) {
                 statusFilter === s ? "bg-[#3046b2] text-white" : "bg-[#eef1f7] text-[#4f6181] hover:bg-[#e2e8f2]"
               }`}
             >
-              {s === "All" ? "All" : STATUS_LABEL[s]}
+              {s === "All" ? "All" : stageStatusLabel[s]}
             </button>
           ))}
         </div>
@@ -463,7 +478,7 @@ export function DealStageModule({ stage }) {
                       <p className="text-[14px] font-medium text-[#102246]">
                         {r.lead ? `${r.lead.name} — ${r.lead.company}` : "Unlinked lead"}
                       </p>
-                      <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                      <Badge tone={STATUS_TONE[r.status]}>{stageStatusLabel[r.status]}</Badge>
                       {r.document ? <Badge tone="blue">{r.document.originalName}</Badge> : null}
                     </div>
                     <p className="mt-0.5 text-[12px] text-[#8592ab]">
