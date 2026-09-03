@@ -8,7 +8,7 @@ export const MODULES = [
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence" },
   { id: "leads", label: "Outreach / DOE", group: "Intelligence" },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },
-  { id: "cold-bulk-mailing", label: "MailX", group: "CRM & Outreach" },
+  { id: "cold-bulk-mailing", label: "Email Automation", group: "CRM & Outreach" },
   { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach" },
   { id: "nda", label: "NDA", group: "Relationships" },
   { id: "meetings", label: "Zoom Call", group: "Relationships" },
