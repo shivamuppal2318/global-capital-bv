@@ -180,10 +180,26 @@ export async function computeDealBoard() {
 
   leads.forEach((lead, leadIdx) => {
     const pipeline = pipelines[leadIdx];
+    // The deal's real current column is its earliest unresolved gate
+    // (in_progress or blocked) — e.g. an NDA that's been sent but not
+    // signed yet — not just whichever stage was touched most recently.
+    // Real deals often have parallel activity (a Zoom call can happen, or
+    // Data Room docs get requested, before the NDA is actually countersigned),
+    // and "furthest touched" was placing the card past a stage that hadn't
+    // actually been resolved — an unsigned NDA would vanish from the NDA
+    // column the moment ANY later stage had activity, even though the deal
+    // is really still stuck at NDA. Only when nothing is currently
+    // unresolved (every reached stage is "done") does the card fall back
+    // to the furthest one reached, same as before.
     let currentIdx = 0;
+    let firstUnresolvedIdx = null;
     pipeline.forEach((stageSummary, idx) => {
       if (stageSummary.status !== "not_started") currentIdx = idx;
+      if (firstUnresolvedIdx === null && (stageSummary.status === "in_progress" || stageSummary.status === "blocked")) {
+        firstUnresolvedIdx = idx;
+      }
     });
+    if (firstUnresolvedIdx !== null) currentIdx = firstUnresolvedIdx;
 
     board[currentIdx].deals.push({
       id: lead.id,
