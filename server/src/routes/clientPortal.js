@@ -529,12 +529,14 @@ function dataRoomUploadFormHtml({ error, uploadedCategories }) {
   const rows = REQUIRED_DOCUMENTS.map((doc) => {
     const uploaded = uploadedCategories.get(doc.label);
     const received = Boolean(uploaded);
+    const verified = Boolean(uploaded?.verified);
     return `
       <div class="gc-doc-row" style="border:1px solid ${received ? "#c7ead8" : "#e7edf5"};background:${received ? "#f3fbf6" : "#fbfcfe"};">
         <div class="gc-doc-row-top">
           <span class="gc-doc-row-check" style="display:grid;place-items:center;width:22px;height:22px;border-radius:999px;font-size:12px;font-weight:700;flex-shrink:0;background:${received ? "#2b9b60" : "#d6deea"};color:${received ? "#ffffff" : "#748096"};">${received ? "✓" : ""}</span>
           <div style="min-width:0;">
             <span class="gc-doc-row-label">${escapeHtml(doc.label)}</span>
+            ${verified ? `<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#dff5e7;color:#1f7a4a;">Verified</span>` : ""}
             <p class="gc-doc-row-desc">${escapeHtml(doc.description)}</p>
           </div>
         </div>
@@ -596,7 +598,7 @@ async function loadPortalData(leadId) {
       where: { leadId },
       orderBy: { createdAt: "desc" },
       distinct: ["category"],
-      select: { id: true, category: true, originalName: true, mimeType: true }
+      select: { id: true, category: true, originalName: true, mimeType: true, verified: true }
     })
   ]);
 
