@@ -8,13 +8,15 @@ import {
   bucketDueWindow,
   matchesFilters
 } from "../lib/universalFilters.js";
+import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const universalFiltersRouter = Router();
 
 // Distinct values for every select-driven filter, so the frontend never
 // hardcodes an option list that drifts from what leads actually have.
-universalFiltersRouter.get("/facets", asyncHandler(async (_req, res) => {
+universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
   const leads = await prisma.lead.findMany({
+    where: { ...leadOwnerWhereClause(req) },
     select: { doe: true, channelPartner: true, industry: true, territory: true, teamLeader: true, manager: true, leadSource: true }
   });
 
@@ -34,10 +36,14 @@ universalFiltersRouter.get("/facets", asyncHandler(async (_req, res) => {
 // Builds the per-lead rows the filter matches against — the two derived
 // dimensions (lifecycle phase, next action due) need the same relationship
 // data the Executive Dashboard's funnel already fetches, so this pulls the
-// same tables rather than trusting a stale stored value.
-async function buildRows() {
+// same tables rather than trusting a stale stored value. Only `leads`
+// itself is scoped to a Channel Partner's own referred leads -- the other
+// five queries stay company-wide and are only ever used internally to
+// build per-leadId lookup Maps/Sets, never returned directly, so the final
+// leads.map(...) below only ever iterates the already-scoped lead set.
+async function buildRows(req) {
   const [leads, ndaRecords, meetings, ioiRecords, visitPlans, stageRows] = await Promise.all([
-    prisma.lead.findMany(),
+    prisma.lead.findMany({ where: { ...leadOwnerWhereClause(req) } }),
     prisma.ndaRecord.findMany({ select: { leadId: true, expiresAt: true } }),
     prisma.meeting.findMany({ where: { leadId: { not: null } }, select: { leadId: true, nextActionDueAt: true } }),
     prisma.ioiRecord.findMany({ select: { leadId: true } }),
@@ -88,7 +94,7 @@ async function buildRows() {
 }
 
 universalFiltersRouter.get("/", asyncHandler(async (req, res) => {
-  const rows = await buildRows();
+  const rows = await buildRows(req);
   const matched = rows.filter((row) => matchesFilters(row, req.query));
 
   res.json({

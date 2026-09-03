@@ -1,21 +1,38 @@
 import { useEffect, useState } from "react";
 import { ShieldIcon } from "../Icons";
 import { Badge, Card, SectionTitle } from "../ui";
-import { ndaApi, ioiApi, visitPlansApi } from "../../lib/relationshipsApi";
+import { ndaApi, ioiApi, visitPlansApi, callsApi } from "../../lib/relationshipsApi";
+import { dealStagesApi } from "../../lib/dealStagesApi";
 
-// A Channel Partner's read-only view of NDA / IOI / Visit Planning for
-// their own referred leads -- one component with three simple tabs rather
-// than three separate screens, since all three are structurally the same
-// ("dated records against my leads") and none need any edit affordance
-// (see the matching blockChannelPartner guards in ndaRecords.js/
-// ioiRecords.js/visitPlans.js -- this tier is read-only by design). The
-// backend already scopes every list call to this partner's own referred
-// leads (relatedLeadOwnerWhereClause) -- no client-side filtering here.
+// A Channel Partner's read-only view of NDA / IOI / Visit Planning / Zoom
+// Call / Field Visit / Term Sheet for their own referred leads -- one
+// component with simple tabs rather than six separate screens, since all
+// six are structurally the same ("dated records against my leads") and
+// none need any edit affordance (see the matching blockChannelPartner
+// guards in ndaRecords.js/ioiRecords.js/visitPlans.js/meetings.js/
+// dealStages.js -- this tier is read-only by design). The backend already
+// scopes every list call to this partner's own referred leads
+// (relatedLeadOwnerWhereClause) -- no client-side filtering here. Field
+// Visit and Term Sheet share DealStageRecord (they haven't outgrown that
+// shared table the way NDA/IOI/Visit Planning did), fetched via
+// dealStagesApi with a stage filter rather than a dedicated API module.
 const TABS = [
   { id: "nda", label: "NDA" },
+  { id: "meetings", label: "Zoom Call" },
   { id: "ioi", label: "IOI" },
-  { id: "visit-planning", label: "Visit Planning" }
+  { id: "visit-planning", label: "Visit Planning" },
+  { id: "field-visit", label: "Field Visit" },
+  { id: "term-sheet", label: "Term Sheet" }
 ];
+
+const API_BY_TAB = {
+  nda: () => ndaApi.list(),
+  ioi: () => ioiApi.list(),
+  "visit-planning": () => visitPlansApi.list(),
+  meetings: () => callsApi.list(),
+  "field-visit": () => dealStagesApi.list({ stage: "FIELD_VISIT" }),
+  "term-sheet": () => dealStagesApi.list({ stage: "TERM_SHEET" })
+};
 
 function formatDate(d) {
   return d ? new Date(d).toLocaleDateString() : "—";
@@ -31,9 +48,7 @@ export function PartnerDealRecordsView({ permissions = [] }) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    const api = tab === "nda" ? ndaApi : tab === "ioi" ? ioiApi : visitPlansApi;
-    api
-      .list()
+    API_BY_TAB[tab]()
       .then(setRecords)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -89,11 +104,25 @@ export function PartnerDealRecordsView({ permissions = [] }) {
                     <span>Signed: {formatDate(r.signedAt)}</span>
                     {r.value ? <span>Value: {r.valueCurrency ?? ""} {r.value.toLocaleString()}</span> : null}
                   </>
-                ) : (
+                ) : tab === "visit-planning" ? (
                   <>
                     <span>Planned: {formatDate(r.plannedFor)}</span>
                     <span>Completed: {formatDate(r.completedAt)}</span>
                     {r.location ? <span>Location: {r.location}</span> : null}
+                  </>
+                ) : tab === "meetings" ? (
+                  <>
+                    <span>When: {r.startTime ? new Date(r.startTime).toLocaleString() : "—"}</span>
+                    {r.durationMinutes ? <span>Duration: {r.durationMinutes} min</span> : null}
+                    {r.topic ? <span>Topic: {r.topic}</span> : null}
+                  </>
+                ) : (
+                  // field-visit / term-sheet — both DealStageRecord, same shape.
+                  <>
+                    <span>Scheduled: {formatDate(r.scheduledAt)}</span>
+                    <span>Completed: {formatDate(r.completedAt)}</span>
+                    {r.location ? <span>Location: {r.location}</span> : null}
+                    {r.amount ? <span>Amount: {r.amount}</span> : null}
                   </>
                 )}
               </div>

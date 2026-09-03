@@ -13,13 +13,16 @@
 // withReferredLeads already uses for commission calc — Data Room also
 // correctly excludes the general company-wide library, since a document
 // with no leadId can't match a nested relation filter). Everything else
-// stays out: Universal Filters, Executive Dashboard, WhatsApp Business and
-// Channel Partner all query every lead/client/partner in the company with
-// no per-partner filter today, so granting them would leak the whole
-// company's data to one partner until they get the same real scoping
-// treatment. NDA/IOI/Visit Planning/Ageing Report/Outreach-DOE now have it
-// (same Lead.channelPartner / EmailCampaign.ownerChannelPartnerId
-// mechanisms as CRM Workspace/Data Room/Email Automation already use).
+// stays out: Executive Dashboard, WhatsApp Business and the Channel
+// Partner screen itself — not just unfinished, each has a real structural
+// reason it doesn't fit this recipe (see the plan doc): Executive
+// Dashboard is a pure company-wide aggregate with no coherent "my slice"
+// view; WhatsApp's Contact model has zero relation to Lead or
+// ChannelPartner to filter by; the Channel Partner screen is a staff tool
+// for administering every partner, not something a partner should see
+// about themselves. Universal Filters/Zoom Call/Field Visit/Term Sheet now
+// have real scoping (same Lead.channelPartner match as everything else
+// here) alongside NDA/IOI/Visit Planning/Ageing Report/Outreach-DOE.
 // Same 3 groups, in the same order, as lib/permissions.js's employee
 // MODULES list (Intelligence / CRM & Outreach / Relationships) —
 // PermissionsEditor.jsx renders columns in first-seen order, so matching
@@ -28,16 +31,20 @@
 // "Email Automation" group either (MailX sits under CRM & Outreach there
 // too), so Segments/Templates/AI Agent go under CRM & Outreach here too.
 export const CHANNEL_PARTNER_OPTIONAL_MODULES = [
+  { id: "universal-filters", label: "Universal Filters", group: "Intelligence" },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence" },
   { id: "leads", label: "Outreach / DOE", group: "Intelligence" },
   { id: "segments", label: "Segments", group: "CRM & Outreach" },
   { id: "templates", label: "Templates", group: "CRM & Outreach" },
   { id: "ai-agent", label: "AI Agent", group: "CRM & Outreach" },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },
-  { id: "data-room", label: "Data Room", group: "Relationships" },
   { id: "nda", label: "NDA", group: "Relationships" },
+  { id: "meetings", label: "Zoom Call", group: "Relationships" },
+  { id: "data-room", label: "Data Room", group: "Relationships" },
   { id: "ioi", label: "IOI", group: "Relationships" },
   { id: "visit-planning", label: "Visit Planning", group: "Relationships" },
+  { id: "field-visit", label: "Field Visit", group: "Relationships" },
+  { id: "term-sheet", label: "Term Sheet", group: "Relationships" },
   { id: "ageing-report", label: "Ageing Report", group: "Relationships" }
 ];
 

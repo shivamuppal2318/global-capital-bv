@@ -5,8 +5,20 @@ import { callMetrics } from "../lib/relationshipMetrics.js";
 import { getAnthropicClient, getAnthropicModel } from "../lib/anthropic.js";
 import { sendSystemEmail, zoomMeetingInviteEmail } from "../lib/systemMailer.js";
 import { processMeetingRecording } from "../lib/zoomTranscriptProcessor.js";
+import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 const router = Router();
+
+// A Channel Partner's Zoom Call access is read-only, scoped to meetings on
+// their own referred leads only (see GET / below) -- company-wide metrics
+// and every write/action route stay refused outright. Same pattern as
+// documents.js's blockChannelPartner.
+function blockChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Your account has read-only access to meetings on your own referred leads." });
+  }
+  next();
+}
 
 // Which ordinal call this is for its lead — "Zoom Call 1" / "Zoom Call 2"
 // / etc., purely by chronological order of every meeting tied to that
@@ -33,6 +45,7 @@ function callNumbersByLead(meetings) {
 router.get("/", async (req, res, next) => {
   try {
     const meetings = await prisma.meeting.findMany({
+      where: { ...relatedLeadOwnerWhereClause(req) },
       include: { lead: true },
       orderBy: { startTime: "desc" }
     });
@@ -70,7 +83,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.post("/", async (req, res, next) => {
+router.post("/", blockChannelPartner, async (req, res, next) => {
   try {
     const { leadId, topic, startTime, durationMinutes } = req.body;
     if (!topic || !startTime) return res.status(400).json({ error: "topic and startTime are required" });
@@ -158,7 +171,7 @@ router.post("/", async (req, res, next) => {
 
 const TEXT_FIELDS = ["clientAttendees", "ourAttendees", "notes", "nextAction", "recordingLink", "status"];
 
-router.patch("/:id", async (req, res, next) => {
+router.patch("/:id", blockChannelPartner, async (req, res, next) => {
   try {
     const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
     if (!meeting) return res.status(404).json({ error: "Meeting not found" });
@@ -191,7 +204,7 @@ router.patch("/:id", async (req, res, next) => {
   }
 });
 
-router.get("/metrics", async (_req, res, next) => {
+router.get("/metrics", blockChannelPartner, async (_req, res, next) => {
   try {
     res.json(callMetrics(await prisma.meeting.findMany()));
   } catch (err) {
@@ -202,7 +215,7 @@ router.get("/metrics", async (_req, res, next) => {
 // Summarises the call notes with Claude. Stored on the meeting so it isn't
 // regenerated (and re-billed) every time the page loads — regenerating is
 // an explicit action.
-router.post("/:id/summarise", async (req, res, next) => {
+router.post("/:id/summarise", blockChannelPartner, async (req, res, next) => {
   try {
     const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id }, include: { lead: true } });
     if (!meeting) return res.status(404).json({ error: "Meeting not found" });
@@ -261,7 +274,7 @@ ${meeting.notes}`
 // (Zoom's own processing lag after a call ends, a missed delivery, or
 // local dev where Zoom has no way to reach this server at all). Same
 // pipeline either way, see lib/zoomTranscriptProcessor.js.
-router.post("/:id/fetch-transcript", async (req, res, next) => {
+router.post("/:id/fetch-transcript", blockChannelPartner, async (req, res, next) => {
   try {
     const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id }, include: { lead: true } });
     if (!meeting) return res.status(404).json({ error: "Meeting not found" });

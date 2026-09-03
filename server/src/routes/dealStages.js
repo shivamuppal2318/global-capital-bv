@@ -3,8 +3,25 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { DEAL_STAGES, DEAL_STAGE_IDS, DEAL_STAGE_STATUSES } from "../lib/dealStages.js";
+import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { hasChannelPartnerModule } from "../lib/channelPartnerPermissions.js";
 
 export const dealStagesRouter = Router();
+
+// A Channel Partner's Deal Stages access is read-only, scoped to their own
+// referred leads, and limited to the two stages that don't already have a
+// dedicated, separately-scoped router (NDA/IOI/Visit Planning outgrew this
+// shared table already -- see routes/ndaRecords.js etc.). This one route
+// serves all seven stages by query param, so without this check a partner
+// granted only "field-visit" could pull ?stage=NDA rows too.
+const CHANNEL_PARTNER_DEAL_STAGES = { FIELD_VISIT: "field-visit", TERM_SHEET: "term-sheet" };
+
+function blockChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Your account has read-only access to deal stages on your own referred leads." });
+  }
+  next();
+}
 
 function publicRecord(r) {
   return {
@@ -39,7 +56,7 @@ dealStagesRouter.get("/catalogue", (_req, res) => res.json({ stages: DEAL_STAGES
 
 // Progress across every stage for every lead — powers the summary strip at
 // the top of each stage screen.
-dealStagesRouter.get("/summary", asyncHandler(async (_req, res) => {
+dealStagesRouter.get("/summary", blockChannelPartner, asyncHandler(async (_req, res) => {
   const [grouped, leadCount] = await Promise.all([
     prisma.dealStageRecord.groupBy({ by: ["stage", "status"], _count: { _all: true } }),
     prisma.lead.count()
@@ -62,8 +79,16 @@ dealStagesRouter.get("/", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: `Unknown stage "${stage}".` });
   }
 
+  if (req.channelPartner) {
+    const requiredModule = CHANNEL_PARTNER_DEAL_STAGES[String(stage)];
+    if (!requiredModule || !hasChannelPartnerModule(req.channelPartner, requiredModule)) {
+      return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+    }
+  }
+
   const records = await prisma.dealStageRecord.findMany({
     where: {
+      ...relatedLeadOwnerWhereClause(req),
       ...(stage ? { stage: String(stage) } : {}),
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(q
@@ -109,7 +134,7 @@ const toText = (v) => (v === undefined ? undefined : v && String(v).trim() ? Str
 // Upsert rather than create: a stage is a property of a lead, and the
 // unique [leadId, stage] constraint means "record the NDA for this lead"
 // should update the existing row rather than fail on a second attempt.
-dealStagesRouter.post("/", asyncHandler(async (req, res) => {
+dealStagesRouter.post("/", blockChannelPartner, asyncHandler(async (req, res) => {
   const parsed = upsertSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -146,7 +171,7 @@ dealStagesRouter.post("/", asyncHandler(async (req, res) => {
   res.status(201).json(publicRecord(record));
 }));
 
-dealStagesRouter.patch("/:id", asyncHandler(async (req, res) => {
+dealStagesRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const parsed = upsertSchema.partial({ leadId: true, stage: true }).safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -168,7 +193,7 @@ dealStagesRouter.patch("/:id", asyncHandler(async (req, res) => {
   res.json(publicRecord(record));
 }));
 
-dealStagesRouter.delete("/:id", asyncHandler(async (req, res) => {
+dealStagesRouter.delete("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const deleted = await prisma.dealStageRecord.delete({ where: { id: req.params.id } }).catch(() => null);
   if (!deleted) return res.status(404).json({ error: "Stage record not found" });
   res.status(204).end();
