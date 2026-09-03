@@ -137,6 +137,10 @@ function pageStyles() {
     .gc-doc-scroll p { margin: 0 0 12px; font-size: 13px; text-align: justify; }
     .gc-doc-scroll ul { margin: 0 0 12px; padding-left: 20px; }
     .gc-doc-scroll li { font-size: 13px; margin-bottom: 5px; }
+    .gc-doc-header { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #21439b; padding-bottom: 14px; margin-bottom: 20px; }
+    .gc-doc-header img { height: 32px; width: auto; flex-shrink: 0; }
+    .gc-doc-header-brand { display: block; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-weight: 700; font-size: 13px; color: #21439b; }
+    .gc-doc-header-tag { display: block; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 10px; color: #5c6b87; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 1px; }
     .gc-doc-signature { margin-top: 20px; padding-top: 16px; border-top: 1px dashed #d6deea; }
     .gc-doc-input { font: inherit; font-size: 13px; color: #102246; border: none; border-bottom: 1.5px solid #3046b2; background: #eef1ff; padding: 1px 5px; outline: none; min-width: 120px; border-radius: 3px 3px 0 0; }
     .gc-doc-input:focus { background: #dfe5ff; }

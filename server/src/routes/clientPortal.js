@@ -18,7 +18,7 @@ import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
 import fs from "node:fs/promises";
 import { loginRateLimit, forgotPasswordRateLimit } from "../middleware/authRateLimit.js";
 import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
-import { ndaFillFormFragment, ioiFillFormFragment } from "../lib/signedDocumentRenderer.js";
+import { ndaFillFormFragment, ioiFillFormFragment, renderSignedNda, renderSignedIoi, slugify } from "../lib/signedDocumentRenderer.js";
 
 // Same idiom as routes/leads.js and routes/ndaRecords.js — the client
 // portal is server-rendered by this API, not the frontend SPA, so its own
@@ -406,7 +406,7 @@ function ndaSignFormHtml({ error, doeName, alreadySigned, companyName, filled, d
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
       ${
         alreadySigned
-          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this NDA. You can fill in the form again to update the details, or upload a copy for your own records.</p>`
+          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this NDA. <a href="/api/client-portal/nda/signed-document" style="color:#3046b2;font-weight:600;text-decoration:none;">Download your signed copy</a>, fill in the form again to update the details, or upload a copy for your own records.</p>`
           : ""
       }
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
@@ -472,7 +472,7 @@ function ioiRespondFormHtml({ error, doeName, alreadySigned, companyName, filled
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
       ${
         alreadySigned
-          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this IOI. You can fill in the form again to update the details, or upload a copy for your own records.</p>`
+          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this IOI. <a href="/api/client-portal/ioi/signed-document" style="color:#3046b2;font-weight:600;text-decoration:none;">Download your signed copy</a>, fill in the form again to update the details, or upload a copy for your own records.</p>`
           : ""
       }
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
@@ -972,6 +972,37 @@ clientPortalRouter.get(
   }
 );
 
+// A client's own copy of what they just signed — same "was a real file
+// uploaded, or does this need to be rendered from the filled-in template"
+// branch as the staff route (routes/ndaRecords.js's :id/signed-document),
+// just scoped to req.clientUser.leadId instead of a staff-supplied :id.
+clientPortalRouter.get(
+  "/nda/signed-document",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const leadId = req.clientUser.leadId;
+    const nda = await prisma.ndaRecord.findUnique({ where: { leadId }, include: { document: true } });
+    if (!nda || nda.status !== "SIGNED") {
+      return res.redirect(`/api/client-portal/dashboard?ndaError=${encodeURIComponent("This NDA hasn't been signed yet.")}`);
+    }
+
+    if (nda.document && nda.document.leadId) {
+      const filePath = path.resolve(UPLOAD_DIR, nda.document.storedName);
+      if (!(await fs.stat(filePath).catch(() => null))) {
+        return res.status(410).send("The stored file is missing on disk.");
+      }
+      res.setHeader("Content-Type", nda.document.mimeType);
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(nda.document.originalName)}"`);
+      return res.sendFile(filePath);
+    }
+
+    const html = await renderSignedNda({ ...nda, lead: req.clientUser.lead });
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="Signed-NDA-${slugify(nda.counterpartyLegalName || req.clientUser.lead.company)}.html"`);
+    res.send(html);
+  })
+);
+
 // --- NDA upload (client-side alternative to typing/clicking accept) ------
 
 // multer's own middleware form doesn't let us redirect-with-a-friendly-
@@ -1112,6 +1143,34 @@ clientPortalRouter.get(
   (_req, res) => {
     res.download(IOI_TEMPLATE_PATH, "Global-Capital-BV-IOI-Template.docx");
   }
+);
+
+// Same reasoning as /nda/signed-document above.
+clientPortalRouter.get(
+  "/ioi/signed-document",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const leadId = req.clientUser.leadId;
+    const ioi = await prisma.ioiRecord.findUnique({ where: { leadId }, include: { document: true } });
+    if (!ioi || ioi.status !== "SIGNED") {
+      return res.redirect(`/api/client-portal/dashboard?ioiError=${encodeURIComponent("This IOI hasn't been signed yet.")}`);
+    }
+
+    if (ioi.document && ioi.document.leadId) {
+      const filePath = path.resolve(UPLOAD_DIR, ioi.document.storedName);
+      if (!(await fs.stat(filePath).catch(() => null))) {
+        return res.status(410).send("The stored file is missing on disk.");
+      }
+      res.setHeader("Content-Type", ioi.document.mimeType);
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(ioi.document.originalName)}"`);
+      return res.sendFile(filePath);
+    }
+
+    const html = await renderSignedIoi({ ...ioi, lead: req.clientUser.lead });
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="Signed-IOI-${slugify(ioi.counterparty || req.clientUser.lead.company)}.html"`);
+    res.send(html);
+  })
 );
 
 // --- IOI upload (client-side alternative to filling in the form) ---------

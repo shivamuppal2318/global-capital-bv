@@ -16,6 +16,20 @@ import { escapeHtml } from "./clientPortalPage.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = path.join(__dirname, "..", "..", "assets");
 
+// The real Global Capital BV logo mark, extracted from the source NDA PDF
+// and cropped/quantized down to ~8KB. Cached as a data URI (read once,
+// reused for every render) so both the downloadable signed document and
+// the client-portal's live fill-in form -- and the .html file itself once
+// downloaded, with no further server round-trip -- show the actual logo
+// instead of a plain text wordmark.
+let logoDataUriPromise;
+function logoDataUri() {
+  if (!logoDataUriPromise) {
+    logoDataUriPromise = fs.readFile(path.join(ASSETS_DIR, "global-capital-logo.png")).then((buf) => `data:image/png;base64,${buf.toString("base64")}`);
+  }
+  return logoDataUriPromise;
+}
+
 export function slugify(text) {
   return (
     String(text ?? "")
@@ -61,7 +75,8 @@ function renderBody(rawText) {
   return { mainHtml: toParagraphHtml(mainPart, substitute), signatureHtml: toParagraphHtml(signaturePart, substitute) };
 }
 
-function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
+async function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
+  const logo = await logoDataUri();
   return `<!doctype html>
 <html>
 <head>
@@ -74,7 +89,9 @@ function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
   p { margin: 0 0 14px; font-size: 13.5px; text-align: justify; }
   ul { margin: 0 0 14px; padding-left: 22px; }
   li { font-size: 13.5px; margin-bottom: 6px; }
-  .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #21439b; padding-bottom: 12px; margin-bottom: 28px; }
+  .header { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #21439b; padding-bottom: 14px; margin-bottom: 28px; }
+  .header-logo { height: 42px; width: auto; flex-shrink: 0; }
+  .header-text { display: flex; flex-direction: column; }
   .brand { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-weight: 700; font-size: 15px; color: #21439b; }
   .tag { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #5c6b87; text-transform: uppercase; letter-spacing: 0.08em; }
   .signature { margin-top: 32px; padding-top: 20px; border-top: 1px solid #d6deea; }
@@ -84,8 +101,11 @@ function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
 </head>
 <body>
   <div class="header">
-    <span class="brand">GLOBAL CAPITAL BV</span>
-    <span class="tag">Building Financial Dreams Together</span>
+    <img class="header-logo" src="${logo}" alt="Global Capital BV" />
+    <div class="header-text">
+      <span class="brand">GLOBAL CAPITAL BV</span>
+      <span class="tag">Building Financial Dreams Together</span>
+    </div>
   </div>
   ${mainHtml}
   <div class="signature">${signatureHtml}</div>
@@ -187,10 +207,18 @@ function renderInteractiveBody(rawText, fieldSpecs) {
   return { mainHtml, signatureHtml, script };
 }
 
-function fillFormShell({ mainHtml, signatureHtml, script }) {
+async function fillFormShell({ mainHtml, signatureHtml, script }) {
+  const logo = await logoDataUri();
   return `
     <div class="gc-doc-frame">
       <div class="gc-doc-scroll">
+        <div class="gc-doc-header">
+          <img src="${logo}" alt="Global Capital BV" />
+          <div>
+            <span class="gc-doc-header-brand">GLOBAL CAPITAL BV</span>
+            <span class="gc-doc-header-tag">Building Financial Dreams Together</span>
+          </div>
+        </div>
         ${mainHtml}
         <div class="gc-doc-signature">${signatureHtml}</div>
       </div>
