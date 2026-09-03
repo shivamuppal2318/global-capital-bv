@@ -28,6 +28,11 @@ const STATUS_LABEL = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified
 
 const TEMPERATURE_OPTIONS = ["HOT", "WARM", "COLD"];
 
+// ZoomInfo's own controlled vocabulary for its contacts/search
+// `managementLevel` filter — confirmed live against the real API (any
+// other value 400s and the error response itself names this exact set).
+const MANAGEMENT_LEVEL_OPTIONS = ["Board Member", "C Level Exec", "VP Level Exec", "Director", "Manager", "Non Manager"];
+
 // Per-lead "Deal Journey" tracker styling — deliberately distinct from the
 // pipeline-by-stage bar chart above and from Executive Dashboard's
 // company-wide Funnel Health chart: this is one lead's real stage-by-stage
@@ -536,6 +541,23 @@ export function CrmWorkspaceModule() {
   // count with the rep first, since it's real API credits spent at once.
   const [bulkEnriching, setBulkEnriching] = useState(false);
   const [bulkEnrichResult, setBulkEnrichResult] = useState(null);
+  // "Find Companies (ZoomInfo)" — real prospecting search (not enrich: no
+  // existing lead needed), see server/src/lib/zoominfoClient.js's
+  // searchCompanies/searchContacts. Search itself is explicit (a "Search"
+  // click, real API credits) same as Bulk Enrich's confirm-first
+  // convention; results are browse-only until a rep picks "Add as Lead",
+  // which just pre-fills the existing New Record form above — no direct,
+  // silent Lead creation from a search result.
+  const [zoomInfoPanelOpen, setZoomInfoPanelOpen] = useState(false);
+  const [zoomInfoMode, setZoomInfoMode] = useState("companies");
+  const [zoomInfoCompanyFilters, setZoomInfoCompanyFilters] = useState({ companyName: "", industryKeywords: "", employeeRangeMin: "", employeeRangeMax: "" });
+  const [zoomInfoContactFilters, setZoomInfoContactFilters] = useState({ jobTitle: "", industryKeywords: "", managementLevel: [] });
+  const [zoomInfoSearching, setZoomInfoSearching] = useState(false);
+  const [zoomInfoError, setZoomInfoError] = useState(null);
+  const [zoomInfoResults, setZoomInfoResults] = useState([]);
+  const [zoomInfoTotalResults, setZoomInfoTotalResults] = useState(0);
+  const [zoomInfoPage, setZoomInfoPage] = useState(1);
+  const [zoomInfoHasSearched, setZoomInfoHasSearched] = useState(false);
 
   function refreshLeads() {
     return leadsApi
@@ -595,6 +617,65 @@ export function CrmWorkspaceModule() {
     } finally {
       setAddSaving(false);
     }
+  }
+
+  // Builds the real ZoomInfo filter payload from whichever mode's form is
+  // active, dropping blank fields (an empty string filter would otherwise
+  // narrow the search to "" instead of "not set").
+  function buildZoomInfoFilters() {
+    if (zoomInfoMode === "companies") {
+      const { companyName, industryKeywords, employeeRangeMin, employeeRangeMax } = zoomInfoCompanyFilters;
+      return {
+        ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
+        ...(industryKeywords.trim() ? { industryKeywords: industryKeywords.trim() } : {}),
+        // ZoomInfo's own API requires these as numeric STRINGS, not numbers
+        // — confirmed live (a real number 400s with "Invalid field type").
+        ...(employeeRangeMin.trim() ? { employeeRangeMin: employeeRangeMin.trim() } : {}),
+        ...(employeeRangeMax.trim() ? { employeeRangeMax: employeeRangeMax.trim() } : {})
+      };
+    }
+    const { jobTitle, industryKeywords, managementLevel } = zoomInfoContactFilters;
+    return {
+      ...(jobTitle.trim() ? { jobTitle: jobTitle.trim() } : {}),
+      ...(industryKeywords.trim() ? { industryKeywords: industryKeywords.trim() } : {}),
+      // Comma-delimited from ZoomInfo's own controlled vocabulary — see
+      // MANAGEMENT_LEVEL_OPTIONS below.
+      ...(managementLevel.length ? { managementLevel: managementLevel.join(",") } : {})
+    };
+  }
+
+  async function handleZoomInfoSearch(page = 1) {
+    setZoomInfoSearching(true);
+    setZoomInfoError(null);
+    try {
+      const result = await leadsApi.zoomInfoSearch({ mode: zoomInfoMode, filters: buildZoomInfoFilters(), page });
+      setZoomInfoResults(result.results);
+      setZoomInfoTotalResults(result.totalResults);
+      setZoomInfoPage(page);
+      setZoomInfoHasSearched(true);
+    } catch (err) {
+      setZoomInfoError(err.message);
+      setZoomInfoResults([]);
+      setZoomInfoHasSearched(true);
+    } finally {
+      setZoomInfoSearching(false);
+    }
+  }
+
+  // Pre-fills the existing "New Record" form from a chosen ZoomInfo
+  // result and opens the same modal — the rep still reviews/completes
+  // (capitalAsk especially, which ZoomInfo has no concept of) and saves
+  // through the unchanged handleAddLead above. No silent auto-create.
+  function handleAddZoomInfoResultAsLead(result) {
+    if (zoomInfoMode === "companies") {
+      const territory = [result.city, result.state, result.country].filter(Boolean).join(", ");
+      setAddForm({ name: "", company: result.name ?? "", email: "", mobile: "", capitalAsk: "", owner: "", territory });
+    } else {
+      const name = [result.firstName, result.lastName].filter(Boolean).join(" ");
+      setAddForm({ name, company: result.company?.name ?? "", email: "", mobile: "", capitalAsk: "", owner: "", territory: "" });
+    }
+    setZoomInfoPanelOpen(false);
+    setAddModalOpen(true);
   }
 
   async function handleImportLeads() {
@@ -890,11 +971,32 @@ export function CrmWorkspaceModule() {
         stats={stats}
         onNewRecord={() => setAddModalOpen(true)}
         onImport={() => setImportModalOpen(true)}
+        onFindCompanies={() => setZoomInfoPanelOpen((open) => !open)}
+        zoomInfoPanelOpen={zoomInfoPanelOpen}
         viewsOpen={viewsOpen}
         setViewsOpen={setViewsOpen}
         statusFilter={statusFilter}
         setStatusFilter={setStatusFilter}
       />
+
+      {zoomInfoPanelOpen ? (
+        <ZoomInfoSearchPanel
+          mode={zoomInfoMode}
+          setMode={setZoomInfoMode}
+          companyFilters={zoomInfoCompanyFilters}
+          setCompanyFilters={setZoomInfoCompanyFilters}
+          contactFilters={zoomInfoContactFilters}
+          setContactFilters={setZoomInfoContactFilters}
+          searching={zoomInfoSearching}
+          error={zoomInfoError}
+          results={zoomInfoResults}
+          totalResults={zoomInfoTotalResults}
+          page={zoomInfoPage}
+          hasSearched={zoomInfoHasSearched}
+          onSearch={handleZoomInfoSearch}
+          onAddAsLead={handleAddZoomInfoResultAsLead}
+        />
+      ) : null}
 
       {dealBoard ? (
         <Card className="px-5 py-5">
@@ -1116,6 +1218,135 @@ export function CrmWorkspaceModule() {
   );
 }
 
+// Real ZoomInfo prospecting search — finds NEW companies/people by
+// criteria (unlike the per-lead "Enrich" action, which needs a company/
+// contact name you already know). Browse-only: results never write
+// anything by themselves, "Add as Lead" just hands the chosen result to
+// the existing New Record modal for the rep to review and save.
+function ZoomInfoSearchPanel({
+  mode, setMode, companyFilters, setCompanyFilters, contactFilters, setContactFilters,
+  searching, error, results, totalResults, page, hasSearched, onSearch, onAddAsLead
+}) {
+  const hasMore = page * 25 < totalResults;
+
+  return (
+    <Card className="px-5 py-5">
+      <SectionTitle icon={GlobeIcon} iconClass="text-[#2f96da]">
+        Find Companies (ZoomInfo)
+      </SectionTitle>
+      <p className="mt-1 text-[13px] text-[#6a7790]">
+        Real search against ZoomInfo's database — a genuine API lookup, not a preview. Results are browse-only until
+        you click "Add as Lead" on one.
+      </p>
+
+      <div className="mt-4 flex gap-2 rounded-[10px] bg-[#f0f3f9] p-1" style={{ width: "fit-content" }}>
+        <button
+          type="button"
+          onClick={() => setMode("companies")}
+          className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"}`}
+        >
+          Companies
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("contacts")}
+          className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "contacts" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"}`}
+        >
+          Contacts
+        </button>
+      </div>
+
+      {mode === "companies" ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <EditField label="Company Name" value={companyFilters.companyName} onChange={(v) => setCompanyFilters((c) => ({ ...c, companyName: v }))} placeholder="e.g. Salesforce" />
+          <EditField label="Industry" value={companyFilters.industryKeywords} onChange={(v) => setCompanyFilters((c) => ({ ...c, industryKeywords: v }))} placeholder="e.g. Software" />
+          <EditField label="Employees min" value={companyFilters.employeeRangeMin} onChange={(v) => setCompanyFilters((c) => ({ ...c, employeeRangeMin: v }))} placeholder="e.g. 50" />
+          <EditField label="Employees max" value={companyFilters.employeeRangeMax} onChange={(v) => setCompanyFilters((c) => ({ ...c, employeeRangeMax: v }))} placeholder="e.g. 500" />
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <EditField label="Job Title" value={contactFilters.jobTitle} onChange={(v) => setContactFilters((c) => ({ ...c, jobTitle: v }))} placeholder="e.g. Chief Executive Officer" />
+            <EditField label="Industry" value={contactFilters.industryKeywords} onChange={(v) => setContactFilters((c) => ({ ...c, industryKeywords: v }))} placeholder="e.g. Software" />
+          </div>
+          <div>
+            <p className="mb-1.5 text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Management Level</p>
+            <div className="flex flex-wrap gap-2">
+              {MANAGEMENT_LEVEL_OPTIONS.map((level) => {
+                const checked = contactFilters.managementLevel.includes(level);
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() =>
+                      setContactFilters((c) => ({
+                        ...c,
+                        managementLevel: checked ? c.managementLevel.filter((l) => l !== level) : [...c.managementLevel, level]
+                      }))
+                    }
+                    className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${checked ? "bg-[#3046b2] text-white" : "border border-[#d6deea] bg-white text-[#4f6181] hover:bg-[#f4f7fb]"}`}
+                  >
+                    {level}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center gap-3">
+        <ActionButton label={searching ? "Searching…" : "Search"} icon={GlobeIcon} primary onClick={() => onSearch(1)} disabled={searching} />
+        {totalResults > 0 ? <p className="text-[13px] text-[#8592ab]">{totalResults.toLocaleString()} real match(es) on ZoomInfo</p> : null}
+      </div>
+
+      {error ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
+
+      {results.length > 0 ? (
+        <div className="mt-4 space-y-2.5">
+          {results.map((result) =>
+            mode === "companies" ? (
+              <div key={result.id} className="flex items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-semibold text-[#102246]">{result.name}</p>
+                  <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
+                    {[result.city, result.state, result.country].filter(Boolean).join(", ") || "Location unknown"}
+                    {result.employeeCount ? ` · ${result.employeeCount} employees` : ""}
+                    {result.website ? ` · ${result.website}` : ""}
+                  </p>
+                </div>
+                <ActionButton label="Add as Lead" small onClick={() => onAddAsLead(result)} />
+              </div>
+            ) : (
+              <div key={result.id} className="flex items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-semibold text-[#102246]">
+                    {[result.firstName, result.lastName].filter(Boolean).join(" ") || "Unnamed contact"}
+                  </p>
+                  <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
+                    {result.jobTitle ? `${result.jobTitle} — ` : ""}
+                    {result.company?.name ?? "Company unknown"}
+                  </p>
+                </div>
+                <ActionButton label="Add as Lead" small onClick={() => onAddAsLead(result)} />
+              </div>
+            )
+          )}
+          {hasMore ? (
+            <div className="pt-1">
+              <ActionButton label={searching ? "Loading…" : "Load more"} onClick={() => onSearch(page + 1)} disabled={searching} />
+            </div>
+          ) : null}
+        </div>
+      ) : !searching && !error && hasSearched ? (
+        <p className="mt-4 text-[13px] text-[#9aa6ba]">No matches on ZoomInfo for these filters — try broadening them.</p>
+      ) : !searching && !error ? (
+        <p className="mt-4 text-[13px] text-[#9aa6ba]">No search run yet — set some filters above and click Search.</p>
+      ) : null}
+    </Card>
+  );
+}
+
 // `list` is optional — when given (real values already in use across other
 // leads, e.g. Channel Partner), the field offers them as autocomplete
 // suggestions via a native <datalist> rather than forcing a rigid dropdown:
@@ -1155,7 +1386,7 @@ const VIEW_OPTIONS = [
   { value: "LOST", label: "Lost" }
 ];
 
-function Header({ stats, onNewRecord, onImport, viewsOpen, setViewsOpen, statusFilter, setStatusFilter }) {
+function Header({ stats, onNewRecord, onImport, onFindCompanies, zoomInfoPanelOpen, viewsOpen, setViewsOpen, statusFilter, setStatusFilter }) {
   return (
     <section>
       <div className="flex items-start justify-between gap-4">
@@ -1168,6 +1399,7 @@ function Header({ stats, onNewRecord, onImport, viewsOpen, setViewsOpen, statusF
         <div className="relative flex flex-wrap justify-end gap-3 pt-1">
           <ActionButton label="New record" icon={PlusIcon} primary onClick={onNewRecord} />
           <ActionButton label="Import" icon={UploadIcon} onClick={onImport} />
+          <ActionButton label="Find Companies (ZoomInfo)" icon={GlobeIcon} active={zoomInfoPanelOpen} onClick={onFindCompanies} />
           <ActionButton
             label="Views"
             icon={FunnelIcon}
