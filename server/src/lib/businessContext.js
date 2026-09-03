@@ -48,7 +48,8 @@ export async function buildBusinessContext(enabledSources = null) {
     dealStages,
     ndaRecords,
     visitPlans,
-    ioiRecords
+    ioiRecords,
+    leadActivity
   ] = await Promise.all([
     on("leads") ? prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: MAX_ROWS }) : [],
     on("whatsapp") ? prisma.contact.findMany({ take: MAX_ROWS }) : [],
@@ -108,6 +109,16 @@ export async function buildBusinessContext(enabledSources = null) {
           orderBy: { updatedAt: "desc" },
           take: MAX_ROWS
         })
+      : [],
+    // CRM Workspace's Timeline/Interactions tab — same relation, gated
+    // under "leads" rather than its own toggle since it has no meaning
+    // apart from the lead it's logged against.
+    on("leads")
+      ? prisma.leadActivityLog.findMany({
+          include: { lead: { select: { name: true, company: true } } },
+          orderBy: { createdAt: "desc" },
+          take: MAX_ROWS
+        })
       : []
   ]);
 
@@ -140,8 +151,41 @@ export async function buildBusinessContext(enabledSources = null) {
         territory: l.territory,
         engagementStage: l.engagementStage,
         consentGdpr: l.consentGdpr,
+        notes: l.notes,
+        // Universal Filters fields (lib/universalFilters.js) — manually set
+        // by a rep, not derived from anything else here.
+        industry: l.industry,
+        channelPartner: l.channelPartner,
+        temperature: l.temperature,
+        teamLeader: l.teamLeader,
+        manager: l.manager,
+        doe: l.doe,
+        tags: l.tags,
         createdAt: l.createdAt,
-        updatedAt: l.updatedAt
+        updatedAt: l.updatedAt,
+        // From the "Enrich"/"Bulk enrich" ZoomInfo action (CRM Workspace) —
+        // null on any lead never enriched or with no ZoomInfo match, rather
+        // than omitted, so the assistant can say "not enriched" instead of
+        // silently treating it the same as "no matching company exists".
+        zoomInfoEnrichedAt: l.zoomInfoEnrichedAt,
+        zoomInfoCompany: l.zoomInfoData,
+        zoomInfoContact: l.zoomInfoContactData,
+        zoomInfoScoops: l.zoomInfoScoops
+      }))
+    };
+
+    // CRM Workspace's Timeline/Interactions tab — the log entries a rep
+    // sees against one lead, here flattened across all leads like meetings
+    // and NDAs above so "what's happened on X" or "what did we log
+    // recently" can both be answered.
+    context.leadActivity = {
+      total: leadActivity.length,
+      records: leadActivity.map((a) => ({
+        lead: a.lead ? `${a.lead.name} (${a.lead.company})` : null,
+        kind: a.kind,
+        title: a.title,
+        detail: a.detail,
+        loggedAt: a.createdAt
       }))
     };
   }
@@ -170,7 +214,16 @@ export async function buildBusinessContext(enabledSources = null) {
         nextAction: m.nextAction,
         nextActionDueAt: m.nextActionDueAt,
         nextMeetingScheduled: m.nextMeetingScheduled,
-        clientSatisfaction: m.clientSatisfaction
+        clientSatisfaction: m.clientSatisfaction,
+        recordingLink: m.recordingLink,
+        // Zoom's own auto-transcript of the call (separate provenance from
+        // aiSummary, which is generated from the rep's typed notes) — the
+        // raw transcript itself is left out since a real call transcript
+        // can run to thousands of words across up to 200 meetings, but its
+        // summary is exactly the kind of thing a "what was said on the
+        // call" question needs.
+        hasTranscript: Boolean(m.transcriptText),
+        transcriptSummary: m.transcriptSummary
       }))
     };
   }
@@ -188,8 +241,18 @@ export async function buildBusinessContext(enabledSources = null) {
         signedAt: r.signedAt,
         expiresAt: r.expiresAt,
         signerName: r.signerName,
+        signerEmail: r.signerEmail,
         owner: r.owner,
-        notes: r.notes
+        notes: r.notes,
+        // Filled in when the client used the "fill in your details online"
+        // option (client portal) rather than the checkbox-accept or
+        // upload-a-document paths — null for those, not a missing field.
+        counterpartyLegalName: r.counterpartyLegalName,
+        counterpartyCountry: r.counterpartyCountry,
+        counterpartyAddress: r.counterpartyAddress,
+        agreementDate: r.agreementDate,
+        signatoryName: r.signatoryName,
+        signatoryTitle: r.signatoryTitle
       }))
     };
   }
@@ -210,7 +273,18 @@ export async function buildBusinessContext(enabledSources = null) {
         geography: r.geography,
         counterparty: r.counterparty,
         owner: r.owner,
-        notes: r.notes
+        notes: r.notes,
+        // Filled in via the client portal's "fill in your details online"
+        // option (the LOI template's actual blanks) — null when the client
+        // instead just uploaded a signed document.
+        counterpartyJurisdiction: r.counterpartyJurisdiction,
+        totalProjectCost: r.totalProjectCost,
+        borrowerEquity: r.borrowerEquity,
+        agreementDate: r.agreementDate,
+        signatoryName: r.signatoryName,
+        signatoryAddress: r.signatoryAddress,
+        signatoryPhone: r.signatoryPhone,
+        signatoryEmail: r.signatoryEmail
       }))
     };
   }
@@ -375,7 +449,10 @@ export async function buildBusinessContext(enabledSources = null) {
         attendees: r.attendees,
         counterparty: r.counterparty,
         owner: r.owner,
-        notes: r.notes
+        notes: r.notes,
+        // Field Visit KPI framework's "Client Rating" target (4.5+ / 5),
+        // only meaningful once a visit stage is actually reported back.
+        clientRating: r.clientRating
       }))
     };
   }

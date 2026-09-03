@@ -20,12 +20,19 @@
 // treatment. NDA/IOI/Visit Planning/Ageing Report/Outreach-DOE now have it
 // (same Lead.channelPartner / EmailCampaign.ownerChannelPartnerId
 // mechanisms as CRM Workspace/Data Room/Email Automation already use).
+// Same 3 groups, in the same order, as lib/permissions.js's employee
+// MODULES list (Intelligence / CRM & Outreach / Relationships) —
+// PermissionsEditor.jsx renders columns in first-seen order, so matching
+// both the group names and this array's ordering is what makes the two
+// Feature access panels lay out identically. Employees have no separate
+// "Email Automation" group either (MailX sits under CRM & Outreach there
+// too), so Segments/Templates/AI Agent go under CRM & Outreach here too.
 export const CHANNEL_PARTNER_OPTIONAL_MODULES = [
-  { id: "segments", label: "Segments", group: "Email Automation" },
-  { id: "templates", label: "Templates", group: "Email Automation" },
-  { id: "ai-agent", label: "AI Agent", group: "Email Automation" },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence" },
   { id: "leads", label: "Outreach / DOE", group: "Intelligence" },
+  { id: "segments", label: "Segments", group: "CRM & Outreach" },
+  { id: "templates", label: "Templates", group: "CRM & Outreach" },
+  { id: "ai-agent", label: "AI Agent", group: "CRM & Outreach" },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },
   { id: "data-room", label: "Data Room", group: "Relationships" },
   { id: "nda", label: "NDA", group: "Relationships" },

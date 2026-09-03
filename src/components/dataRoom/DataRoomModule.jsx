@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { documentsApi } from "../../lib/documentsApi";
 import { leadsApi } from "../../lib/leadsApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
@@ -7,7 +7,6 @@ import {
   CheckCircleIcon,
   NoteIcon,
   SearchIcon,
-  SparklesIcon,
   XIcon
 } from "../Icons";
 
@@ -77,6 +76,98 @@ function DocumentPreviewModal({ doc, html, loading, error, onClose }) {
   );
 }
 
+// One document's row — shared by the "specific deal already selected" flat
+// list and the client-group popup below, so the two never quietly drift
+// apart on what a document row actually shows/does.
+function DocumentRow({ doc, onOpen, onVerify, onDelete }) {
+  const glyph = fileGlyph(doc.mimeType, doc.originalName);
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3 hover:bg-[#f8faff]">
+      <span className={`grid size-11 shrink-0 place-items-center rounded-[12px] text-[11px] font-bold ${glyph.tone}`}>
+        {glyph.label}
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onOpen(doc, false)}
+            className="truncate text-[14px] font-medium text-[#102246] hover:text-[#3046b2] hover:underline"
+          >
+            {doc.originalName}
+          </button>
+          <Badge tone="slate">{doc.category}</Badge>
+          {doc.searchable ? <Badge tone="green">AI-readable</Badge> : <Badge tone="amber">Not searchable</Badge>}
+          {doc.verified ? <Badge tone="green">Verified</Badge> : null}
+        </div>
+        <p className="mt-0.5 truncate text-[12px] text-[#8592ab]">
+          {formatSize(doc.sizeBytes)}
+          {doc.uploadedBy ? ` · ${doc.uploadedBy.name}` : ""}
+          {` · ${new Date(doc.createdAt).toLocaleDateString()}`}
+          {doc.description ? ` · ${doc.description}` : ""}
+          {doc.verified && doc.verifiedBy ? ` · Verified by ${doc.verifiedBy.name}` : ""}
+        </p>
+        {!doc.searchable && doc.extractionNote ? <p className="mt-1 text-[12px] text-[#c47f1a]">{doc.extractionNote}</p> : null}
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <ActionButton label="Open" small onClick={() => onOpen(doc, false)} />
+        <ActionButton label="Download" small onClick={() => onOpen(doc, true)} />
+        <ActionButton
+          label={doc.verified ? "Unverify" : "Verify"}
+          icon={CheckCircleIcon}
+          small
+          active={doc.verified}
+          onClick={() => onVerify(doc)}
+        />
+        <ActionButton label="Delete" icon={XIcon} small onClick={() => onDelete(doc)} />
+      </div>
+    </div>
+  );
+}
+
+// Opened by clicking a client card in the "Company library" grouped view —
+// that view exists specifically so a long, all-clients-mixed-together list
+// isn't the default; this is where the actual per-document actions live for
+// that one client. "View full Data Room" hands off to the existing
+// Deal-scoped flat view for anything needing the fuller page (search,
+// category filters) rather than duplicating those here.
+function ClientDocumentsModal({ group, onOpen, onVerify, onDelete, onViewFullDataRoom, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0f1f3d]/40 px-4 py-10" onClick={onClose}>
+      <div
+        className="w-full max-w-[720px] rounded-[22px] border border-[#d6deea] bg-white shadow-[0_20px_60px_rgba(15,31,61,0.25)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[#e7edf5] px-6 py-5">
+          <div>
+            <p className="text-[18px] font-semibold text-[#102246]">{group.label}</p>
+            <p className="mt-1 text-[13px] text-[#8592ab]">
+              {group.docs.length} document{group.docs.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {group.leadId ? <ActionButton label="View full Data Room" small onClick={onViewFullDataRoom} /> : null}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="grid size-8 place-items-center rounded-[10px] text-[#8592ab] transition hover:bg-[#f4f7fb] hover:text-[#102246]"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <div className="max-h-[70vh] space-y-2 overflow-y-auto px-6 py-5">
+          {group.docs.map((doc) => (
+            <DocumentRow key={doc.id} doc={doc} onOpen={onOpen} onVerify={onVerify} onDelete={onDelete} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DataRoomModule() {
   const [documents, setDocuments] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -101,6 +192,10 @@ export function DataRoomModule() {
   const [previewHtml, setPreviewHtml] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(null);
+  // Which client's popup is open in the "Company library" grouped view —
+  // null means none open. Not used at all once a specific deal is already
+  // selected above, since that view is already scoped to one client.
+  const [viewingGroupKey, setViewingGroupKey] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -171,6 +266,22 @@ export function DataRoomModule() {
 
   const total = categories.reduce((sum, c) => sum + c.count, 0);
   const searchableCount = documents.filter((d) => d.searchable).length;
+
+  // Only meaningful in the "Company library" view (selectedLeadId === "") —
+  // a mixed flat list of every client's documents together read poorly (the
+  // same file type/category repeated row after row with no way to tell
+  // whose is whose at a glance), so this groups the same already-filtered
+  // `documents` by client instead, one compact card each, biggest first.
+  const groupedByClient = useMemo(() => {
+    const map = new Map();
+    for (const doc of documents) {
+      const key = doc.lead?.id ?? "__company__";
+      if (!map.has(key)) map.set(key, { key, label: doc.lead?.company ?? "Company library", leadId: doc.lead?.id ?? null, docs: [] });
+      map.get(key).docs.push(doc);
+    }
+    return [...map.values()].sort((a, b) => b.docs.length - a.docs.length);
+  }, [documents]);
+  const viewingGroup = groupedByClient.find((g) => g.key === viewingGroupKey) ?? null;
 
   return (
     <div className="space-y-5">
@@ -280,91 +391,34 @@ export function DataRoomModule() {
                   : "Documents show up here once a client uploads them through their portal."}
               </p>
             </div>
+          ) : selectedLeadId ? (
+            // A specific deal is already picked above — every row here
+            // belongs to that one client, so the flat list (no per-row
+            // client badge/grouping needed) is the right view.
+            documents.map((doc) => <DocumentRow key={doc.id} doc={doc} onOpen={handleOpen} onVerify={handleVerify} onDelete={handleDelete} />)
           ) : (
-            documents.map((doc) => {
-              const glyph = fileGlyph(doc.mimeType, doc.originalName);
-              return (
-                <div key={doc.id} className="flex flex-wrap items-center gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3 hover:bg-[#f8faff]">
-                  <span className={`grid size-11 shrink-0 place-items-center rounded-[12px] text-[11px] font-bold ${glyph.tone}`}>
-                    {glyph.label}
-                  </span>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleOpen(doc, false)}
-                        className="truncate text-[14px] font-medium text-[#102246] hover:text-[#3046b2] hover:underline"
-                      >
-                        {doc.originalName}
-                      </button>
-                      <Badge tone="slate">{doc.category}</Badge>
-                      {!selectedLeadId ? (
-                        doc.lead ? (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedLeadId(doc.lead.id)}
-                            className="rounded-full bg-[#eef1ff] px-2.5 py-0.5 text-[11px] font-semibold text-[#3046b2] hover:bg-[#e2e8ff]"
-                            title={`Show only ${doc.lead.company}'s Data Room`}
-                          >
-                            {doc.lead.company}
-                          </button>
-                        ) : (
-                          <Badge tone="slate">Company library</Badge>
-                        )
-                      ) : null}
-                      {doc.searchable ? (
-                        <Badge tone="green">AI-readable</Badge>
-                      ) : (
-                        <Badge tone="amber">Not searchable</Badge>
-                      )}
-                      {doc.verified ? <Badge tone="green">Verified</Badge> : null}
-                    </div>
-                    <p className="mt-0.5 truncate text-[12px] text-[#8592ab]">
-                      {formatSize(doc.sizeBytes)}
-                      {doc.uploadedBy ? ` · ${doc.uploadedBy.name}` : ""}
-                      {` · ${new Date(doc.createdAt).toLocaleDateString()}`}
-                      {doc.description ? ` · ${doc.description}` : ""}
-                      {doc.verified && doc.verifiedBy ? ` · Verified by ${doc.verifiedBy.name}` : ""}
-                    </p>
-                    {!doc.searchable && doc.extractionNote ? (
-                      <p className="mt-1 text-[12px] text-[#c47f1a]">{doc.extractionNote}</p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    <ActionButton label="Open" small onClick={() => handleOpen(doc, false)} />
-                    <ActionButton label="Download" small onClick={() => handleOpen(doc, true)} />
-                    <ActionButton
-                      label={doc.verified ? "Unverify" : "Verify"}
-                      icon={CheckCircleIcon}
-                      small
-                      active={doc.verified}
-                      onClick={() => handleVerify(doc)}
-                    />
-                    <ActionButton label="Delete" icon={XIcon} small onClick={() => handleDelete(doc)} />
-                  </div>
+            // Company library: grouped by client instead of one long mixed
+            // list — click a card to open that client's documents in a
+            // popup (see ClientDocumentsModal).
+            groupedByClient.map((group) => (
+              <button
+                key={group.key}
+                type="button"
+                onClick={() => setViewingGroupKey(group.key)}
+                className="flex w-full items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3 text-left hover:bg-[#f8faff]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-semibold text-[#102246]">{group.label}</p>
+                  <p className="mt-0.5 text-[12px] text-[#8592ab]">
+                    {group.docs.length} document{group.docs.length === 1 ? "" : "s"}
+                    {group.docs.some((d) => d.verified) ? ` · ${group.docs.filter((d) => d.verified).length} verified` : ""}
+                  </p>
                 </div>
-              );
-            })
+                <span className="shrink-0 text-[13px] font-semibold text-[#3046b2]">View →</span>
+              </button>
+            ))
           )}
         </div>
-      </Card>
-
-      <Card className="px-5 py-5">
-        <SectionTitle icon={SparklesIcon} iconClass="text-[#8b52d0]">
-          Asking the AI about these documents
-        </SectionTitle>
-        <p className="mt-3 text-[14px] leading-7 text-[#4f6181]">
-          Open the assistant (the button in the bottom-right) and ask something like{" "}
-          <span className="font-medium text-[#102246]">"what does our Q3 report say about revenue?"</span>. It sees the full
-          list of documents plus the contents of the few most relevant to your question, and names the file it used.
-        </p>
-        <p className="mt-3 rounded-[12px] bg-[#f7f9fc] px-4 py-3 text-[13px] leading-6 text-[#5f6f89]">
-          Matching is by keyword, not meaning — asking about "revenue" won't surface a document that only says "turnover".
-          Naming the document in your question is the reliable way to point it at the right file. Scanned PDFs and images
-          have no text to read, so they're listed but can't be quoted.
-        </p>
       </Card>
 
       {previewDoc ? (
@@ -374,6 +428,20 @@ export function DataRoomModule() {
           loading={previewLoading}
           error={previewError}
           onClose={() => setPreviewDoc(null)}
+        />
+      ) : null}
+
+      {viewingGroup ? (
+        <ClientDocumentsModal
+          group={viewingGroup}
+          onOpen={handleOpen}
+          onVerify={handleVerify}
+          onDelete={handleDelete}
+          onViewFullDataRoom={() => {
+            setSelectedLeadId(viewingGroup.leadId);
+            setViewingGroupKey(null);
+          }}
+          onClose={() => setViewingGroupKey(null)}
         />
       ) : null}
     </div>

@@ -8,7 +8,7 @@ import { extractText } from "../lib/documentText.js";
 import { REQUIRED_DOCUMENTS, REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDocuments.js";
 import { classifyDocumentCategory, runGapCheck } from "../lib/documentClassifier.js";
 import { recordAudit } from "../lib/auditLog.js";
-import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
+import { uploadDataRoomDocument, UPLOAD_DIR, MAX_FILE_BYTES, UnsupportedFileTypeError } from "../lib/fileUpload.js";
 import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const documentsRouter = Router();
@@ -127,7 +127,7 @@ documentsRouter.get("/kpis", blockChannelPartner, asyncHandler(async (req, res) 
   });
 }));
 
-documentsRouter.post("/", blockChannelPartner, upload.single("file"), asyncHandler(async (req, res) => {
+documentsRouter.post("/", blockChannelPartner, uploadDataRoomDocument.single("file"), asyncHandler(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file was uploaded." });
   }
@@ -309,6 +309,9 @@ documentsRouter.delete("/:id", blockChannelPartner, asyncHandler(async (req, res
 // multer rejects oversized files with its own error class — translated
 // here so the UI shows a size limit rather than a generic 500.
 documentsRouter.use((err, _req, res, next) => {
+  if (err instanceof UnsupportedFileTypeError) {
+    return res.status(400).json({ error: err.message });
+  }
   if (err instanceof multer.MulterError) {
     const message =
       err.code === "LIMIT_FILE_SIZE"

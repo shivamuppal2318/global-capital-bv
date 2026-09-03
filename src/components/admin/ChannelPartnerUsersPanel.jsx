@@ -131,17 +131,12 @@ export function ChannelPartnerUsersPanel() {
                   </div>
                 ) : null}
                 {editingAccessFor === portalUser.id && modules.length > 0 ? (
-                  <>
-                    <p className="mt-3 text-[12px] text-[#8592ab]">
-                      Dashboard, Campaigns, Leads and Automation are always included — these are optional extras.
-                    </p>
-                    <PermissionsEditor
-                      employee={portalUser}
-                      modules={modules}
-                      onSave={(permissions) => handleSavePermissions(portalUser.id, permissions)}
-                      onCancel={() => setEditingAccessFor(null)}
-                    />
-                  </>
+                  <PermissionsEditor
+                    employee={portalUser}
+                    modules={modules}
+                    onSave={(permissions) => handleSavePermissions(portalUser.id, permissions)}
+                    onCancel={() => setEditingAccessFor(null)}
+                  />
                 ) : null}
               </div>
             );

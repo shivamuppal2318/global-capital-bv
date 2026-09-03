@@ -58,13 +58,19 @@ emailAccountsRouter.get("/:id", asyncHandler(async (req, res) => {
 }));
 
 const createAccountSchema = z.object({
-  label: z.string().min(1),
-  smtpHost: z.string().min(1),
+  // Trimmed — a stray leading/trailing space from copy-pasting credentials
+  // silently breaks real SMTP auth (an invalid host/username, not a clear
+  // error) rather than getting caught here. Confirmed live: this is exactly
+  // how two "lyi" mailboxes ended up existing for the same account — the
+  // first save had a leading space in smtpUser/smtpHost, so a second,
+  // correctly-typed one was created instead of the first ever being fixed.
+  label: z.string().trim().min(1),
+  smtpHost: z.string().trim().min(1),
   smtpPort: z.number().int().positive(),
   smtpSecure: z.boolean().default(true),
-  smtpUser: z.string().min(1),
+  smtpUser: z.string().trim().min(1),
   smtpPass: z.string().min(1),
-  fromAddress: z.string().email(),
+  fromAddress: z.string().trim().email(),
   dailyLimit: z.number().int().positive().default(500),
   // Country/region this mailbox represents (e.g. "IN", "AE", "NL") — matched
   // case-insensitively against EmailLead.country to auto-route a lead's send

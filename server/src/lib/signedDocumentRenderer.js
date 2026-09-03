@@ -245,6 +245,28 @@ export async function ndaFillFormFragment(filled, companyName) {
   return fillFormShell(renderInteractiveBody(raw, specs));
 }
 
+// Same pattern one level down for the Channel Partner Agreement (see
+// routes/channelPartnerAgreement.js) — previously a read-only <pre> block
+// of the full text followed by a generic "type your name to sign" form,
+// leaving every real blank ([Partner's Address], [monthly/quarterly])
+// unresolved in the actual signed record. PARTNER_NAME is pre-filled and
+// non-editable here (unlike NDA's COUNTERPARTY_NAME): ChannelPartner.name
+// is already the canonical identity used everywhere else in the app
+// (lead-matching, campaign ownership), so letting it diverge here would
+// just create a second, disconnected name for the same partner.
+export async function channelPartnerAgreementFillFormFragment(partner) {
+  const raw = await fs.readFile(path.join(ASSETS_DIR, "channel-partner-agreement-template-body.txt"), "utf8");
+  const specs = {
+    AGREEMENT_DATE: { editable: false, text: fmtDate(new Date()) },
+    PARTNER_NAME: { editable: false, text: partner.name },
+    PARTNER_ADDRESS: { editable: true, name: "partnerAddress", value: partner.agreementAddress ?? "", placeholder: "Your company's principal office address" },
+    TERRITORY: { editable: true, name: "territory", value: partner.region ?? "", placeholder: "e.g. worldwide, or specific countries/regions" },
+    PAYMENT_SCHEDULE: { editable: true, name: "paymentSchedule", value: partner.agreementPaymentSchedule ?? "", placeholder: "Monthly or Quarterly" },
+    SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" }
+  };
+  return fillFormShell(renderInteractiveBody(raw, specs));
+}
+
 export async function ioiFillFormFragment(filled, companyName, ioi) {
   const raw = await fs.readFile(path.join(ASSETS_DIR, "ioi-template-body.txt"), "utf8");
   const investmentAmount = ioi?.value ? `${ioi.valueCurrency ?? "USD"} ${Number(ioi.value).toLocaleString("en-US")}` : "to be confirmed";

@@ -10,7 +10,8 @@ export const AI_DATA_SOURCES = [
   {
     id: "leads",
     label: "CRM leads",
-    description: "Every lead with stage, qualification, capital ask, owner, territory and contact details."
+    description:
+      "Every lead with stage, qualification, capital ask, owner, territory, contact details, notes, tags, ZoomInfo enrichment, and logged Timeline/Interactions activity."
   },
   {
     id: "follow-ups",

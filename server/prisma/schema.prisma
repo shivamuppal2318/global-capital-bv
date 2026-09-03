@@ -581,6 +581,15 @@ model ChannelPartner {
   agreementSignedName String?
   agreementSignedIp   String?
 
+  // Filled in by the partner directly in the agreement text itself at
+  // signing time (see lib/signedDocumentRenderer.js's
+  // channelPartnerAgreementFillFormFragment) — the blanks the template
+  // otherwise leaves as "[Partner's Address]" / "[monthly/quarterly]".
+  // region already covers the Territory blank, so no separate field for
+  // that.
+  agreementAddress         String?
+  agreementPaymentSchedule String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -613,6 +622,8 @@ model ChannelPartnerUser {
   // array. Empty = exactly today's behavior.
   permissions String[] @default([])
 
+  passwordResets ChannelPartnerPasswordResetToken[]
+
   createdAt        DateTime                 @default(now())
   updatedAt        DateTime                 @updatedAt
 }
@@ -620,6 +631,22 @@ model ChannelPartnerUser {
 enum ChannelPartnerUserStatus {
   ACTIVE
   SUSPENDED
+}
+
+// Mirrors PasswordResetToken/ClientPasswordResetToken's shape exactly —
+// same reasoning (only the token's SHA-256 is stored, so a database leak
+// alone can't be replayed) and same one-time-use/expiry mechanics, one
+// level down for the Channel Partner tier.
+model ChannelPartnerPasswordResetToken {
+  id                   String             @id @default(cuid())
+  channelPartnerUser   ChannelPartnerUser @relation(fields: [channelPartnerUserId], references: [id], onDelete: Cascade)
+  channelPartnerUserId String
+  tokenHash            String             @unique
+  expiresAt            DateTime
+  usedAt               DateTime?
+  createdAt            DateTime           @default(now())
+
+  @@index([channelPartnerUserId])
 }
 
 enum ChannelPartnerStatus {
