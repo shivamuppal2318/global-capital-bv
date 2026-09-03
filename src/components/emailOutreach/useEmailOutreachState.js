@@ -985,7 +985,7 @@ export function useEmailOutreachState() {
         const campaign = await emailCampaignsApi.update(selectedCampaign.id, payload);
         setCampaigns((current) => current.map((c) => (c.id === campaign.id ? { ...c, ...payload } : c)));
         setAutomationNotice(`"${campaign.name}" updated on the backend — ${followUpCount + 1} follow-up emails, ${dailyLimit}/day limit.`);
-        return;
+        return campaign;
       }
 
       const campaign = await emailCampaignsApi.create({ name: automationForm.campaignName, ...payload });
@@ -1004,8 +1004,14 @@ export function useEmailOutreachState() {
       setAutomationNotice(
         `"${mapped.name}" saved to the backend — ${followUpCount + 1} follow-up emails, ${dailyLimit}/day limit. Note: no leads are enrolled yet.`
       );
+      // Returned so a caller (e.g. LeadsTab's "New List" form) can tell a
+      // brand-new list was actually created and navigate straight to
+      // managing its subscribers, instead of leaving the user stranded on
+      // this same settings form with no obvious next step.
+      return mapped;
     } catch (error) {
       setAutomationNotice(`Could not save "${automationForm.campaignName}" — backend unreachable (${error.message}).`);
+      return null;
     }
   }
 

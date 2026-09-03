@@ -17,7 +17,7 @@ function downloadSampleLeadsCsv() {
 export function LeadsTab({ mailing }) {
   const {
     campaigns, allLeads, automationForm, handleFormChange, handleSaveAutomation, automationNotice,
-    selectedCampaign, selectedCampaignId, setSelectedCampaignId,
+    selectedCampaign, selectedCampaignId, setSelectedCampaignId, startNewCampaign,
     newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
     csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, handleImportCsv, csvPreviewBusy, csvImportBusy
   } = mailing;
@@ -33,6 +33,22 @@ export function LeadsTab({ mailing }) {
     const haystack = `${campaign.name} ${campaign.status}`.toLowerCase();
     return haystack.includes(searchText.trim().toLowerCase());
   });
+
+  // Brand-new list -> straight to managing its subscribers, since that's
+  // the obvious next step and there was previously no path there short of
+  // "Back to lists" then "Open" on the row you just created. Editing an
+  // existing list's settings (reached via "Settings", not "New List")
+  // stays on this same form/list view instead — handleSaveAutomation only
+  // returns a value when its own emailCampaignsApi call actually
+  // succeeded, so a failed save (backend unreachable) never navigates
+  // anywhere either.
+  async function handleSaveList() {
+    const wasCreatingNewList = !selectedCampaignId;
+    const result = await handleSaveAutomation();
+    if (wasCreatingNewList && result) {
+      setViewMode("subscribers");
+    }
+  }
 
   if (viewMode === "form") {
     return (
@@ -79,7 +95,7 @@ export function LeadsTab({ mailing }) {
             <div className="pt-1">
               <button
                 type="button"
-                onClick={handleSaveAutomation}
+                onClick={handleSaveList}
                 className="rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)]"
               >
                 Save
@@ -131,7 +147,10 @@ export function LeadsTab({ mailing }) {
               </select>
               <button
                 type="button"
-                onClick={() => setViewMode("form")}
+                onClick={() => {
+                  startNewCampaign();
+                  setViewMode("form");
+                }}
                 className="mt-2 text-[13px] font-medium text-[#5c6cff]"
               >
                 New List
@@ -216,7 +235,10 @@ export function LeadsTab({ mailing }) {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setViewMode("form")}
+              onClick={() => {
+                startNewCampaign();
+                setViewMode("form");
+              }}
               className="rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)]"
             >
               New List
