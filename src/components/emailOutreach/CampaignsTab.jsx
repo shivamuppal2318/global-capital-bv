@@ -210,18 +210,31 @@ export function CampaignsTab({ mailing }) {
               </Field>
 
               <Field label="Send To">
-                <select
-                  value={automationForm.segmentId}
-                  onChange={(event) => handleFormChange("segmentId", event.target.value)}
-                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none"
-                >
-                  <option value="">All leads in this campaign</option>
+                <div className="max-h-[180px] overflow-y-auto rounded-[12px] border border-[#dfe5f1] bg-white">
+                  <label className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471]">
+                    <input
+                      type="radio"
+                      name="send-to-segment"
+                      checked={!automationForm.segmentId}
+                      onChange={() => handleFormChange("segmentId", "")}
+                      className="h-4 w-4 border-[#b9c4d8]"
+                    />
+                    <span className="min-w-0 flex-1 truncate">All leads in this campaign</span>
+                  </label>
                   {segments.map((segment) => (
-                    <option key={segment.id} value={segment.id}>
-                      {segment.name} ({segment.matchingCount})
-                    </option>
+                    <label key={segment.id} className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0">
+                      <input
+                        type="radio"
+                        name="send-to-segment"
+                        checked={automationForm.segmentId === segment.id}
+                        onChange={() => handleFormChange("segmentId", segment.id)}
+                        className="h-4 w-4 border-[#b9c4d8]"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{segment.name}</span>
+                      <span className="shrink-0 text-[12px] text-[#8593ac]">{segment.matchingCount}</span>
+                    </label>
                   ))}
-                </select>
+                </div>
               </Field>
 
               <Field label={`Or pick specific leads (${(automationForm.selectedLeadIds ?? []).length} of ${allLeads.length} selected)`}>
