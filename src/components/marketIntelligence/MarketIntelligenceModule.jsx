@@ -157,18 +157,6 @@ export function MarketIntelligenceModule() {
     }
   }
 
-  const services = status
-    ? [
-        { key: "googleNews", label: "Google News RSS" },
-        { key: "newsApi", label: "NewsAPI.ai" },
-        { key: "exa", label: "Exa Search" },
-        { key: "firecrawl", label: "Firecrawl" },
-        { key: "apollo", label: "Apollo" },
-        { key: "aiProcessor", label: "AI processing (Claude)" },
-        { key: "zoomInfo", label: "ZoomInfo" }
-      ]
-    : [];
-
   // Real counts computed from the signals actually stored in the DB — not
   // fabricated. Duplicates aren't included: the pipeline detects and skips
   // those before a MarketSignal row is ever created.
@@ -547,29 +535,14 @@ export function MarketIntelligenceModule() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <RadarIcon className="size-4 text-[#8853d0]" />
-            <h2 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-[#5f6f89]">Data sources (technical)</h2>
+            <h2 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-[#5f6f89]">Pipeline</h2>
           </div>
           <ActionButton label={running ? "Running…" : "Run pipeline now"} icon={SendIcon} onClick={handleRunPipeline} />
         </div>
-
-        {status ? (
-          <div className="mt-4 grid gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
-            {services.map((service) => (
-              <div key={service.key} className="rounded-[12px] border border-[#e7edf5] bg-white px-3 py-2.5">
-                <p className="text-[12px] font-medium text-[#334463]">{service.label}</p>
-                <span
-                  className={`mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                    status[service.key] ? "bg-[#dff5e7] text-[#2b9b60]" : "bg-[#edf2f7] text-[#94a0b3]"
-                  }`}
-                >
-                  {status[service.key] ? "Connected" : "Not configured"}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-3 text-[13px] text-[#9aa6ba]">No status available — backend unreachable.</p>
-        )}
+        <p className="mt-3 text-[13px] text-[#9aa6ba]">
+          Data-source connection status (Google News, NewsAPI.ai, Exa, Firecrawl, Apollo, AI processing, ZoomInfo) lives
+          in Admin Panel now — see AI Assistant / Market Intelligence / ZoomInfo settings.
+        </p>
 
         <p className="mt-3 text-[12px] text-[#8593ac]">{notice}</p>
       </div>
