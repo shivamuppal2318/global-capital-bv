@@ -580,18 +580,18 @@ export function VisitPlanningModule() {
 
               <div className="md:col-span-2">
                 <label className={labelClass}>Attach the visit report (optional)</label>
-                <select
-                  className={inputClass}
-                  value={editing.reportId}
-                  onChange={(e) => setEditing({ ...editing, reportId: e.target.value })}
-                >
-                  <option value="">None</option>
-                  {documents.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.originalName}
-                    </option>
-                  ))}
-                </select>
+                {editing.reportId ? (
+                  <p className="text-[13px] text-[#334463]">
+                    Attached: {documents.find((d) => d.id === editing.reportId)?.originalName ?? "1 file"}{" "}
+                    <button
+                      type="button"
+                      className="font-semibold text-[#3046b2] hover:underline"
+                      onClick={() => setEditing({ ...editing, reportId: "" })}
+                    >
+                      Remove
+                    </button>
+                  </p>
+                ) : null}
                 <div className="mt-2 flex items-center gap-2">
                   <input
                     type="file"
@@ -607,7 +607,7 @@ export function VisitPlanningModule() {
                   {documentUploading ? <span className="text-[12px] text-[#8592ab]">Uploading…</span> : null}
                 </div>
                 {documentUploadError ? <p className="mt-1 text-[12px] font-medium text-[#e0483f]">{documentUploadError}</p> : null}
-                <p className="mt-1 text-[12px] text-[#8592ab]">Upload a new file here, or pick one already in the Data Room above.</p>
+                <p className="mt-1 text-[12px] text-[#8592ab]">Uploading also adds it to this lead's Data Room.</p>
               </div>
 
               <div className="md:col-span-2">
