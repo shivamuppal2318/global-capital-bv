@@ -6,7 +6,6 @@ import {
   GridIcon,
   LinkIcon,
   RadarIcon,
-  SearchIcon,
   SlidersIcon,
   TagIcon,
   UserCheckIcon,
@@ -22,9 +21,10 @@ const LIFECYCLE_STAGES = [
   { key: "lead", label: "Lead" },
   { key: "outreach", label: "Outreach" },
   { key: "nda", label: "NDA" },
-  { key: "zoom", label: "Zoom call" },
+  { key: "zoom", label: "Zoom call 1" },
   { key: "dataRoom", label: "Data room" },
   { key: "ioi", label: "IOI" },
+  { key: "zoomCall2", label: "Zoom call 2" },
   { key: "fieldVisit", label: "Field visit" },
   { key: "termSheet", label: "Term sheet" }
 ];
@@ -73,7 +73,7 @@ const DUE_TONE = { overdue: "red", due_7d: "amber", due_30d: "blue", none: "slat
 const asOptions = (list) => list.map((v) => ({ key: v, label: v }));
 
 const EMPTY_FILTERS = {
-  q: "",
+  leadId: "",
   channelPartner: "",
   doe: "",
   timeFrom: "",
@@ -146,18 +146,21 @@ export function UniversalFiltersModule() {
       .finally(() => setLoading(false));
   }, [filters]);
 
-  // Debounced only for the free-text search box — every select-driven
-  // filter should react immediately, the same distinction the other
-  // filter screens in this app already make.
+  // Every filter here is now select-driven (Lead included, since it's a
+  // dropdown of real leads rather than a typed search box), so this can
+  // just run immediately instead of debouncing.
   useEffect(() => {
-    const t = setTimeout(runSearch, filters.q ? 300 : 0);
-    return () => clearTimeout(t);
+    runSearch();
   }, [runSearch]);
 
   const set = (key) => (value) => setFilters((f) => ({ ...f, [key]: value }));
   const activeCount = Object.values(filters).filter(Boolean).length;
   const reset = () => setFilters(EMPTY_FILTERS);
 
+  const leadOptions = useMemo(
+    () => (facets?.leads ?? []).map((l) => ({ key: l.id, label: `${l.name} — ${l.company}` })),
+    [facets]
+  );
   const doeOptions = useMemo(() => asOptions(facets?.does ?? []), [facets]);
   const channelPartnerOptions = useMemo(() => asOptions(facets?.channelPartners ?? []), [facets]);
   const industryOptions = useMemo(() => asOptions(facets?.industries ?? []), [facets]);
@@ -200,16 +203,8 @@ export function UniversalFiltersModule() {
             <Select label="" value={filters.doe} onChange={set("doe")} options={doeOptions} />
           </FilterCard>
 
-          <FilterCard icon={UsersIcon} label="Client">
-            <div className="relative">
-              <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[#9aa6bd]" />
-              <input
-                className={`${inputClass} pl-8`}
-                value={filters.q}
-                onChange={(e) => set("q")(e.target.value)}
-                placeholder="Name or company"
-              />
-            </div>
+          <FilterCard icon={UsersIcon} label="Lead">
+            <Select label="" value={filters.leadId} onChange={set("leadId")} options={leadOptions} />
           </FilterCard>
 
           <FilterCard icon={LinkIcon} label="Channel Partner">
@@ -271,7 +266,7 @@ export function UniversalFiltersModule() {
           <table className="w-full min-w-[900px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
-                {["Client", "Status", "Lifecycle Phase", "Industry", "Geography", "Ticket Size", "Temp", "Owner", "Next Action Due"].map((h) => (
+                {["Lead", "Status", "Lifecycle Phase", "Industry", "Geography", "Ticket Size", "Temp", "Owner", "Next Action Due"].map((h) => (
                   <th key={h} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
                     {h}
                   </th>

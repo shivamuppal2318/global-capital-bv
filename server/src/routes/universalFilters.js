@@ -8,6 +8,7 @@ import {
   bucketDueWindow,
   matchesFilters
 } from "../lib/universalFilters.js";
+import { deriveZoomStage2 } from "../lib/clientPortalStages.js";
 import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const universalFiltersRouter = Router();
@@ -17,12 +18,16 @@ export const universalFiltersRouter = Router();
 universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
   const leads = await prisma.lead.findMany({
     where: { ...leadOwnerWhereClause(req) },
-    select: { doe: true, channelPartner: true, industry: true, territory: true, teamLeader: true, manager: true, leadSource: true }
+    select: { id: true, name: true, company: true, doe: true, channelPartner: true, industry: true, territory: true, teamLeader: true, manager: true, leadSource: true },
+    orderBy: { name: "asc" }
   });
 
   const distinct = (field) => [...new Set(leads.map((l) => l[field]).filter(Boolean))].sort();
 
   res.json({
+    // Every lead, for the "Lead" filter card's dropdown -- id is the
+    // filter value, name/company are what the frontend shows.
+    leads: leads.map((l) => ({ id: l.id, name: l.name, company: l.company })),
     does: distinct("doe"),
     channelPartners: distinct("channelPartner"),
     industries: distinct("industry"),
@@ -45,19 +50,34 @@ async function buildRows(req) {
   const [leads, ndaRecords, meetings, ioiRecords, visitPlans, stageRows] = await Promise.all([
     prisma.lead.findMany({ where: { ...leadOwnerWhereClause(req) } }),
     prisma.ndaRecord.findMany({ select: { leadId: true, expiresAt: true } }),
-    prisma.meeting.findMany({ where: { leadId: { not: null } }, select: { leadId: true, nextActionDueAt: true } }),
+    prisma.meeting.findMany({ where: { leadId: { not: null } }, select: { leadId: true, startTime: true, status: true, nextActionDueAt: true } }),
     prisma.ioiRecord.findMany({ select: { leadId: true } }),
     prisma.visitPlan.findMany({ select: { leadId: true, status: true, plannedFor: true } }),
     prisma.dealStageRecord.findMany({ select: { leadId: true, stage: true } })
   ]);
 
   const atStage = (stage) => new Set(stageRows.filter((r) => r.stage === stage).map((r) => r.leadId));
+
+  // Reuses clientPortalStages.js's deriveZoomStage2 as-is -- same
+  // "chronologically the 2nd meeting, completed" rule leadPipeline.js's
+  // own ZOOM_CALL_2 stage already applies, so this screen's Lifecycle
+  // Phase filter can't disagree with a lead's own Deal Journey panel.
+  const meetingsByLead = new Map();
+  for (const m of meetings) {
+    if (!meetingsByLead.has(m.leadId)) meetingsByLead.set(m.leadId, []);
+    meetingsByLead.get(m.leadId).push(m);
+  }
+  const zoomCall2 = new Set(
+    [...meetingsByLead.entries()].filter(([, ms]) => deriveZoomStage2(ms).status === "completed").map(([leadId]) => leadId)
+  );
+
   const membership = {
     outreach: new Set(leads.filter((l) => l.status !== "NEW").map((l) => l.id)),
     nda: new Set([...ndaRecords.map((r) => r.leadId), ...atStage("NDA")]),
     zoom: new Set([...meetings.map((m) => m.leadId), ...atStage("ZOOM_CALL")]),
     dataRoom: atStage("DATA_ROOM"),
     ioi: new Set([...ioiRecords.map((r) => r.leadId), ...atStage("IOI")]),
+    zoomCall2,
     fieldVisit: new Set([
       ...visitPlans.filter((p) => p.status === "COMPLETED").map((p) => p.leadId),
       ...atStage("FIELD_VISIT")

@@ -38,13 +38,18 @@ export function bucketTicketSize(capitalAsk) {
 // Furthest stage a lead has reached, in funnel order — reuses the exact
 // same "reached this stage" membership logic as the Executive Dashboard's
 // funnel, so the two never disagree about what stage a lead is in.
+// Zoom call 2 sits after IOI, not right after Zoom call 1 -- same
+// ordering/reasoning as leadPipeline.js's own STAGES: the second call is
+// the deeper due-diligence conversation that happens once a lead has
+// actually committed to an IOI, not a generic "second meeting of any kind".
 export const LIFECYCLE_STAGES = [
   { key: "lead", label: "Lead" },
   { key: "outreach", label: "Outreach" },
   { key: "nda", label: "NDA" },
-  { key: "zoom", label: "Zoom call" },
+  { key: "zoom", label: "Zoom call 1" },
   { key: "dataRoom", label: "Data room" },
   { key: "ioi", label: "IOI" },
+  { key: "zoomCall2", label: "Zoom call 2" },
   { key: "fieldVisit", label: "Field visit" },
   { key: "termSheet", label: "Term sheet" }
 ];
@@ -104,6 +109,11 @@ export function matchesFilters(row, filters = {}) {
     const haystack = `${row.name} ${row.company}`.toLowerCase();
     if (!haystack.includes(needle)) return false;
   }
+  // Exact match on a single picked lead -- the Universal Filters screen's
+  // "Lead" filter card, a real dropdown of every lead rather than the
+  // free-text q above (still supported for anything else matching by
+  // typed name/company).
+  if (f.leadId && row.id !== f.leadId) return false;
   if (f.channelPartner && row.channelPartner !== f.channelPartner) return false;
   if (f.industry && row.industry !== f.industry) return false;
   if (f.geography && row.territory !== f.geography) return false;
