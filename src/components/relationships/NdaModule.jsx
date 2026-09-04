@@ -296,13 +296,13 @@ export function NdaModule() {
         noteTone: "amber"
       },
       {
-        label: "Avg signing time",
+        label: "Reminder 1",
         value: has(metrics?.avgSigningDays) ? `${metrics.avgSigningDays}d` : "—",
         note: has(metrics?.avgSigningDays) ? `${metrics.signedWithTiming} measured` : "Nothing signed yet",
         noteTone: "blue"
       },
       {
-        label: "Reminder effect",
+        label: "Reminder 2",
         value: has(metrics?.reminderEffectiveness) ? `${metrics.reminderEffectiveness}%` : "—",
         note: metrics?.remindersSent
           ? `${metrics.signedAfterReminder}/${metrics.remindersSent} signed after chasing`
