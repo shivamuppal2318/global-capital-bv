@@ -15,6 +15,8 @@ import { ActionButton, Card, noteToneClass, SectionTitle, StatCard } from "../ui
 import { leadsApi } from "../../lib/leadsApi";
 import { universalFiltersApi } from "../../lib/universalFiltersApi";
 import { parseCrmLeadsCsv } from "../../lib/csvCrmLeads";
+import { emailCampaignsApi } from "../../lib/emailCampaignsApi";
+import { emailLeadsApi } from "../../lib/emailLeadsApi";
 
 const avatarToneClass = {
   blue: "bg-[#dff1ff] text-[#2f96da]",
@@ -559,6 +561,19 @@ export function CrmWorkspaceModule() {
   const [zoomInfoPage, setZoomInfoPage] = useState(1);
   const [zoomInfoHasSearched, setZoomInfoHasSearched] = useState(false);
 
+  // "Add to List" — sends the currently-selected (already status-filtered)
+  // leads into a real Email Automation List (an EmailCampaign) as real
+  // EmailLead rows, reusing the exact bulk-create route CSV import already
+  // uses (server/src/routes/emailLeads.js's POST /bulk) — no new backend
+  // needed. selectedLeadIds resets on statusFilter change so a stale
+  // selection from a different filter can't silently carry over.
+  const [selectedLeadIds, setSelectedLeadIds] = useState(() => new Set());
+  const [addToListOpen, setAddToListOpen] = useState(false);
+  const [addToListCampaigns, setAddToListCampaigns] = useState([]);
+  const [addToListCampaignId, setAddToListCampaignId] = useState("");
+  const [addToListBusy, setAddToListBusy] = useState(false);
+  const [addToListResult, setAddToListResult] = useState(null);
+
   function refreshLeads() {
     return leadsApi
       .list()
@@ -576,6 +591,12 @@ export function CrmWorkspaceModule() {
   useEffect(() => {
     leadsApi.dealBoard().then(setDealBoard).catch(() => {});
   }, []);
+
+  // A selection made under one status filter shouldn't silently carry over
+  // once the filter changes to a different set of rows.
+  useEffect(() => {
+    setSelectedLeadIds(new Set());
+  }, [statusFilter]);
 
   useEffect(() => {
     refreshLeads()
@@ -931,6 +952,64 @@ export function CrmWorkspaceModule() {
     }
   };
 
+  function toggleLeadSelection(leadId) {
+    setSelectedLeadIds((current) => {
+      const next = new Set(current);
+      if (next.has(leadId)) next.delete(leadId);
+      else next.add(leadId);
+      return next;
+    });
+  }
+
+  function toggleSelectAllVisible(visibleLeadIds) {
+    setSelectedLeadIds((current) => {
+      const allSelected = visibleLeadIds.length > 0 && visibleLeadIds.every((id) => current.has(id));
+      return allSelected ? new Set() : new Set(visibleLeadIds);
+    });
+  }
+
+  function openAddToList() {
+    setAddToListResult(null);
+    setAddToListOpen(true);
+    emailCampaignsApi.list().then(setAddToListCampaigns).catch(() => setAddToListCampaigns([]));
+  }
+
+  async function handleAddToList() {
+    if (!addToListCampaignId) return;
+    const selected = leads.filter((l) => selectedLeadIds.has(l.id));
+    const withEmail = selected.filter((l) => l.email);
+    const skippedNoEmail = selected.length - withEmail.length;
+
+    if (withEmail.length === 0) {
+      setAddToListResult({ ok: false, text: "None of the selected lead(s) have an email on file — nothing to add." });
+      return;
+    }
+
+    setAddToListBusy(true);
+    setAddToListResult(null);
+    try {
+      const rows = withEmail.map((l) => ({
+        name: l.name,
+        company: l.company,
+        email: l.email,
+        owner: l.owner || l.doe || "Unassigned"
+      }));
+      const result = await emailLeadsApi.bulkCreate(addToListCampaignId, rows);
+      const listName = addToListCampaigns.find((c) => c.id === addToListCampaignId)?.name ?? "the list";
+      const parts = [`${result.createdCount} added to "${listName}"`];
+      if (result.duplicateCount) parts.push(`${result.duplicateCount} already there`);
+      if (result.invalidCount) parts.push(`${result.invalidCount} failed a deliverability check`);
+      if (result.failedCount) parts.push(`${result.failedCount} failed`);
+      if (skippedNoEmail) parts.push(`${skippedNoEmail} skipped — no email on file`);
+      setAddToListResult({ ok: true, text: parts.join(", ") + "." });
+      setSelectedLeadIds(new Set());
+    } catch (err) {
+      setAddToListResult({ ok: false, text: err.message });
+    } finally {
+      setAddToListBusy(false);
+    }
+  }
+
   const unassigned = leads.filter((l) => !l.owner).length;
   const convertedPct = leads.length ? ((leads.filter((l) => l.status === "CONVERTED").length / leads.length) * 100).toFixed(1) : "0.0";
   const qualifiedCount = leads.filter((l) => l.qualified).length;
@@ -1055,13 +1134,22 @@ export function CrmWorkspaceModule() {
             </p>
           </div>
           <div className="text-right">
-            <ActionButton
-              label={bulkEnriching ? "Enriching…" : "Bulk Enrich"}
-              icon={GlobeIcon}
-              small
-              onClick={handleBulkEnrich}
-              disabled={bulkEnriching}
-            />
+            <div className="flex flex-wrap justify-end gap-2">
+              <ActionButton
+                label={selectedLeadIds.size ? `Add to List (${selectedLeadIds.size})` : "Add to List"}
+                icon={TagIcon}
+                small
+                onClick={openAddToList}
+                disabled={selectedLeadIds.size === 0}
+              />
+              <ActionButton
+                label={bulkEnriching ? "Enriching…" : "Bulk Enrich"}
+                icon={GlobeIcon}
+                small
+                onClick={handleBulkEnrich}
+                disabled={bulkEnriching}
+              />
+            </div>
             {bulkEnrichResult ? (
               <p className={`mt-1.5 max-w-[280px] text-[12px] font-medium ${bulkEnrichResult.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>
                 {bulkEnrichResult.text}
@@ -1069,11 +1157,65 @@ export function CrmWorkspaceModule() {
             ) : null}
           </div>
         </div>
+
+        {addToListOpen ? (
+          <div className="border-b border-[#e7edf5] bg-[#f8faff] px-5 py-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[240px] flex-1">
+                <p className="mb-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">
+                  Add {selectedLeadIds.size} selected lead(s) to List
+                </p>
+                <select
+                  value={addToListCampaignId}
+                  onChange={(e) => setAddToListCampaignId(e.target.value)}
+                  className="w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none"
+                >
+                  <option value="">Select a List…</option>
+                  {addToListCampaigns.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <ActionButton
+                label={addToListBusy ? "Adding…" : "Add"}
+                primary
+                small
+                onClick={handleAddToList}
+                disabled={addToListBusy || !addToListCampaignId}
+              />
+              <button
+                type="button"
+                onClick={() => setAddToListOpen(false)}
+                className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] font-semibold text-[#435471]"
+              >
+                Close
+              </button>
+            </div>
+            <p className="mt-2 text-[12px] text-[#8592ab]">
+              Creates real Email Automation subscribers — a lead already in that List is skipped, not duplicated. Leads
+              with no email on file are skipped too.
+            </p>
+            {addToListResult ? (
+              <p className={`mt-2 text-[13px] font-medium ${addToListResult.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>
+                {addToListResult.text}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-[14px]">
             <thead>
               <tr className="bg-[#eef4fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8a8fe8]">
-                <th className="px-5 py-3">Lead</th>
+                <th className="px-5 py-3">
+                  <input
+                    type="checkbox"
+                    checked={visibleLeads.length > 0 && visibleLeads.every((l) => selectedLeadIds.has(l.id))}
+                    onChange={() => toggleSelectAllVisible(visibleLeads.map((l) => l.id))}
+                    className="h-4 w-4 rounded border-[#b9c4d8]"
+                  />
+                </th>
+                <th className="px-4 py-3">Lead</th>
                 <th className="px-4 py-3">Company</th>
                 <th className="px-4 py-3">Capital Ask</th>
                 <th className="px-4 py-3">Owner</th>
@@ -1092,7 +1234,15 @@ export function CrmWorkspaceModule() {
                   }}
                   className={`cursor-pointer bg-white transition hover:bg-[#f8faff] ${lead.id === selectedId ? "bg-[#f5f8fd]" : ""}`}
                 >
-                  <td className="px-5 py-4 align-top">
+                  <td className="px-5 py-4 align-top" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedLeadIds.has(lead.id)}
+                      onChange={() => toggleLeadSelection(lead.id)}
+                      className="h-4 w-4 rounded border-[#b9c4d8]"
+                    />
+                  </td>
+                  <td className="px-4 py-4 align-top">
                     <div className="flex items-center gap-3">
                       <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-[13px] font-semibold ${avatarToneClass[lead.tone]}`}>
                         {lead.initials}
@@ -1112,7 +1262,7 @@ export function CrmWorkspaceModule() {
               ))}
               {visibleLeads.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-6 text-[14px] text-[#8592ab]">
+                  <td colSpan={6} className="px-5 py-6 text-[14px] text-[#8592ab]">
                     {leads.length === 0
                       ? "No leads yet — add one with \"New record\", import a CSV, send one in via the webhook (Settings → Integrations & API), or wait for one to arrive from WhatsApp."
                       : `No leads with status "${STATUS_LABEL[statusFilter]}".`}
