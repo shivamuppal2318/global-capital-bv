@@ -442,7 +442,7 @@ export function VisitPlanningModule() {
               </div>
 
               <div>
-                <label className={labelClass}>Planned for</label>
+                <label className={labelClass}>from</label>
                 <input
                   type="date"
                   className={inputClass}
@@ -451,7 +451,7 @@ export function VisitPlanningModule() {
                 />
               </div>
               <div>
-                <label className={labelClass}>Completed on</label>
+                <label className={labelClass}>to</label>
                 <input
                   type="date"
                   className={inputClass}
