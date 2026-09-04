@@ -301,20 +301,18 @@ export function NdaModule() {
       },
       {
         label: "Reminder 1",
-        value: has(metrics?.avgSigningDays) ? `${metrics.avgSigningDays}d` : "—",
-        note: has(metrics?.avgSigningDays) ? `${metrics.signedWithTiming} measured` : "Nothing signed yet",
+        value: String(records.filter((r) => r.status === "REMINDER_1").length),
+        note: "Sitting at reminder 1",
         noteTone: "blue"
       },
       {
         label: "Reminder 2",
-        value: has(metrics?.reminderEffectiveness) ? `${metrics.reminderEffectiveness}%` : "—",
-        note: metrics?.remindersSent
-          ? `${metrics.signedAfterReminder}/${metrics.remindersSent} signed after chasing`
-          : "No reminders sent",
+        value: String(records.filter((r) => r.status === "REMINDER_2").length),
+        note: "Sitting at reminder 2",
         noteTone: "amber"
       }
     ],
-    [metrics]
+    [metrics, records]
   );
 
   return (
