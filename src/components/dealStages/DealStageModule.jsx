@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { dealStagesApi } from "../../lib/dealStagesApi";
 import { leadsApi } from "../../lib/leadsApi";
 import { documentsApi } from "../../lib/documentsApi";
+import { outreachDoeApi } from "../../lib/outreachDoeApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
 import { CheckCircleIcon, PlusIcon, SearchIcon, XIcon } from "../Icons";
 import { FIELD_LABEL, FIELD_PLACEHOLDER, STAGE_CONFIG, STATUS_LABEL, STATUS_TONE } from "./stageConfig";
@@ -45,6 +46,10 @@ export function DealStageModule({ stage }) {
   // lands there too (leadId-scoped), not a second, separate store.
   const [documentUploading, setDocumentUploading] = useState(false);
   const [documentUploadError, setDocumentUploadError] = useState(null);
+  // Real DOE names — same list Outreach/DOE's own scorecard is built from
+  // (distinct EmailLead.owner values) — so "Owner" here picks from the
+  // same real identities instead of free-typed, possibly-inconsistent text.
+  const [doeNames, setDoeNames] = useState([]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -70,6 +75,9 @@ export function DealStageModule({ stage }) {
     leadsApi.list().then(setLeads).catch(() => {});
     if (config.fields.includes("document")) {
       documentsApi.list().then(setDocuments).catch(() => {});
+    }
+    if (config.fields.includes("owner")) {
+      outreachDoeApi.facets().then((f) => setDoeNames(f.does)).catch(() => {});
     }
   }, [config]);
 
@@ -365,12 +373,29 @@ export function DealStageModule({ stage }) {
                 </div>
               ) : null}
 
-              {["amount", "valuation", "location", "attendees", "counterparty", "owner"].filter(uses).map((f) => (
+              {["amount", "valuation", "location", "attendees", "counterparty"].filter(uses).map((f) => (
                 <div key={f}>
                   <label className={labelClass}>{FIELD_LABEL[f]}</label>
                   <input className={inputClass} value={editing[f]} onChange={(e) => setEditing({ ...editing, [f]: e.target.value })} placeholder={FIELD_PLACEHOLDER[f]} />
                 </div>
               ))}
+
+              {uses("owner") ? (
+                <div>
+                  <label className={labelClass}>{FIELD_LABEL.owner}</label>
+                  <select className={inputClass} value={editing.owner} onChange={(e) => setEditing({ ...editing, owner: e.target.value })}>
+                    <option value="">Select a DOE…</option>
+                    {/* Keeps an existing value selectable even if it's since
+                        fallen out of the live DOE list (e.g. no cold-outreach
+                        leads currently assigned to them) rather than silently
+                        blanking out real, already-saved data. */}
+                    {editing.owner && !doeNames.includes(editing.owner) ? <option value={editing.owner}>{editing.owner}</option> : null}
+                    {doeNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
 
               {uses("clientRating") ? (
                 <div>
