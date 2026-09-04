@@ -4,7 +4,7 @@ import { fillMergeFields } from "./renderTemplate.js";
 import { isUnderDailyCap } from "./sendCap.js";
 import { isAccountUnderDailyCap } from "./accountSendCap.js";
 import { resolveEmailAccount } from "./accountRouting.js";
-import { unsubscribeUrlFor } from "./leadSender.js";
+import { unsubscribeUrlFor, interestButtonHtml } from "./leadSender.js";
 import { injectTrackingPixel, wrapLinksForClickTracking } from "./emailTracking.js";
 
 // The one real "send this campaign's own composed content to this lead"
@@ -69,8 +69,12 @@ export async function sendCampaignBlastEmail(leadId, campaignId) {
     data: { leadId: lead.id, kind: "CAMPAIGN_BLAST_SENT", title: subject, detail: "Sending…", emailAccountId: resolvedAccount?.id ?? null }
   });
 
+  // Same one-click "I'm Interested" button every cadence-step email already
+  // gets (see cadenceQueue.js) — a much more reliable interest signal than
+  // waiting for the recipient to type a matching reply. Appended only to
+  // the tracked HTML, not the plain-text body sent alongside it.
   const trackedHtml = injectTrackingPixel(
-    wrapLinksForClickTracking(bodyHtml, pendingActivity.id, { skipUrl: unsubscribeUrl }),
+    wrapLinksForClickTracking(bodyHtml + interestButtonHtml(lead.id), pendingActivity.id, { skipUrl: unsubscribeUrl }),
     pendingActivity.id
   );
 
