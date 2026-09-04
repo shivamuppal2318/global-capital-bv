@@ -6,7 +6,7 @@ import { isUnderDailyCap } from "../lib/sendCap.js";
 import { isAccountUnderDailyCap } from "../lib/accountSendCap.js";
 import { resolveEmailAccount } from "../lib/accountRouting.js";
 import { isLeadEligibleForCadenceStep } from "../lib/cadenceEligibility.js";
-import { unsubscribeUrlFor, interestButtonHtml, plainTextToHtml } from "../lib/leadSender.js";
+import { unsubscribeUrlFor, appendInterestButton, plainTextToHtml } from "../lib/leadSender.js";
 import { injectTrackingPixel, wrapLinksForClickTracking } from "../lib/emailTracking.js";
 import { sendCampaignBlastEmail } from "../lib/campaignBlastSender.js";
 
@@ -158,7 +158,7 @@ export function startCadenceWorker() {
 
       const unsubscribeUrl = unsubscribeUrlFor(leadId);
       const htmlWithClickTracking = wrapLinksForClickTracking(
-        plainTextToHtml(body) + interestButtonHtml(leadId),
+        appendInterestButton(plainTextToHtml(body), leadId),
         pendingActivity.id,
         { skipUrl: unsubscribeUrl }
       );

@@ -4,7 +4,7 @@ import { fillMergeFields } from "./renderTemplate.js";
 import { isUnderDailyCap } from "./sendCap.js";
 import { isAccountUnderDailyCap } from "./accountSendCap.js";
 import { resolveEmailAccount } from "./accountRouting.js";
-import { unsubscribeUrlFor, interestButtonHtml } from "./leadSender.js";
+import { unsubscribeUrlFor, appendInterestButton } from "./leadSender.js";
 import { injectTrackingPixel, wrapLinksForClickTracking } from "./emailTracking.js";
 
 // The one real "send this campaign's own composed content to this lead"
@@ -74,7 +74,7 @@ export async function sendCampaignBlastEmail(leadId, campaignId) {
   // waiting for the recipient to type a matching reply. Appended only to
   // the tracked HTML, not the plain-text body sent alongside it.
   const trackedHtml = injectTrackingPixel(
-    wrapLinksForClickTracking(bodyHtml + interestButtonHtml(lead.id), pendingActivity.id, { skipUrl: unsubscribeUrl }),
+    wrapLinksForClickTracking(appendInterestButton(bodyHtml, lead.id), pendingActivity.id, { skipUrl: unsubscribeUrl }),
     pendingActivity.id
   );
 

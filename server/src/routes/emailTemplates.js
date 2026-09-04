@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { renderEmail } from "../lib/renderTemplate.js";
+import { appendInterestButton } from "../lib/leadSender.js";
 
 export const emailTemplatesRouter = Router();
 
@@ -29,7 +30,11 @@ emailTemplatesRouter.get("/:key/preview", asyncHandler(async (req, res) => {
     ndaSignUrl: "https://example.com/nda/sample-preview"
   });
 
-  res.json(rendered);
+  // Every real send of this template also appends the "I'm Interested"
+  // button (see leadSender.js's sendTemplateEmail) — included here too so
+  // the preview honestly shows what a recipient actually sees, not a
+  // stripped-down version of it.
+  res.json({ ...rendered, html: appendInterestButton(rendered.html, "sample-preview") });
 }));
 
 emailTemplatesRouter.get("/:key", asyncHandler(async (req, res) => {

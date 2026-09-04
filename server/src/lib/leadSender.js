@@ -48,6 +48,20 @@ export function interestButtonHtml(leadId) {
   return `<p style="margin:24px 0;"><a href="${url}" style="display:inline-block;background:#1b295f;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 24px;border-radius:8px;">I'm Interested →</a></p>`;
 }
 
+// Inserts the button just before </body> when the html is a full document
+// (e.g. renderTemplate.js's wrapPlainTextAsHtml fallback) so it lands
+// inside the visible card instead of trailing after a closed </html> tag;
+// falls back to a plain append for an html fragment with no <body> at all
+// (e.g. a cadence step's plainTextToHtml, or a hand-composed campaign body)
+// — same fallback shape as emailTracking.js's injectTrackingPixel.
+export function appendInterestButton(html, leadId) {
+  const button = interestButtonHtml(leadId);
+  if (/<\/body>/i.test(html)) {
+    return html.replace(/<\/body>/i, `${button}</body>`);
+  }
+  return `${html}${button}`;
+}
+
 // Cadence-step bodies (see queue/cadenceQueue.js) are plain text, merged
 // from CadenceStep.bodyTemplate — this is the minimal conversion needed to
 // get real HTML worth tracking/adding a button to, not a full markdown-style
@@ -192,7 +206,11 @@ export async function sendTemplateEmail(leadId, templateKey) {
   const warnings = checkSpamSignals({ subject: rendered.subject, body: rendered.body });
 
   const pendingActivity = await createPendingSendActivity(lead.id, rendered.subject, lead.resolvedAccount?.id ?? null);
-  const trackedHtml = applyTracking(rendered.html, pendingActivity.id, unsubscribeUrl);
+  // Same one-click "I'm Interested" button every cadence-step and campaign
+  // blast email already carries — a lead who hasn't yet replied by any
+  // other channel gets one more easy way to signal it, regardless of which
+  // of the four reply-type templates this happens to be.
+  const trackedHtml = applyTracking(appendInterestButton(rendered.html, lead.id), pendingActivity.id, unsubscribeUrl);
 
   const emailProvider = getEmailProvider(lead.resolvedAccount);
   const { providerMessageId } = await emailProvider.send({
