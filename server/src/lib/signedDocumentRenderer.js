@@ -215,13 +215,16 @@ function fillFormShell({ mainHtml, signatureHtml, script }) {
       <div class="gc-doc-scroll">
         <div class="gc-doc-header">
           <img src="${logo}" alt="Global Capital BV" />
-          <div>
-            <span class="gc-doc-header-brand">GLOBAL CAPITAL BV</span>
-            <span class="gc-doc-header-tag">Building Financial Dreams Together</span>
-          </div>
+          <span class="gc-doc-header-brand">GLOBAL CAPITAL BV</span>
+          <span class="gc-doc-header-tag">Building Financial Dreams Together</span>
         </div>
-        ${mainHtml}
+        <div class="gc-doc-body">${mainHtml}</div>
         <div class="gc-doc-signature">${signatureHtml}</div>
+        <div class="gc-doc-footer">
+          <p class="gc-doc-footer-company">Global Capital B.V.</p>
+          <p>Groen v Prinstererstraat 38, 3354 BD Papendrecht, Zuid Holland, Netherlands</p>
+          <p>www.globalcapitalbv.com&nbsp;|&nbsp;info@globalcapitalbv.com&nbsp;|&nbsp;CCI 96239735</p>
+        </div>
       </div>
     </div>
     ${script}`;
