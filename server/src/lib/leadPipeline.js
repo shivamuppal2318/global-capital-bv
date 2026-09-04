@@ -1,5 +1,6 @@
 import { prisma } from "../db.js";
 import { deriveZoomStage2 } from "./clientPortalStages.js";
+import { REQUIRED_DOCUMENT_LABELS } from "./requiredDocuments.js";
 
 // A single CRM lead's real journey across the full deal lifecycle — a
 // per-record complement to Executive Dashboard's company-wide Funnel
@@ -32,11 +33,17 @@ export const STAGE_LABELS = {
 };
 
 export async function computeLeadPipeline(leadId) {
-  const [lead, nda, meetings, dataRoomRecord, ioi, fieldVisitRecord, termSheetRecord] = await Promise.all([
+  const [lead, nda, meetings, dataRoomDocs, ioi, fieldVisitRecord, termSheetRecord] = await Promise.all([
     prisma.lead.findUnique({ where: { id: leadId }, select: { status: true } }),
     prisma.ndaRecord.findUnique({ where: { leadId } }),
     prisma.meeting.findMany({ where: { leadId }, orderBy: { startTime: "desc" } }),
-    prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "DATA_ROOM" } } }),
+    // Real received-document count against the required checklist (same
+    // categories/logic as documents.js's own /kpis route) — not the
+    // DealStageRecord for this stage, which has no real staff edit screen
+    // (DATA_ROOM isn't in stageConfig.js's MODULE_TO_STAGE) and can only
+    // ever sit at NOT_STARTED or IN_PROGRESS via the client portal's
+    // upload side-effect, never reflecting how much has actually come in.
+    prisma.document.findMany({ where: { leadId, category: { in: REQUIRED_DOCUMENT_LABELS } }, select: { category: true } }),
     prisma.ioiRecord.findUnique({ where: { leadId } }),
     prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "FIELD_VISIT" } } }),
     prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "TERM_SHEET" } } })
@@ -68,6 +75,22 @@ export async function computeLeadPipeline(leadId) {
     return { status: "in_progress", detail: record.status.replace("_", " ").toLowerCase() };
   };
 
+  // A lead only counts as meaningfully "in" Data Room once more than half
+  // the required checklist has actually come in — a couple of stray
+  // uploads out of ten shouldn't read the same as real diligence
+  // progress. All required categories in = done (same "received, not
+  // necessarily staff-verified yet" bar the client portal's own
+  // deriveDataRoomStage already uses, for consistency).
+  const dataRoom = (() => {
+    const requested = REQUIRED_DOCUMENT_LABELS.length;
+    const received = new Set(dataRoomDocs.map((d) => d.category)).size;
+    const percent = requested > 0 ? Math.round((received / requested) * 100) : 0;
+    const detail = `${received} of ${requested} required document(s) received (${percent}%)`;
+    if (received >= requested) return { status: "done", detail };
+    if (percent > 50) return { status: "in_progress", detail };
+    return { status: "not_started", detail };
+  })();
+
   const ioi_ = (() => {
     if (!ioi) return { status: "not_started", detail: "No IOI record" };
     if (ioi.status === "SIGNED") return { status: "done", detail: "Signed" };
@@ -91,7 +114,7 @@ export async function computeLeadPipeline(leadId) {
     OUTREACH: outreach,
     NDA: nda_,
     ZOOM_CALL: zoomCall,
-    DATA_ROOM: stageRecordSummary(dataRoomRecord),
+    DATA_ROOM: dataRoom,
     IOI: ioi_,
     ZOOM_CALL_2: zoomCall2,
     FIELD_VISIT: stageRecordSummary(fieldVisitRecord),
