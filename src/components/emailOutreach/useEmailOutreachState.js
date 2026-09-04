@@ -33,11 +33,12 @@ const DEFAULT_AUTOMATION_FORM = {
   abTest: true,
   autoPause: true,
   replyType: "interested",
-  preferredPath: "nda-first",
+  preferredPath: "zoom-first",
   replyTo: "",
   subject: "",
   bodyHtml: "",
   segmentId: "",
+  targetCampaignId: "",
   selectedLeadIds: [],
   scheduledAt: "",
   delayBetweenMinutes: "0"
@@ -76,17 +77,14 @@ function buildAutomationSteps(campaignName, delayDays, followUpCount) {
 // Reflects the SELECTED LEAD's actual tracked progress (ndaSignedAt,
 // callStatus derived from Calendly webhooks / manual call-completed
 // confirmation — see schema.prisma's EmailLead comments), not just the
-// Automation tab's generic reply-type/path config. The config still decides
-// which branch applies and, for "interested", which step comes first
-// (preferredPath is a real per-campaign setting) — but "done" only shows
-// once this lead's own data confirms it happened. Steps with no tracked
-// field yet (data room, IOI/LOI) can only honestly show "pending" — there's
-// nothing in EmailLead to confirm those completed.
+// reply-type classification. The reply type decides which branch of steps
+// applies — but "done" only shows once this lead's own data confirms it
+// happened. Steps with no tracked field yet (data room, IOI/LOI) can only
+// honestly show "pending" — there's nothing in EmailLead to confirm those
+// completed.
 function buildWorkflowSteps(flowState, lead) {
   const ndaDone = Boolean(lead?.ndaSignedAt);
   const zoomDone = lead?.callStatus === "completed";
-  const zoomBooked = zoomDone || lead?.callStatus === "booked";
-  const ndaFirst = flowState.preferredPath !== "zoom-first";
 
   const steps = [
     {
@@ -103,34 +101,23 @@ function buildWorkflowSteps(flowState, lead) {
     }
   ];
 
+  // "Interested" (they mentioned NDA/signing) still goes through a Zoom
+  // call before the NDA is actually sent — same as an explicit zoom-request
+  // — a deliberate policy so every lead gets a human touchpoint before the
+  // legal document goes out, even one who says they're ready to sign.
   if (flowState.replyType === "interested") {
-    if (ndaFirst) {
-      steps.push({
-        key: "nda",
-        title: "Send NDA e-signature",
-        desc: "Auto-send NDA email and schedule up to 2 reminders, 3 working days apart.",
-        state: ndaDone ? "done" : "current"
-      });
-      steps.push({
-        key: "zoom1",
-        title: "Schedule Zoom Call 1",
-        desc: "Send booking link and confirm introductory Zoom meeting.",
-        state: zoomDone ? "done" : zoomBooked || ndaDone ? "current" : "pending"
-      });
-    } else {
-      steps.push({
-        key: "zoom1",
-        title: "Schedule Zoom Call 1",
-        desc: "Send booking link and confirm introductory Zoom meeting.",
-        state: zoomDone ? "done" : "current"
-      });
-      steps.push({
-        key: "nda",
-        title: "Send NDA e-signature",
-        desc: "Auto-send NDA email and schedule up to 2 reminders, 3 working days apart.",
-        state: ndaDone ? "done" : zoomDone ? "current" : "pending"
-      });
-    }
+    steps.push({
+      key: "zoom1",
+      title: "Schedule Zoom Call 1",
+      desc: "Send booking link and confirm introductory Zoom meeting before the NDA.",
+      state: zoomDone ? "done" : "current"
+    });
+    steps.push({
+      key: "nda",
+      title: "Send NDA e-signature",
+      desc: "Auto-send NDA email and schedule up to 2 reminders, 3 working days apart.",
+      state: ndaDone ? "done" : zoomDone ? "current" : "pending"
+    });
     steps.push({
       key: "data-room",
       title: "Request Data Room",
@@ -200,11 +187,13 @@ function buildWorkflowSteps(flowState, lead) {
 }
 
 function buildReplyAction(flowState) {
+  // Even a lead who explicitly mentioned the NDA still gets a Zoom-booking
+  // email first, not the NDA itself — see buildWorkflowSteps above for why.
   if (flowState.replyType === "interested") {
     return {
-      subject: "NDA signature + next steps",
-      body: "Thanks for the interest. Please find the NDA signature link attached. Once signed, we will unlock the next diligence step and share the data-room request checklist.",
-      cta: "Send NDA email"
+      subject: "Let's find 15 minutes before the NDA",
+      body: "Great to hear you're ready to move forward. Before we send the NDA over, we like to do a quick intro call first — here's our Calendly link to pick a time: https://calendly.com/globalcapitalbv/intro-call. We'll cover mandate fit, then send the NDA and data-room checklist right after.",
+      cta: "Send Calendly invite"
     };
   }
 
@@ -237,17 +226,25 @@ export const replyRules = [
   { id: "info", label: 'Reply contains "deck/details"', keywords: ["deck", "detail", "brochure", "info"], replyType: "info-request" }
 ];
 
-function getStageFromReplyType(replyType, preferredPath) {
-  if (replyType === "interested") {
-    return preferredPath === "zoom-first" ? "Zoom 1 Pending" : "NDA Sent";
-  }
-  if (replyType === "zoom-request") {
+function getStageFromReplyType(replyType) {
+  // "interested" (even one who mentioned the NDA) and "zoom-request" both
+  // land on the same next stage — a Zoom call happens before the NDA goes
+  // out either way, see buildWorkflowSteps/buildReplyAction above.
+  if (replyType === "interested" || replyType === "zoom-request") {
     return "Zoom 1 Pending";
   }
   if (replyType === "info-request") {
     return "Info Shared";
   }
   return "Reminder Pending";
+}
+
+// Every reply type now goes Zoom-first before any NDA is sent — kept as a
+// named helper (rather than always setting the literal string "zoom-first")
+// so the one real branch point (info-request/no-reply have no zoom step at
+// all) stays legible at each call site below.
+function preferredPathForReplyType(replyType) {
+  return replyType === "interested" || replyType === "zoom-request" ? "zoom-first" : "nda-first";
 }
 
 // Backend enums are UPPER_SNAKE (Prisma ReplyType/EmailCampaignStatus); the
@@ -488,7 +485,7 @@ export function useEmailOutreachState() {
           ...current,
           campaignName: mapped[0].campaign,
           replyType: mapped[0].replyType,
-          preferredPath: mapped[0].replyType === "zoom-request" ? "zoom-first" : "nda-first"
+          preferredPath: preferredPathForReplyType(mapped[0].replyType)
         }));
       })
       .catch(() => {
@@ -543,6 +540,30 @@ export function useEmailOutreachState() {
 
   const [automationForm, setAutomationForm] = useState(DEFAULT_AUTOMATION_FORM);
   const [automationNotice, setAutomationNotice] = useState("Automation ready. Select a campaign or create a new one.");
+
+  // A separate list of leads, only populated when "Send To" is redirected
+  // to a different List than the one being composed in (targetCampaignId)
+  // — kept apart from allLeads above so switching the send target doesn't
+  // clobber the composed campaign's own leads elsewhere in the UI.
+  const [targetListLeads, setTargetListLeads] = useState([]);
+  useEffect(() => {
+    const targetId = automationForm.targetCampaignId;
+    if (!targetId || targetId === selectedCampaignId) {
+      setTargetListLeads([]);
+      return;
+    }
+    emailLeadsApi
+      .list(targetId)
+      .then(setTargetListLeads)
+      .catch(() => setTargetListLeads([]));
+  }, [automationForm.targetCampaignId, selectedCampaignId]);
+
+  // Switching which List this composed email sends to also clears any
+  // manually-picked specific leads — those ids belonged to the previous
+  // target's own lead set and would silently mismatch the new one.
+  function handleChangeSendTarget(campaignId) {
+    setAutomationForm((current) => ({ ...current, targetCampaignId: campaignId, selectedLeadIds: [] }));
+  }
   const [newLeadForm, setNewLeadForm] = useState({ name: "", company: "", email: "", country: "" });
   const [csvText, setCsvText] = useState("");
   const [csvPreview, setCsvPreview] = useState(null);
@@ -604,18 +625,8 @@ export function useEmailOutreachState() {
     setAutomationForm((current) => ({ ...current, [key]: value }));
   }
 
-  function handleTemplateDraftChange(field, value) {
-    setTemplateDrafts((current) => ({
-      ...current,
-      [automationForm.replyType]: {
-        ...current[automationForm.replyType],
-        [field]: value
-      }
-    }));
-  }
-
   function handleApplyRule(rule) {
-    const nextPreferredPath = rule.replyType === "zoom-request" ? "zoom-first" : "nda-first";
+    const nextPreferredPath = preferredPathForReplyType(rule.replyType);
     setAutomationForm((current) => ({
       ...current,
       replyType: rule.replyType,
@@ -630,7 +641,7 @@ export function useEmailOutreachState() {
       ...current,
       campaignName: lead.campaign,
       replyType: lead.replyType,
-      preferredPath: lead.replyType === "zoom-request" ? "zoom-first" : "nda-first"
+      preferredPath: preferredPathForReplyType(lead.replyType)
     }));
     setAutomationNotice(`Loaded ${lead.name}'s reply into the follow-up panel.`);
   }
@@ -977,6 +988,7 @@ export function useEmailOutreachState() {
       subject: campaign.subject ?? "",
       bodyHtml: campaign.bodyHtml ?? "",
       segmentId: "",
+      targetCampaignId: "",
       selectedLeadIds: [],
       scheduledAt: "",
       delayBetweenMinutes: "0"
@@ -1082,11 +1094,18 @@ export function useEmailOutreachState() {
     }
 
     try {
+      const targetCampaignId = automationForm.targetCampaignId && automationForm.targetCampaignId !== saved.id
+        ? automationForm.targetCampaignId
+        : null;
+      const targetName = targetCampaignId ? campaigns.find((c) => c.id === targetCampaignId)?.name : null;
+      const sentToLabel = targetName ? `"${saved.name}" → "${targetName}"` : `"${saved.name}"`;
+
       const result = await emailCampaignsApi.sendNow(saved.id, {
-        // Picking specific leads overrides the segment/all-leads choice —
-        // see toggleLeadSelection in CampaignsTab.jsx.
+        // Picking specific leads overrides the segment/all-leads/target-list
+        // choice — see toggleLeadSelection in CampaignsTab.jsx.
         leadIds: automationForm.selectedLeadIds?.length ? automationForm.selectedLeadIds : undefined,
         segmentId: automationForm.segmentId || null,
+        targetCampaignId,
         scheduledAt: automationForm.scheduledAt ? new Date(automationForm.scheduledAt).toISOString() : null,
         delayBetweenMinutes: Number(automationForm.delayBetweenMinutes) || 0
       });
@@ -1094,15 +1113,15 @@ export function useEmailOutreachState() {
       if (result.queued > 0) {
         setAutomationNotice(
           result.scheduled
-            ? `"${saved.name}": ${result.queued} email(s) scheduled.`
-            : `"${saved.name}": ${result.queued} email(s) queued to send now.`
+            ? `${sentToLabel}: ${result.queued} email(s) scheduled.`
+            : `${sentToLabel}: ${result.queued} email(s) queued to send now.`
         );
       } else if (result.sentImmediately > 0 || result.failed > 0) {
         setAutomationNotice(
-          `"${saved.name}": ${result.sentImmediately} sent immediately, ${result.failed} failed (sending queue is disabled — no delay throttle was applied).`
+          `${sentToLabel}: ${result.sentImmediately} sent immediately, ${result.failed} failed (sending queue is disabled — no delay throttle was applied).`
         );
       } else {
-        setAutomationNotice(result.message ?? `"${saved.name}": nothing was sent.`);
+        setAutomationNotice(result.message ?? `${sentToLabel}: nothing was sent.`);
       }
     } catch (error) {
       setAutomationNotice(`Could not send "${saved.name}" — ${error.message}`);
@@ -1114,7 +1133,7 @@ export function useEmailOutreachState() {
       return;
     }
 
-    const nextStage = getStageFromReplyType(automationForm.replyType, automationForm.preferredPath);
+    const nextStage = getStageFromReplyType(automationForm.replyType);
 
     // Two-tier: prefer sending via the saved Template (backend applies
     // merge fields, branded HTML, unsubscribe link, deliverability checks
@@ -1178,16 +1197,6 @@ export function useEmailOutreachState() {
     );
   }
 
-  async function handleSaveTemplate() {
-    const templateKey = automationForm.replyType;
-    try {
-      await emailTemplatesApi.save(templateKey, { subject: replyAction.subject, body: replyAction.body });
-      setAutomationNotice(`Template "${templateKey}" saved to the backend — reused for every future send of this reply type.`);
-    } catch (error) {
-      setAutomationNotice(`Template "${templateKey}" kept locally only — backend unreachable (${error.message}). It will reset on refresh.`);
-    }
-  }
-
   async function handlePreviewTemplate() {
     const templateKey = automationForm.replyType;
     try {
@@ -1195,9 +1204,7 @@ export function useEmailOutreachState() {
       setPreviewHtml(rendered.html);
     } catch (error) {
       setPreviewHtml(null);
-      setAutomationNotice(
-        `Could not load a preview for "${templateKey}" (${error.message}). Save the template to the backend first — preview renders the saved version, not unsaved edits.`
-      );
+      setAutomationNotice(`Could not load a preview for "${templateKey}" (${error.message}).`);
     }
   }
 
@@ -1221,8 +1228,8 @@ export function useEmailOutreachState() {
     try {
       const result = await emailLeadsApi.simulateReply(selectedLead.id, replyPreview);
       const localReplyType = backendReplyTypeToLocal(result.replyType);
-      const nextPreferredPath = localReplyType === "zoom-request" ? "zoom-first" : "nda-first";
-      const nextStage = getStageFromReplyType(localReplyType, nextPreferredPath);
+      const nextPreferredPath = preferredPathForReplyType(localReplyType);
+      const nextStage = getStageFromReplyType(localReplyType);
 
       setRepliedLeads((current) =>
         current.map((lead) =>
@@ -1252,16 +1259,16 @@ export function useEmailOutreachState() {
 
   return {
     campaigns, segments, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
-    repliedLeads, allLeads, systemStatus, dashboardSummary, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
+    repliedLeads, allLeads, targetListLeads, handleChangeSendTarget, systemStatus, dashboardSummary, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
     automationForm, automationNotice, newLeadForm, setNewLeadForm,
     csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, csvImportBusy, csvPreviewBusy, previewHtml, setPreviewHtml,
     emailAccounts, newAccountForm, setNewAccountForm,
     selectedCampaign, selectedLead, selectedLeadTimeline, activeReplyRule,
     liveSteps, workflowSteps, replyAction,
     convertingLeadId, convertResults, handleConvertToLead,
-    handleFormChange, handleTemplateDraftChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
+    handleFormChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
     handleToggleCampaignStatus, handleAddLead, handleImportCsv, handleAddEmailAccount,
     handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation, handleSendNow, selectCampaign, startNewCampaign,
-    handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, simulateIncomingReply
+    handleSendNextEmail, handlePreviewTemplate, simulateIncomingReply
   };
 }

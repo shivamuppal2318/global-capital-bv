@@ -1189,22 +1189,33 @@ export function CrmWorkspaceModule() {
 
         {addToListOpen ? (
           <div className="border-b border-[#e7edf5] bg-[#f8faff] px-5 py-4">
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="min-w-[240px] flex-1">
-                <p className="mb-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">
-                  Add {selectedLeadIds.size} selected lead(s) to List
+            <p className="mb-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">
+              Add {selectedLeadIds.size} selected lead(s) to List
+            </p>
+            <div className="max-h-[180px] overflow-y-auto rounded-[12px] border border-[#d6deea] bg-white">
+              {addToListCampaigns.length ? (
+                addToListCampaigns.map((c) => (
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0"
+                  >
+                    <input
+                      type="radio"
+                      name="add-to-list-campaign"
+                      checked={addToListCampaignId === c.id}
+                      onChange={() => setAddToListCampaignId(c.id)}
+                      className="h-4 w-4 border-[#b9c4d8]"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                  </label>
+                ))
+              ) : (
+                <p className="px-3 py-3 text-[12px] text-[#9aa6ba]">
+                  No Lists yet — create one from Email Automation → Leads → New List.
                 </p>
-                <select
-                  value={addToListCampaignId}
-                  onChange={(e) => setAddToListCampaignId(e.target.value)}
-                  className="w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none"
-                >
-                  <option value="">Select a List…</option>
-                  {addToListCampaigns.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
+              )}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <ActionButton
                 label={addToListBusy ? "Adding…" : "Add"}
                 primary
