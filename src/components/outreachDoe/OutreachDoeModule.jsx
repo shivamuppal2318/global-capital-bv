@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { outreachDoeApi } from "../../lib/outreachDoeApi";
-import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
+import { ActionButton, Card, SectionTitle, StatCard } from "../ui";
 import { CheckCircleIcon, GridIcon, RadarIcon } from "../Icons";
 
 const inputClass =
@@ -50,14 +50,13 @@ export function OutreachDoeModule() {
 
   const scorecardRows = useMemo(() => {
     if (!data || !scoped) return [];
-    const t = data.targets;
     return [
-      { key: "outreachPerDay", label: "Outreach/Day", actual: scoped.outreachPerDay, target: t.outreachPerDay, unit: "" , attributable: true },
-      { key: "positiveResponseRate", label: "Positive Response %", actual: scoped.positiveResponseRate, target: t.positiveResponseRate, unit: "%", attributable: true },
-      { key: "linkedinAcceptanceRate", label: "LinkedIn Acceptance", actual: data.companyWide.linkedinAcceptanceRate, target: t.linkedinAcceptanceRate, unit: "%", attributable: false, note: "Not tracked — no LinkedIn integration" },
-      { key: "coldEmailOpenRate", label: "Cold Email Open Rate", actual: scoped.coldEmailOpenRate, target: t.coldEmailOpenRate, unit: "%", attributable: true },
-      { key: "whatsappReplyRate", label: "WhatsApp Reply Rate", actual: data.companyWide.whatsappReplyRate, target: t.whatsappReplyRate, unit: "%", attributable: false, note: "Company-wide — WhatsApp agents aren't linked to a DOE yet" },
-      { key: "zoomCallsPerDay", label: "Zoom Call Booked", actual: data.companyWide.zoomCallsPerDay, target: t.zoomCallsPerDay, unit: "/day", attributable: false, note: "Company-wide — meetings aren't linked to a DOE yet" }
+      { key: "outreachPerDay", label: "Outreach/Day", actual: scoped.outreachPerDay, unit: "", attributable: true },
+      { key: "positiveResponseRate", label: "Positive Response %", actual: scoped.positiveResponseRate, unit: "%", attributable: true },
+      { key: "linkedinAcceptanceRate", label: "LinkedIn Acceptance", actual: data.companyWide.linkedinAcceptanceRate, unit: "%", attributable: false, note: "Not tracked — no LinkedIn integration" },
+      { key: "coldEmailOpenRate", label: "Cold Email Open Rate", actual: scoped.coldEmailOpenRate, unit: "%", attributable: true },
+      { key: "whatsappReplyRate", label: "WhatsApp Reply Rate", actual: data.companyWide.whatsappReplyRate, unit: "%", attributable: false, note: "Company-wide — WhatsApp agents aren't linked to a DOE yet" },
+      { key: "zoomCallsPerDay", label: "Zoom Call Booked", actual: data.companyWide.zoomCallsPerDay, unit: "/day", attributable: false, note: "Company-wide — meetings aren't linked to a DOE yet" }
     ];
   }, [data, scoped]);
 
@@ -167,41 +166,25 @@ export function OutreachDoeModule() {
         {error ? <p className="mt-4 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[520px] border-collapse text-left">
+          <table className="w-full min-w-[420px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
                 <th className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">KPI</th>
-                <th className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">Actual</th>
-                <th className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">Target</th>
-                <th className="py-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">Status</th>
+                <th className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">Performance</th>
               </tr>
             </thead>
             <tbody>
-              {scorecardRows.map((row) => {
-                const onTarget = has(row.actual) && row.actual >= row.target;
-                return (
-                  <tr key={row.key} className="border-b border-[#f1f4f9] last:border-0">
-                    <td className="py-3 pr-4 text-[14px] font-semibold text-[#102246]">
-                      {row.label}
-                      {!row.attributable ? <span className="ml-2 text-[11px] font-normal text-[#9aa6bd]">(company-wide)</span> : null}
-                    </td>
-                    <td className="py-3 pr-4 text-[15px] font-semibold text-[#334463]">
-                      {has(row.actual) ? `${row.actual}${row.unit}` : row.note ? "—" : "—"}
-                    </td>
-                    <td className="py-3 pr-4 text-[13px] text-[#5c6b87]">
-                      {row.target}
-                      {row.unit}
-                    </td>
-                    <td className="py-3">
-                      {has(row.actual) ? (
-                        <Badge tone={onTarget ? "green" : "amber"}>{onTarget ? "On target" : "Below target"}</Badge>
-                      ) : (
-                        <Badge tone="slate">{row.note ?? "No data"}</Badge>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+              {scorecardRows.map((row) => (
+                <tr key={row.key} className="border-b border-[#f1f4f9] last:border-0">
+                  <td className="py-3 pr-4 text-[14px] font-semibold text-[#102246]">
+                    {row.label}
+                    {!row.attributable ? <span className="ml-2 text-[11px] font-normal text-[#9aa6bd]">(company-wide)</span> : null}
+                  </td>
+                  <td className="py-3 pr-4 text-[15px] font-semibold text-[#334463]">
+                    {has(row.actual) ? `${row.actual}${row.unit}` : row.note ? "—" : "—"}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -224,7 +207,6 @@ export function OutreachDoeModule() {
                   { label: "DOE" },
                   { label: "Outreach/Day" },
                   { label: "Positive Response %" },
-                  { label: "LinkedIn Acceptance", companyWide: true },
                   { label: "Cold Email Open Rate" },
                   { label: "WhatsApp Reply Rate", companyWide: true },
                   { label: "Zoom Call Booked", companyWide: true }
@@ -242,7 +224,6 @@ export function OutreachDoeModule() {
                   <td className="py-3 pr-4 text-[14px] font-semibold text-[#102246]">{row.doe}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtNum(row.outreachPerDay)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtPct(row.positiveResponseRate)}</td>
-                  <td className="py-3 pr-4 text-[13px] text-[#9aa6bd]">{fmtPct(data.companyWide.linkedinAcceptanceRate)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtPct(row.coldEmailOpenRate)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#9aa6bd]">{fmtPct(data.companyWide.whatsappReplyRate)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#9aa6bd]">
@@ -261,9 +242,8 @@ export function OutreachDoeModule() {
 
           {!loading && data && data.scorecard.length > 0 ? (
             <p className="mt-3 text-[12px] text-[#9aa6bd]">
-              LinkedIn Acceptance, WhatsApp Reply Rate and Zoom Call Booked repeat the same company-wide number in
-              every row — Agent and Meeting records aren't linked to a DOE yet, so there's no real per-rep split for
-              these three.
+              WhatsApp Reply Rate and Zoom Call Booked repeat the same company-wide number in every row — Agent and
+              Meeting records aren't linked to a DOE yet, so there's no real per-rep split for these two.
             </p>
           ) : null}
         </div>
