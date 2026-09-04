@@ -62,6 +62,12 @@ function renderBody(rawText) {
   return { mainHtml: toParagraphHtml(mainPart, substitute), signatureHtml: toParagraphHtml(signaturePart, substitute) };
 }
 
+// Mirrors the real letterhead template (Global Capital BV -- Reciprocal NDA
+// Template.pdf, and the equivalent IOI docx): a bordered page frame with a
+// centered logo/brand header under a rule, and a matching address footer --
+// rather than a plain unstyled scroll of paragraphs. The PDF repeats that
+// header/footer on every physical page; this is one continuous HTML
+// document, so each is shown once rather than faked per-page.
 function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
   const logo = LOGO_DATA_URI;
   return `<!doctype html>
@@ -71,32 +77,40 @@ function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
 <title>${escapeHtml(title)}</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 48px 56px; font-family: Georgia, "Times New Roman", serif; color: #16213e; line-height: 1.6; max-width: 780px; margin: 0 auto; }
-  h1 { font-size: 22px; text-align: center; margin: 0 0 28px; letter-spacing: 0.02em; }
+  body { margin: 0; padding: 32px 16px; background: #eef1f6; font-family: Georgia, "Times New Roman", serif; color: #16213e; line-height: 1.6; }
+  .doc-page { max-width: 780px; margin: 0 auto; background: #fff; border: 2px solid #21439b; border-radius: 6px; padding: 40px 56px; }
+  .doc-body > p:first-child { text-align: center; font-weight: 700; font-size: 17px; letter-spacing: 0.01em; margin: 0 0 24px; }
   p { margin: 0 0 14px; font-size: 13.5px; text-align: justify; }
   ul { margin: 0 0 14px; padding-left: 22px; }
   li { font-size: 13.5px; margin-bottom: 6px; }
-  .header { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #21439b; padding-bottom: 14px; margin-bottom: 28px; }
-  .header-logo { height: 42px; width: auto; flex-shrink: 0; }
-  .header-text { display: flex; flex-direction: column; }
-  .brand { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-weight: 700; font-size: 15px; color: #21439b; }
-  .tag { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #5c6b87; text-transform: uppercase; letter-spacing: 0.08em; }
+  .header { text-align: center; border-bottom: 2px solid #21439b; padding-bottom: 16px; margin-bottom: 28px; }
+  .header img { height: 48px; width: auto; margin-bottom: 8px; }
+  .brand { display: block; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-weight: 800; font-size: 19px; color: #16213e; letter-spacing: 0.02em; }
+  .tag { display: block; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-weight: 700; font-size: 11px; color: #21439b; text-transform: uppercase; letter-spacing: 0.07em; margin-top: 3px; }
   .signature { margin-top: 32px; padding-top: 20px; border-top: 1px solid #d6deea; }
-  .footer { margin-top: 40px; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #9aa6bd; text-align: center; }
-  @media print { body { padding: 0; } }
+  .doc-footer { margin-top: 40px; padding-top: 16px; border-top: 2px solid #21439b; text-align: center; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+  .doc-footer p { text-align: center; font-size: 11px; color: #5c6b87; margin: 0 0 3px; }
+  .doc-footer .company { font-weight: 700; color: #21439b; font-size: 12px; }
+  .footer-note { margin-top: 16px; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #9aa6bd; text-align: center; }
+  @media print { body { padding: 0; background: #fff; } .doc-page { border-width: 1px; } }
 </style>
 </head>
 <body>
-  <div class="header">
-    <img class="header-logo" src="${logo}" alt="Global Capital BV" />
-    <div class="header-text">
+  <div class="doc-page">
+    <div class="header">
+      <img src="${logo}" alt="Global Capital BV" />
       <span class="brand">GLOBAL CAPITAL BV</span>
       <span class="tag">Building Financial Dreams Together</span>
     </div>
+    <div class="doc-body">${mainHtml}</div>
+    <div class="signature">${signatureHtml}</div>
+    <div class="doc-footer">
+      <p class="company">Global Capital B.V.</p>
+      <p>Groen v Prinstererstraat 38, 3354 BD Papendrecht, Zuid Holland, Netherlands</p>
+      <p>www.globalcapitalbv.com&nbsp;|&nbsp;info@globalcapitalbv.com&nbsp;|&nbsp;CCI 96239735</p>
+    </div>
+    <p class="footer-note">${escapeHtml(footerNote)}</p>
   </div>
-  ${mainHtml}
-  <div class="signature">${signatureHtml}</div>
-  <p class="footer">${escapeHtml(footerNote)}</p>
 </body>
 </html>`;
 }
