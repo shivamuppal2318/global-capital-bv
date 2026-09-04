@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { outreachDoeApi } from "../../lib/outreachDoeApi";
-import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
+import { ActionButton, Card, SectionTitle, StatCard } from "../ui";
 import { CheckCircleIcon, GridIcon, RadarIcon } from "../Icons";
 
 const inputClass =
@@ -9,8 +9,20 @@ const inputClass =
 const has = (v) => v !== null && v !== undefined;
 const fmtPct = (v) => (has(v) ? `${v}%` : "—");
 const fmtNum = (v) => (has(v) ? String(v) : "—");
+const fmtDays = (v) => (has(v) ? `${v} days` : "—");
 
-const EMPTY_FILTERS = { doe: "", geography: "", dateFrom: "", dateTo: "" };
+// Same abbreviation scheme as Executive Dashboard's own fmtMoney -- these
+// numbers come from the exact same computation (lib/executiveKpis.js), so
+// they need to read the same way wherever they show up.
+function fmtMoney(value) {
+  if (!has(value) || value === 0) return "—";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 1_000) return `$${(value / 1_000).toFixed(0)}k`;
+  return `$${value.toLocaleString()}`;
+}
+
+const EMPTY_FILTERS = { doe: "", geography: "", dateFrom: "", dateTo: "", industry: "", ticketSizeBand: "", temperature: "" };
 
 export function OutreachDoeModule() {
   const [facets, setFacets] = useState(null);
@@ -50,16 +62,51 @@ export function OutreachDoeModule() {
 
   const scorecardRows = useMemo(() => {
     if (!data || !scoped) return [];
-    const t = data.targets;
+    const k = data.pipelineKpis;
+    // Same funnel-stage numbers Executive Dashboard shows (lib/executiveKpis.js
+    // computes both), not attributable to a single DOE — no CRM lead's
+    // NDA/Zoom/Data Room/IOI/Field Visit/Term Sheet record is linked to
+    // whichever rep sent the original cold email, so these are company-wide
+    // pipeline health, shown here for the same at-a-glance convenience.
+    const pipelineNote = "Company-wide — matches Executive Dashboard, not linked to a single DOE";
     return [
-      { key: "outreachPerDay", label: "Outreach/Day", actual: scoped.outreachPerDay, target: t.outreachPerDay, unit: "" , attributable: true },
-      { key: "positiveResponseRate", label: "Positive Response %", actual: scoped.positiveResponseRate, target: t.positiveResponseRate, unit: "%", attributable: true },
-      { key: "linkedinAcceptanceRate", label: "LinkedIn Acceptance", actual: data.companyWide.linkedinAcceptanceRate, target: t.linkedinAcceptanceRate, unit: "%", attributable: false, note: "Not tracked — no LinkedIn integration" },
-      { key: "coldEmailOpenRate", label: "Cold Email Open Rate", actual: scoped.coldEmailOpenRate, target: t.coldEmailOpenRate, unit: "%", attributable: true },
-      { key: "whatsappReplyRate", label: "WhatsApp Reply Rate", actual: data.companyWide.whatsappReplyRate, target: t.whatsappReplyRate, unit: "%", attributable: false, note: "Company-wide — WhatsApp agents aren't linked to a DOE yet" },
-      { key: "zoomCallsPerDay", label: "Zoom Call Booked", actual: data.companyWide.zoomCallsPerDay, target: t.zoomCallsPerDay, unit: "/day", attributable: false, note: "Company-wide — meetings aren't linked to a DOE yet" }
+      { key: "outreachPerDay", label: "Outreach/Day", actual: scoped.outreachPerDay, unit: "", attributable: true },
+      { key: "positiveResponseRate", label: "Positive Response %", actual: scoped.positiveResponseRate, unit: "%", attributable: true },
+      { key: "coldEmailOpenRate", label: "Cold Email Open Rate", actual: scoped.coldEmailOpenRate, unit: "%", attributable: true },
+      { key: "whatsappReplyRate", label: "WhatsApp Reply Rate", actual: data.companyWide.whatsappReplyRate, unit: "%", attributable: false, note: "Company-wide — WhatsApp agents aren't linked to a DOE yet" },
+      { key: "zoomCallsPerDay", label: "Zoom Call Booked", actual: data.companyWide.zoomCallsPerDay, unit: "/day", attributable: false, note: "Company-wide — meetings aren't linked to a DOE yet" },
+      { key: "responseRate", label: "Response Rate", format: () => fmtPct(k?.responseRate), attributable: false, note: pipelineNote },
+      { key: "ndaConversion", label: "NDA Conversion", format: () => fmtPct(k?.ndaConversion), attributable: false, note: pipelineNote },
+      { key: "zoomConversion", label: "Zoom Call 1", format: () => fmtPct(k?.zoomConversion), attributable: false, note: pipelineNote },
+      { key: "dataRoomCompletion", label: "Data Room", format: () => fmtPct(k?.dataRoomCompletion), attributable: false, note: pipelineNote },
+      { key: "ioiConversion", label: "IOI Signed", format: () => fmtPct(k?.ioiConversion), attributable: false, note: pipelineNote },
+      { key: "zoomCall2Conversion", label: "Zoom Call 2", format: () => fmtPct(k?.zoomCall2Conversion), attributable: false, note: pipelineNote },
+      { key: "fieldVisitCompletion", label: "Field Visit", format: () => fmtPct(k?.fieldVisitCompletion), attributable: false, note: pipelineNote },
+      { key: "termSheetConversion", label: "Term Sheet Closed", format: () => fmtPct(k?.termSheetConversion), attributable: false, note: pipelineNote },
+      { key: "pipelineValue", label: "Pipeline Value", format: () => fmtMoney(k?.pipelineValue), attributable: false, note: pipelineNote },
+      { key: "avgDealAge", label: "Average Deal Age", format: () => fmtDays(k?.avgDealAge), attributable: false, note: pipelineNote }
     ];
   }, [data, scoped]);
+
+  // Same ten company-wide pipeline numbers as the Scorecard rows above,
+  // reshaped into columns for the per-rep compression table below — every
+  // DOE's row repeats the same value, same convention WhatsApp Reply Rate
+  // and Zoom Call Booked already use there.
+  const pipelineColumns = useMemo(() => {
+    const k = data?.pipelineKpis;
+    return [
+      { key: "responseRate", label: "Response Rate", value: fmtPct(k?.responseRate) },
+      { key: "ndaConversion", label: "NDA Conversion", value: fmtPct(k?.ndaConversion) },
+      { key: "zoomConversion", label: "Zoom Call 1", value: fmtPct(k?.zoomConversion) },
+      { key: "dataRoomCompletion", label: "Data Room", value: fmtPct(k?.dataRoomCompletion) },
+      { key: "ioiConversion", label: "IOI Signed", value: fmtPct(k?.ioiConversion) },
+      { key: "zoomCall2Conversion", label: "Zoom Call 2", value: fmtPct(k?.zoomCall2Conversion) },
+      { key: "fieldVisitCompletion", label: "Field Visit", value: fmtPct(k?.fieldVisitCompletion) },
+      { key: "termSheetConversion", label: "Term Sheet Closed", value: fmtPct(k?.termSheetConversion) },
+      { key: "pipelineValue", label: "Pipeline Value", value: fmtMoney(k?.pipelineValue) },
+      { key: "avgDealAge", label: "Average Deal Age", value: fmtDays(k?.avgDealAge) }
+    ];
+  }, [data]);
 
   const cards = useMemo(
     () => [
@@ -135,23 +182,49 @@ export function OutreachDoeModule() {
           </div>
         </div>
 
-        {/* Industry / Ticket Size / Hot-Warm-Cold are CRM Lead attributes —
-            cold-outreach records aren't linked to a CRM lead, so there is
-            nothing real to filter by yet. Shown, disabled, and explained
-            rather than silently dropped or faked. */}
+        {/* Industry / Ticket Size / Hot-Warm-Cold live on the CRM Lead a
+            cold-outreach contact became, not on the EmailLead itself —
+            matched server-side via EmailLead.convertedToLeadId. A contact
+            nobody has converted yet has no real value for these and just
+            won't match, rather than showing a fake one. */}
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          {["Industry", "Ticket Size", "Hot/Warm/Cold"].map((label) => (
-            <div key={label}>
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9aa6bd]">{label}</label>
-              <select className={`${inputClass} cursor-not-allowed bg-[#f7f9fc] text-[#9aa6bd]`} disabled>
-                <option>Not available yet</option>
-              </select>
-            </div>
-          ))}
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Industry</label>
+            <select className={inputClass} value={filters.industry} onChange={(e) => set("industry")(e.target.value)}>
+              <option value="">All</option>
+              {(facets?.industries ?? []).map((i) => (
+                <option key={i} value={i}>
+                  {i}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Ticket Size</label>
+            <select className={inputClass} value={filters.ticketSizeBand} onChange={(e) => set("ticketSizeBand")(e.target.value)}>
+              <option value="">All</option>
+              {(facets?.ticketSizeBands ?? []).map((b) => (
+                <option key={b.key} value={b.key}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Hot/Warm/Cold</label>
+            <select className={inputClass} value={filters.temperature} onChange={(e) => set("temperature")(e.target.value)}>
+              <option value="">All</option>
+              {(facets?.temperatures ?? []).map((t) => (
+                <option key={t} value={t}>
+                  {t.charAt(0) + t.slice(1).toLowerCase()}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <p className="mt-2 text-[12px] text-[#9aa6bd]">
-          Industry, Ticket Size and Hot/Warm/Cold live on CRM leads (see Universal Filters) — cold-outreach records
-          aren't linked to a CRM lead yet, so there's nothing real to filter by here.
+          Industry, Ticket Size and Hot/Warm/Cold match against the CRM lead a cold-outreach contact was converted
+          into — a contact nobody has converted yet won't match any of these three.
         </p>
       </Card>
 
@@ -167,41 +240,25 @@ export function OutreachDoeModule() {
         {error ? <p className="mt-4 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[520px] border-collapse text-left">
+          <table className="w-full min-w-[420px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
                 <th className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">KPI</th>
-                <th className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">Actual</th>
-                <th className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">Target</th>
-                <th className="py-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">Status</th>
+                <th className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">Performance</th>
               </tr>
             </thead>
             <tbody>
-              {scorecardRows.map((row) => {
-                const onTarget = has(row.actual) && row.actual >= row.target;
-                return (
-                  <tr key={row.key} className="border-b border-[#f1f4f9] last:border-0">
-                    <td className="py-3 pr-4 text-[14px] font-semibold text-[#102246]">
-                      {row.label}
-                      {!row.attributable ? <span className="ml-2 text-[11px] font-normal text-[#9aa6bd]">(company-wide)</span> : null}
-                    </td>
-                    <td className="py-3 pr-4 text-[15px] font-semibold text-[#334463]">
-                      {has(row.actual) ? `${row.actual}${row.unit}` : row.note ? "—" : "—"}
-                    </td>
-                    <td className="py-3 pr-4 text-[13px] text-[#5c6b87]">
-                      {row.target}
-                      {row.unit}
-                    </td>
-                    <td className="py-3">
-                      {has(row.actual) ? (
-                        <Badge tone={onTarget ? "green" : "amber"}>{onTarget ? "On target" : "Below target"}</Badge>
-                      ) : (
-                        <Badge tone="slate">{row.note ?? "No data"}</Badge>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+              {scorecardRows.map((row) => (
+                <tr key={row.key} className="border-b border-[#f1f4f9] last:border-0">
+                  <td className="py-3 pr-4 text-[14px] font-semibold text-[#102246]">
+                    {row.label}
+                    {!row.attributable ? <span className="ml-2 text-[11px] font-normal text-[#9aa6bd]">(company-wide)</span> : null}
+                  </td>
+                  <td className="py-3 pr-4 text-[15px] font-semibold text-[#334463]">
+                    {row.format ? row.format() : has(row.actual) ? `${row.actual}${row.unit}` : "—"}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -211,23 +268,23 @@ export function OutreachDoeModule() {
         <SectionTitle
           icon={RadarIcon}
           iconClass="text-[#3046b2]"
-          subtitle="Every DOE Scorecard KPI, side by side per rep — three columns are attributable per person, three are company-wide since they aren't linked to a DOE yet."
+          subtitle="Every DOE Scorecard KPI, side by side per rep — three columns are attributable per person, the rest are company-wide since they aren't linked to a DOE yet."
         >
           DOE Performance Compression
         </SectionTitle>
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[820px] border-collapse text-left">
+          <table className="w-full min-w-[2200px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
                 {[
                   { label: "DOE" },
                   { label: "Outreach/Day" },
                   { label: "Positive Response %" },
-                  { label: "LinkedIn Acceptance", companyWide: true },
                   { label: "Cold Email Open Rate" },
                   { label: "WhatsApp Reply Rate", companyWide: true },
-                  { label: "Zoom Call Booked", companyWide: true }
+                  { label: "Zoom Call Booked", companyWide: true },
+                  ...pipelineColumns.map((c) => ({ label: c.label, companyWide: true }))
                 ].map((h) => (
                   <th key={h.label} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
                     {h.label}
@@ -242,12 +299,16 @@ export function OutreachDoeModule() {
                   <td className="py-3 pr-4 text-[14px] font-semibold text-[#102246]">{row.doe}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtNum(row.outreachPerDay)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtPct(row.positiveResponseRate)}</td>
-                  <td className="py-3 pr-4 text-[13px] text-[#9aa6bd]">{fmtPct(data.companyWide.linkedinAcceptanceRate)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{fmtPct(row.coldEmailOpenRate)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#9aa6bd]">{fmtPct(data.companyWide.whatsappReplyRate)}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#9aa6bd]">
                     {has(data.companyWide.zoomCallsPerDay) ? `${data.companyWide.zoomCallsPerDay}/day` : "—"}
                   </td>
+                  {pipelineColumns.map((c) => (
+                    <td key={c.key} className="py-3 pr-4 text-[13px] text-[#9aa6bd]">
+                      {c.value}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -261,9 +322,9 @@ export function OutreachDoeModule() {
 
           {!loading && data && data.scorecard.length > 0 ? (
             <p className="mt-3 text-[12px] text-[#9aa6bd]">
-              LinkedIn Acceptance, WhatsApp Reply Rate and Zoom Call Booked repeat the same company-wide number in
-              every row — Agent and Meeting records aren't linked to a DOE yet, so there's no real per-rep split for
-              these three.
+              Every column marked (company-wide) repeats the same number in every row — none of those records
+              (Agent, Meeting, NDA, Data Room, IOI, Field Visit, Term Sheet) are linked to a single DOE, so there's
+              no real per-rep split for them yet.
             </p>
           ) : null}
         </div>

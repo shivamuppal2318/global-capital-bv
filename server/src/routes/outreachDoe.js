@@ -2,6 +2,10 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { doeScorecard, doeOverallMetrics, outreachMetrics, whatsappReplyRateMetrics, zoomBookingMetrics } from "../lib/doeScorecard.js";
+import { computeExecutiveKpis } from "../lib/executiveKpis.js";
+import { TICKET_SIZE_BANDS, bucketTicketSize } from "../lib/universalFilters.js";
+
+const TEMPERATURES = ["HOT", "WARM", "COLD"];
 
 export const outreachDoeRouter = Router();
 
@@ -33,28 +37,54 @@ outreachDoeRouter.get("/facets", blockChannelPartner, asyncHandler(async (_req, 
   const leads = await prisma.emailLead.findMany({ select: { owner: true, country: true } });
   res.json({
     does: [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort(),
-    geographies: [...new Set(leads.map((l) => l.country).filter(Boolean))].sort()
+    geographies: [...new Set(leads.map((l) => l.country).filter(Boolean))].sort(),
+    // Real CRM Lead attributes (see the "/" handler's convertedLeadById
+    // note), same fixed option lists Universal Filters already uses —
+    // one source of truth for what "Industry" etc. even mean.
+    industries: [...new Set((await prisma.lead.findMany({ select: { industry: true } })).map((l) => l.industry).filter(Boolean))].sort(),
+    ticketSizeBands: TICKET_SIZE_BANDS.map((b) => ({ key: b.key, label: b.label })),
+    temperatures: TEMPERATURES
   });
 }));
 
 outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
-  const { doe, geography, dateFrom, dateTo } = req.query;
+  const { doe, geography, dateFrom, dateTo, industry, ticketSizeBand, temperature } = req.query;
 
   const [allLeads, allActivity, agents, allMeetings] = await Promise.all([
     prisma.emailLead.findMany({
       where: req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {},
-      select: { id: true, owner: true, country: true, replyType: true, callBookedAt: true, createdAt: true }
+      select: { id: true, owner: true, country: true, replyType: true, callBookedAt: true, createdAt: true, convertedToLeadId: true }
     }),
     prisma.emailActivityLog.findMany({ select: { leadId: true, kind: true, createdAt: true } }),
     prisma.agent.findMany({ select: { assignedCount: true, resolvedCount: true } }),
     prisma.meeting.findMany({ select: { createdAt: true } })
   ]);
 
+  // Industry/Ticket Size/Hot-Warm-Cold live on the CRM Lead this
+  // cold-outreach contact became, not on the EmailLead itself --
+  // convertedToLeadId (set by POST /api/leads/from-email-lead/:id) is the
+  // real link. A contact nobody has converted yet has no real value for
+  // any of these three and simply won't match a filter on them, rather
+  // than guessing at one.
+  const convertedLeadIds = allLeads.map((l) => l.convertedToLeadId).filter(Boolean);
+  const convertedLeads = convertedLeadIds.length
+    ? await prisma.lead.findMany({ where: { id: { in: convertedLeadIds } }, select: { id: true, industry: true, capitalAsk: true, temperature: true } })
+    : [];
+  const convertedLeadById = new Map(convertedLeads.map((l) => [l.id, l]));
+
   const leads = allLeads.filter((l) => {
     if (doe && l.owner !== doe) return false;
     if (geography && l.country !== geography) return false;
     if (dateFrom && l.createdAt < new Date(dateFrom)) return false;
     if (dateTo && l.createdAt > new Date(dateTo)) return false;
+
+    if (industry || ticketSizeBand || temperature) {
+      const converted = l.convertedToLeadId ? convertedLeadById.get(l.convertedToLeadId) : null;
+      if (!converted) return false;
+      if (industry && converted.industry !== industry) return false;
+      if (ticketSizeBand && bucketTicketSize(converted.capitalAsk) !== ticketSizeBand) return false;
+      if (temperature && converted.temperature !== temperature) return false;
+    }
     return true;
   });
   const leadIds = new Set(leads.map((l) => l.id));
@@ -79,6 +109,13 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
         zoomCallsPerDay: zoomBookingMetrics(allMeetings).perDay
       };
 
+  // Same reasoning as companyWide above -- these are Executive Dashboard's
+  // own funnel-stage conversion rates (lib/executiveKpis.js), computed over
+  // every CRM lead company-wide with no per-DOE or per-Channel-Partner
+  // scoping mechanism, so a Channel Partner gets them nulled out rather
+  // than a number that isn't really theirs.
+  const pipelineKpis = req.channelPartner ? null : (await computeExecutiveKpis()).kpis;
+
   res.json({
     targets: TARGETS,
     top: {
@@ -89,6 +126,7 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
     },
     scorecard,
     overall,
-    companyWide
+    companyWide,
+    pipelineKpis
   });
 }));
