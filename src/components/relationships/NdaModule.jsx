@@ -41,6 +41,10 @@ const FLOW = [
   { status: "SIGNED", label: "Signed", action: "sign", field: "signedAt" }
 ];
 
+// Just Sent/Signed for the Status flow summary card -- Reminder 1/2 already
+// have their own KPI cards above (see below), so they're left out here.
+const STATUS_FLOW_SUMMARY = FLOW.filter((step) => step.status === "SENT" || step.status === "SIGNED");
+
 const asDateInput = (v) => (v ? new Date(v).toISOString().slice(0, 10) : "");
 const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : "—");
 const has = (v) => v !== null && v !== undefined;
@@ -337,7 +341,11 @@ export function NdaModule() {
           Status flow
         </SectionTitle>
         <div className="mt-5 flex flex-wrap items-stretch gap-2">
-          {FLOW.map((step, i) => {
+          {/* Reminder 1 / Reminder 2 are dropped from this summary -- they
+              already have their own KPI cards above, and showing the same
+              two names twice with different numbers (a duration/rate up
+              top vs. a status count here) read as conflicting. */}
+          {STATUS_FLOW_SUMMARY.map((step, i) => {
             const count = records.filter((r) => r.status === step.status).length;
             return (
               <div key={step.status} className="flex items-stretch gap-2">
@@ -347,7 +355,7 @@ export function NdaModule() {
                     {count}
                   </p>
                 </div>
-                {i < FLOW.length - 1 ? <span className="self-center text-[18px] text-[#9aa6bd]">-&gt;</span> : null}
+                {i < STATUS_FLOW_SUMMARY.length - 1 ? <span className="self-center text-[18px] text-[#9aa6bd]">-&gt;</span> : null}
               </div>
             );
           })}
