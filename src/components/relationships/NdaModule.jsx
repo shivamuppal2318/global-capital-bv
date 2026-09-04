@@ -101,6 +101,11 @@ export function NdaModule() {
     documentsApi.list({ category: "NDA" }).then(setDocuments).catch(() => {});
   }, []);
 
+  // The DOE roster isn't its own model -- every lead's owner is a DOE, so
+  // the distinct set of those is the real list (same source the "Lead"
+  // dropdown right next to it already draws from).
+  const doeOptions = useMemo(() => [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort(), [leads]);
+
   // Seeded once at boot (prisma/ensureDefaults.js) as a company-wide
   // (leadId: null) Document — matched by name here rather than a hardcoded
   // id, since the id is only known once that seed has actually run.
@@ -410,12 +415,14 @@ export function NdaModule() {
               </div>
               <div className="md:col-span-2">
                 <label className={labelClass}>DOE</label>
-                <input
-                  className={inputClass}
-                  value={searchOwner}
-                  onChange={(e) => setSearchOwner(e.target.value)}
-                  placeholder="Filter by deal owner"
-                />
+                <select className={inputClass} value={searchOwner} onChange={(e) => setSearchOwner(e.target.value)}>
+                  <option value="">Any DOE</option>
+                  {doeOptions.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <p className="mt-3 text-[12px] text-[#8592ab]">
