@@ -22,7 +22,7 @@ function fmtMoney(value) {
   return `$${value.toLocaleString()}`;
 }
 
-const EMPTY_FILTERS = { doe: "", geography: "", dateFrom: "", dateTo: "" };
+const EMPTY_FILTERS = { doe: "", geography: "", dateFrom: "", dateTo: "", industry: "", ticketSizeBand: "", temperature: "" };
 
 export function OutreachDoeModule() {
   const [facets, setFacets] = useState(null);
@@ -182,23 +182,49 @@ export function OutreachDoeModule() {
           </div>
         </div>
 
-        {/* Industry / Ticket Size / Hot-Warm-Cold are CRM Lead attributes —
-            cold-outreach records aren't linked to a CRM lead, so there is
-            nothing real to filter by yet. Shown, disabled, and explained
-            rather than silently dropped or faked. */}
+        {/* Industry / Ticket Size / Hot-Warm-Cold live on the CRM Lead a
+            cold-outreach contact became, not on the EmailLead itself —
+            matched server-side via EmailLead.convertedToLeadId. A contact
+            nobody has converted yet has no real value for these and just
+            won't match, rather than showing a fake one. */}
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          {["Industry", "Ticket Size", "Hot/Warm/Cold"].map((label) => (
-            <div key={label}>
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9aa6bd]">{label}</label>
-              <select className={`${inputClass} cursor-not-allowed bg-[#f7f9fc] text-[#9aa6bd]`} disabled>
-                <option>Not available yet</option>
-              </select>
-            </div>
-          ))}
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Industry</label>
+            <select className={inputClass} value={filters.industry} onChange={(e) => set("industry")(e.target.value)}>
+              <option value="">All</option>
+              {(facets?.industries ?? []).map((i) => (
+                <option key={i} value={i}>
+                  {i}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Ticket Size</label>
+            <select className={inputClass} value={filters.ticketSizeBand} onChange={(e) => set("ticketSizeBand")(e.target.value)}>
+              <option value="">All</option>
+              {(facets?.ticketSizeBands ?? []).map((b) => (
+                <option key={b.key} value={b.key}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Hot/Warm/Cold</label>
+            <select className={inputClass} value={filters.temperature} onChange={(e) => set("temperature")(e.target.value)}>
+              <option value="">All</option>
+              {(facets?.temperatures ?? []).map((t) => (
+                <option key={t} value={t}>
+                  {t.charAt(0) + t.slice(1).toLowerCase()}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <p className="mt-2 text-[12px] text-[#9aa6bd]">
-          Industry, Ticket Size and Hot/Warm/Cold live on CRM leads (see Universal Filters) — cold-outreach records
-          aren't linked to a CRM lead yet, so there's nothing real to filter by here.
+          Industry, Ticket Size and Hot/Warm/Cold match against the CRM lead a cold-outreach contact was converted
+          into — a contact nobody has converted yet won't match any of these three.
         </p>
       </Card>
 
