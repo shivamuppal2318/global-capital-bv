@@ -629,16 +629,6 @@ export function useEmailOutreachState() {
     setAutomationForm((current) => ({ ...current, [key]: value }));
   }
 
-  function handleTemplateDraftChange(field, value) {
-    setTemplateDrafts((current) => ({
-      ...current,
-      [automationForm.replyType]: {
-        ...current[automationForm.replyType],
-        [field]: value
-      }
-    }));
-  }
-
   function handleApplyRule(rule) {
     const nextPreferredPath = rule.replyType === "zoom-request" ? "zoom-first" : "nda-first";
     setAutomationForm((current) => ({
@@ -1211,16 +1201,6 @@ export function useEmailOutreachState() {
     );
   }
 
-  async function handleSaveTemplate() {
-    const templateKey = automationForm.replyType;
-    try {
-      await emailTemplatesApi.save(templateKey, { subject: replyAction.subject, body: replyAction.body });
-      setAutomationNotice(`Template "${templateKey}" saved to the backend — reused for every future send of this reply type.`);
-    } catch (error) {
-      setAutomationNotice(`Template "${templateKey}" kept locally only — backend unreachable (${error.message}). It will reset on refresh.`);
-    }
-  }
-
   async function handlePreviewTemplate() {
     const templateKey = automationForm.replyType;
     try {
@@ -1228,9 +1208,7 @@ export function useEmailOutreachState() {
       setPreviewHtml(rendered.html);
     } catch (error) {
       setPreviewHtml(null);
-      setAutomationNotice(
-        `Could not load a preview for "${templateKey}" (${error.message}). Save the template to the backend first — preview renders the saved version, not unsaved edits.`
-      );
+      setAutomationNotice(`Could not load a preview for "${templateKey}" (${error.message}).`);
     }
   }
 
@@ -1292,9 +1270,9 @@ export function useEmailOutreachState() {
     selectedCampaign, selectedLead, selectedLeadTimeline, activeReplyRule,
     liveSteps, workflowSteps, replyAction,
     convertingLeadId, convertResults, handleConvertToLead,
-    handleFormChange, handleTemplateDraftChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
+    handleFormChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
     handleToggleCampaignStatus, handleAddLead, handleImportCsv, handleAddEmailAccount,
     handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation, handleSendNow, selectCampaign, startNewCampaign,
-    handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, simulateIncomingReply
+    handleSendNextEmail, handlePreviewTemplate, simulateIncomingReply
   };
 }

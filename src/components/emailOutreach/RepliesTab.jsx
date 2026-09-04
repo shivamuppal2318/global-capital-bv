@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ActionButton, noteToneClass } from "../ui.jsx";
-import { UsersIcon, MailIcon, TagIcon, SearchIcon, InboxIcon, ClockIcon, WorkflowIcon, UserCheckIcon } from "../Icons.jsx";
+import { UsersIcon, MailIcon, SearchIcon, InboxIcon, ClockIcon, WorkflowIcon, UserCheckIcon } from "../Icons.jsx";
 import { replyRules } from "./useEmailOutreachState.js";
 
 const callStatusToneClass = {
@@ -194,11 +194,11 @@ function LeadDetailModal({ lead, timeline, onClose, converting, convertResult, o
 // reply-handling workflow — detection, draft, timeline, next-step
 // visualization — has its own focused screen instead of stacking under the
 // leads table.
-export function RepliesTab({ mailing }) {
+export function RepliesTab({ mailing, onNavigateTab }) {
   const {
     repliedLeads, selectedLeadId, selectedLead, selectedLeadTimeline, loadLeadIntoWorkflow, handleDeleteLead,
-    automationForm, activeReplyRule, handleApplyRule, replyAction, handleTemplateDraftChange,
-    handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, previewHtml, setPreviewHtml,
+    automationForm, activeReplyRule, handleApplyRule, replyAction,
+    handleSendNextEmail, handlePreviewTemplate, previewHtml, setPreviewHtml,
     simulateIncomingReply, workflowSteps,
     convertingLeadId, convertResults, handleConvertToLead
   } = mailing;
@@ -371,32 +371,39 @@ export function RepliesTab({ mailing }) {
           </div>
 
           <div className="rounded-[18px] border border-[#d6deea] bg-white px-4 py-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#5f6f89]">Email draft</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#5f6f89]">Email draft</p>
+              <button
+                type="button"
+                onClick={() => onNavigateTab?.("templates")}
+                className="text-[12px] font-semibold text-[#3046b2] hover:underline"
+              >
+                Edit in Templates →
+              </button>
+            </div>
             <div className="mt-3 space-y-3">
               <div>
                 <p className="text-[12px] uppercase tracking-[0.12em] text-[#6a7790]">Subject</p>
-                <input
-                  value={replyAction.subject}
-                  onChange={(event) => handleTemplateDraftChange("subject", event.target.value)}
-                  className="mt-1 w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[15px] font-medium text-[#102246] outline-none"
-                />
+                <p className="mt-1 w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[15px] font-medium text-[#102246]">
+                  {replyAction.subject}
+                </p>
               </div>
               <div>
                 <p className="text-[12px] uppercase tracking-[0.12em] text-[#6a7790]">Body</p>
-                <textarea
-                  value={replyAction.body}
-                  onChange={(event) => handleTemplateDraftChange("body", event.target.value)}
-                  rows={6}
-                  className="mt-1 w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-3 text-[14px] leading-6 text-[#435471] outline-none"
-                />
+                <p className="mt-1 w-full whitespace-pre-wrap rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-3 text-[14px] leading-6 text-[#435471]">
+                  {replyAction.body}
+                </p>
               </div>
             </div>
+            <p className="mt-3 text-[11px] leading-4 text-[#8593ac]">
+              This is the real "{automationForm.replyType}" template — the same one the Templates tab edits. Change
+              the wording there; it applies here too.
+            </p>
           </div>
         </div>
 
         <div className="mt-5 flex flex-wrap gap-3">
           <ActionButton label={replyAction.cta} icon={MailIcon} primary onClick={handleSendNextEmail} />
-          <ActionButton label="Save template" icon={TagIcon} onClick={handleSaveTemplate} />
           <ActionButton label="Preview" icon={SearchIcon} onClick={handlePreviewTemplate} />
         </div>
 
