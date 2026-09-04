@@ -9,6 +9,18 @@ const inputClass =
 const has = (v) => v !== null && v !== undefined;
 const fmtPct = (v) => (has(v) ? `${v}%` : "—");
 const fmtNum = (v) => (has(v) ? String(v) : "—");
+const fmtDays = (v) => (has(v) ? `${v} days` : "—");
+
+// Same abbreviation scheme as Executive Dashboard's own fmtMoney -- these
+// numbers come from the exact same computation (lib/executiveKpis.js), so
+// they need to read the same way wherever they show up.
+function fmtMoney(value) {
+  if (!has(value) || value === 0) return "—";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 1_000) return `$${(value / 1_000).toFixed(0)}k`;
+  return `$${value.toLocaleString()}`;
+}
 
 const EMPTY_FILTERS = { doe: "", geography: "", dateFrom: "", dateTo: "" };
 
@@ -50,12 +62,29 @@ export function OutreachDoeModule() {
 
   const scorecardRows = useMemo(() => {
     if (!data || !scoped) return [];
+    const k = data.pipelineKpis;
+    // Same funnel-stage numbers Executive Dashboard shows (lib/executiveKpis.js
+    // computes both), not attributable to a single DOE — no CRM lead's
+    // NDA/Zoom/Data Room/IOI/Field Visit/Term Sheet record is linked to
+    // whichever rep sent the original cold email, so these are company-wide
+    // pipeline health, shown here for the same at-a-glance convenience.
+    const pipelineNote = "Company-wide — matches Executive Dashboard, not linked to a single DOE";
     return [
       { key: "outreachPerDay", label: "Outreach/Day", actual: scoped.outreachPerDay, unit: "", attributable: true },
       { key: "positiveResponseRate", label: "Positive Response %", actual: scoped.positiveResponseRate, unit: "%", attributable: true },
       { key: "coldEmailOpenRate", label: "Cold Email Open Rate", actual: scoped.coldEmailOpenRate, unit: "%", attributable: true },
       { key: "whatsappReplyRate", label: "WhatsApp Reply Rate", actual: data.companyWide.whatsappReplyRate, unit: "%", attributable: false, note: "Company-wide — WhatsApp agents aren't linked to a DOE yet" },
-      { key: "zoomCallsPerDay", label: "Zoom Call Booked", actual: data.companyWide.zoomCallsPerDay, unit: "/day", attributable: false, note: "Company-wide — meetings aren't linked to a DOE yet" }
+      { key: "zoomCallsPerDay", label: "Zoom Call Booked", actual: data.companyWide.zoomCallsPerDay, unit: "/day", attributable: false, note: "Company-wide — meetings aren't linked to a DOE yet" },
+      { key: "responseRate", label: "Response Rate", format: () => fmtPct(k?.responseRate), attributable: false, note: pipelineNote },
+      { key: "ndaConversion", label: "NDA Conversion", format: () => fmtPct(k?.ndaConversion), attributable: false, note: pipelineNote },
+      { key: "zoomConversion", label: "Zoom Call 1", format: () => fmtPct(k?.zoomConversion), attributable: false, note: pipelineNote },
+      { key: "dataRoomCompletion", label: "Data Room", format: () => fmtPct(k?.dataRoomCompletion), attributable: false, note: pipelineNote },
+      { key: "ioiConversion", label: "IOI Signed", format: () => fmtPct(k?.ioiConversion), attributable: false, note: pipelineNote },
+      { key: "zoomCall2Conversion", label: "Zoom Call 2", format: () => fmtPct(k?.zoomCall2Conversion), attributable: false, note: pipelineNote },
+      { key: "fieldVisitCompletion", label: "Field Visit", format: () => fmtPct(k?.fieldVisitCompletion), attributable: false, note: pipelineNote },
+      { key: "termSheetConversion", label: "Term Sheet Closed", format: () => fmtPct(k?.termSheetConversion), attributable: false, note: pipelineNote },
+      { key: "pipelineValue", label: "Pipeline Value", format: () => fmtMoney(k?.pipelineValue), attributable: false, note: pipelineNote },
+      { key: "avgDealAge", label: "Average Deal Age", format: () => fmtDays(k?.avgDealAge), attributable: false, note: pipelineNote }
     ];
   }, [data, scoped]);
 
@@ -180,7 +209,7 @@ export function OutreachDoeModule() {
                     {!row.attributable ? <span className="ml-2 text-[11px] font-normal text-[#9aa6bd]">(company-wide)</span> : null}
                   </td>
                   <td className="py-3 pr-4 text-[15px] font-semibold text-[#334463]">
-                    {has(row.actual) ? `${row.actual}${row.unit}` : row.note ? "—" : "—"}
+                    {row.format ? row.format() : has(row.actual) ? `${row.actual}${row.unit}` : "—"}
                   </td>
                 </tr>
               ))}

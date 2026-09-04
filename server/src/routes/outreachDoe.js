@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { doeScorecard, doeOverallMetrics, outreachMetrics, whatsappReplyRateMetrics, zoomBookingMetrics } from "../lib/doeScorecard.js";
+import { computeExecutiveKpis } from "../lib/executiveKpis.js";
 
 export const outreachDoeRouter = Router();
 
@@ -79,6 +80,13 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
         zoomCallsPerDay: zoomBookingMetrics(allMeetings).perDay
       };
 
+  // Same reasoning as companyWide above -- these are Executive Dashboard's
+  // own funnel-stage conversion rates (lib/executiveKpis.js), computed over
+  // every CRM lead company-wide with no per-DOE or per-Channel-Partner
+  // scoping mechanism, so a Channel Partner gets them nulled out rather
+  // than a number that isn't really theirs.
+  const pipelineKpis = req.channelPartner ? null : (await computeExecutiveKpis()).kpis;
+
   res.json({
     targets: TARGETS,
     top: {
@@ -89,6 +97,7 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
     },
     scorecard,
     overall,
-    companyWide
+    companyWide,
+    pipelineKpis
   });
 }));
