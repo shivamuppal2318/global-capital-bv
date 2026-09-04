@@ -7,13 +7,13 @@ const has = (v) => v !== null && v !== undefined;
 const fmtPct = (v) => (has(v) ? `${v}%` : "—");
 
 // Same abbreviation scheme as the IOI module's fmtMoney: at these
-// magnitudes "€99,200,000" wraps and loses its shape in a KPI tile.
+// magnitudes "$99,200,000" wraps and loses its shape in a KPI tile.
 function fmtMoney(value) {
   if (!has(value) || value === 0) return "—";
   const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `€${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
-  if (abs >= 1_000) return `€${(value / 1_000).toFixed(0)}k`;
-  return `€${value.toLocaleString()}`;
+  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 1_000) return `$${(value / 1_000).toFixed(0)}k`;
+  return `$${value.toLocaleString()}`;
 }
 
 // Each row restates one number from the funnel/KPI payload as a rate, with
@@ -26,9 +26,9 @@ const KPI_ROWS = [
   { key: "zoomConversion", label: "Zoom Call 1", formula: "Calls completed / Calls scheduled", format: fmtPct },
   { key: "dataRoomCompletion", label: "Data Room Completion", formula: "Required categories uploaded / Required categories", format: fmtPct },
   { key: "ioiConversion", label: "IOI Signed", formula: "IOIs signed / IOIs generated", format: fmtPct },
-  { key: "zoomCall2Conversion", label: "Zoom Call 2", formula: "Leads with a 2nd call / Leads with IOI Signed", format: fmtPct },
+  { key: "zoomCall2Conversion", label: "Zoom Call 2", formula: "Leads with a 2nd zoom call completed / Leads with IOI Signed", format: fmtPct },
   { key: "fieldVisitCompletion", label: "Field Visit", formula: "Visits completed / Visits planned", format: fmtPct },
-  { key: "termSheetConversion", label: "Term Sheet Close", formula: "Term sheets issued / Leads reaching field visit", format: fmtPct },
+  { key: "termSheetConversion", label: "Term Sheet Closed", formula: "Term sheets issued / Leads reaching field visit", format: fmtPct },
   { key: "pipelineValue", label: "Pipeline Value", formula: "Sum of qualified IOI + term sheet value", format: fmtMoney },
   { key: "avgDealAge", label: "Average Deal Age", formula: "Now − lead creation date, averaged over open deals", format: (v) => (has(v) ? `${v} days` : "—") },
   { key: "winRate", label: "Win Rate", formula: "Closed won / (Closed won + Closed lost)", format: fmtPct }
@@ -77,7 +77,7 @@ export function ExecutiveDashboardModule() {
       noteTone: !has(trend) ? "blue" : trend >= 0 ? "green" : "red"
     },
     {
-      label: "Term Sheets",
+      label: "Term Sheets Closed",
       value: String(stats.termSheets.count),
       note: has(stats.termSheets.conversionPct) ? `${stats.termSheets.conversionPct}% overall conversion` : "Overall conversion rate",
       noteTone: "amber"
