@@ -33,6 +33,7 @@ export function EmailTemplatesCadencesModule() {
   const [notice, setNotice] = useState(null);
   const [viewMode, setViewMode] = useState("list");
   const [searchText, setSearchText] = useState("");
+  const [previewHtml, setPreviewHtml] = useState(null);
 
   function loadTemplates() {
     emailTemplatesApi
@@ -54,6 +55,7 @@ export function EmailTemplatesCadencesModule() {
     setEditingKey(null);
     setForm(BLANK_TEMPLATE_FORM);
     setNotice(null);
+    setPreviewHtml(null);
     setViewMode("form");
   }
 
@@ -61,7 +63,26 @@ export function EmailTemplatesCadencesModule() {
     setEditingKey(template.key);
     setForm({ key: template.key, subject: template.subject, html: template.html ?? plainTextToHtml(template.body) });
     setNotice(null);
+    setPreviewHtml(null);
     setViewMode("form");
+  }
+
+  // Renders the SAVED backend version, including the "I'm Interested"
+  // button every real send of this template appends (see leadSender.js's
+  // sendTemplateEmail) — not whatever's currently typed but unsaved, so
+  // Save first if this doesn't reflect the latest edits.
+  async function handlePreviewTemplate() {
+    if (!editingKey) {
+      setNotice("Save this template first — there's nothing on the backend yet to preview.");
+      return;
+    }
+    try {
+      const rendered = await emailTemplatesApi.preview(editingKey);
+      setPreviewHtml(rendered.html);
+    } catch (error) {
+      setPreviewHtml(null);
+      setNotice(`Could not load a preview for "${editingKey}" (${error.message}).`);
+    }
   }
 
   async function handleSaveTemplate() {
@@ -138,7 +159,7 @@ export function EmailTemplatesCadencesModule() {
               </p>
             </label>
 
-            <div className="pt-1">
+            <div className="flex flex-wrap gap-3 pt-1">
               <button
                 type="button"
                 onClick={handleSaveTemplate}
@@ -146,9 +167,40 @@ export function EmailTemplatesCadencesModule() {
               >
                 Save
               </button>
+              <button
+                type="button"
+                onClick={handlePreviewTemplate}
+                className="rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#435471]"
+              >
+                Preview
+              </button>
             </div>
 
             {notice ? <p className="text-[11px] leading-4 text-[#8593ac]">{notice}</p> : null}
+
+            {previewHtml ? (
+              <div className="rounded-[18px] border border-[#d6deea] bg-white px-4 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#5f6f89]">
+                    Preview — rendered with sample data, exactly as a real send would look (includes the "I'm
+                    Interested" button every send of this template carries)
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewHtml(null)}
+                    className="text-[12px] font-semibold text-[#5f6f89] hover:text-[#102246]"
+                  >
+                    Close
+                  </button>
+                </div>
+                <iframe
+                  title="Template preview"
+                  srcDoc={previewHtml}
+                  sandbox=""
+                  className="mt-3 h-[420px] w-full rounded-[12px] border border-[#d6deea]"
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
