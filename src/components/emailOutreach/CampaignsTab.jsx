@@ -11,10 +11,41 @@ const campaignToneClass = {
 
 export function CampaignsTab({ mailing }) {
   const {
-    campaigns, segments, allLeads, selectedCampaignId, selectCampaign, startNewCampaign,
+    campaigns, segments, allLeads, targetListLeads, handleChangeSendTarget, selectedCampaignId, selectCampaign, startNewCampaign,
     selectedCampaign, emailAccounts, handleAssignAccountToCampaign, handleToggleCampaignStatus,
     automationForm, handleFormChange, handleSaveAutomation, handleSendNow, automationNotice, systemStatus
   } = mailing;
+
+  // Which lead set "Or pick specific leads" below shows/toggles against —
+  // this campaign's own leads normally, or the redirected target List's
+  // leads once Send To has been switched away from "All leads in this
+  // campaign" to a different List (see handleChangeSendTarget).
+  const specificLeadsSource = automationForm.targetCampaignId && automationForm.targetCampaignId !== selectedCampaignId
+    ? targetListLeads
+    : allLeads;
+  const targetListName = automationForm.targetCampaignId
+    ? campaigns.find((c) => c.id === automationForm.targetCampaignId)?.name
+    : null;
+
+  // Send To is one flat radio group across three kinds of choice — "all of
+  // this campaign's own leads" (the default), a saved Segment (narrows that
+  // same set by condition, unchanged from before), or a different List
+  // entirely (redirects the whole send to that List's own leads instead).
+  // Only one can be active at a time, so picking any of them clears the
+  // other two fields rather than leaving a stale segmentId/targetCampaignId
+  // silently still applied underneath.
+  function handleSendToChange(kind, id) {
+    if (kind === "segment") {
+      handleChangeSendTarget("");
+      handleFormChange("segmentId", id);
+    } else if (kind === "list") {
+      handleFormChange("segmentId", "");
+      handleChangeSendTarget(id);
+    } else {
+      handleFormChange("segmentId", "");
+      handleChangeSendTarget("");
+    }
+  }
 
   // The real "from" address this campaign will actually send as — its
   // assigned mailbox if one is set, otherwise the single global
@@ -210,13 +241,13 @@ export function CampaignsTab({ mailing }) {
               </Field>
 
               <Field label="Send To">
-                <div className="max-h-[180px] overflow-y-auto rounded-[12px] border border-[#dfe5f1] bg-white">
+                <div className="max-h-[220px] overflow-y-auto rounded-[12px] border border-[#dfe5f1] bg-white">
                   <label className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471]">
                     <input
                       type="radio"
-                      name="send-to-segment"
-                      checked={!automationForm.segmentId}
-                      onChange={() => handleFormChange("segmentId", "")}
+                      name="send-to"
+                      checked={!automationForm.segmentId && !automationForm.targetCampaignId}
+                      onChange={() => handleSendToChange("all")}
                       className="h-4 w-4 border-[#b9c4d8]"
                     />
                     <span className="min-w-0 flex-1 truncate">All leads in this campaign</span>
@@ -225,22 +256,40 @@ export function CampaignsTab({ mailing }) {
                     <label key={segment.id} className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0">
                       <input
                         type="radio"
-                        name="send-to-segment"
+                        name="send-to"
                         checked={automationForm.segmentId === segment.id}
-                        onChange={() => handleFormChange("segmentId", segment.id)}
+                        onChange={() => handleSendToChange("segment", segment.id)}
                         className="h-4 w-4 border-[#b9c4d8]"
                       />
                       <span className="min-w-0 flex-1 truncate">{segment.name}</span>
                       <span className="shrink-0 text-[12px] text-[#8593ac]">{segment.matchingCount}</span>
                     </label>
                   ))}
+                  {campaigns.filter((c) => c.id !== selectedCampaignId).map((c) => (
+                    <label key={c.id} className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0">
+                      <input
+                        type="radio"
+                        name="send-to"
+                        checked={automationForm.targetCampaignId === c.id}
+                        onChange={() => handleSendToChange("list", c.id)}
+                        className="h-4 w-4 border-[#b9c4d8]"
+                      />
+                      <span className="min-w-0 flex-1 truncate">Send to list: {c.name}</span>
+                    </label>
+                  ))}
                 </div>
+                {targetListName ? (
+                  <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                    Sends this campaign's composed subject/body to <strong>{targetListName}</strong>'s own leads instead
+                    of this campaign's.
+                  </p>
+                ) : null}
               </Field>
 
-              <Field label={`Or pick specific leads (${(automationForm.selectedLeadIds ?? []).length} of ${allLeads.length} selected)`}>
+              <Field label={`Or pick specific leads (${(automationForm.selectedLeadIds ?? []).length} of ${specificLeadsSource.length} selected)`}>
                 <div className="max-h-[220px] overflow-y-auto rounded-[12px] border border-[#dfe5f1] bg-white">
-                  {allLeads.length ? (
-                    allLeads.map((lead) => (
+                  {specificLeadsSource.length ? (
+                    specificLeadsSource.map((lead) => (
                       <label key={lead.id} className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0">
                         <input
                           type="checkbox"
@@ -254,7 +303,9 @@ export function CampaignsTab({ mailing }) {
                     ))
                   ) : (
                     <p className="px-3 py-3 text-[12px] text-[#9aa6ba]">
-                      No leads in this campaign yet — add some from the Leads tab first.
+                      {targetListName
+                        ? `No leads in "${targetListName}" yet.`
+                        : "No leads in this campaign yet — add some from the Leads tab first."}
                     </p>
                   )}
                 </div>

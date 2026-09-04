@@ -440,6 +440,13 @@ const sendNowSchema = z.object({
   // meaning, so any segment can be reused as a filter against any
   // campaign's leads.
   segmentId: z.string().nullable().optional(),
+  // Null/omitted = send to this campaign's own leads (the default). Given,
+  // this campaign's composed subject/bodyHtml is instead sent to a
+  // DIFFERENT List's leads — lets one composed email be blasted out to any
+  // existing List, not just the one it was written in. Still subject to
+  // ownership scoping (loadOwnedCampaignOr404-equivalent check below) and
+  // can still be narrowed further by segmentId/leadIds on top of it.
+  targetCampaignId: z.string().nullable().optional(),
   // One optional one-time future send time — not a recurring/cron
   // schedule. Null/omitted = send immediately.
   scheduledAt: z.string().datetime().nullable().optional(),
@@ -467,8 +474,22 @@ emailCampaignsRouter.post("/:id/send-now", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: `"${campaign.name}" has no composed email content yet — add a subject and body, then save, before sending.` });
   }
 
+  // Defaults to this campaign's own leads; targetCampaignId (if given and
+  // different) redirects the whole send to a different List's leads
+  // instead — still scoped to campaigns this user/channel-partner owns.
+  let leadsCampaignId = campaign.id;
+  if (parsed.data.targetCampaignId && parsed.data.targetCampaignId !== campaign.id) {
+    const targetCampaign = await prisma.emailCampaign.findFirst({
+      where: { id: parsed.data.targetCampaignId, ...ownerWhereClause(req) }
+    });
+    if (!targetCampaign) {
+      return res.status(404).json({ error: "Target list not found" });
+    }
+    leadsCampaignId = targetCampaign.id;
+  }
+
   let leads = await prisma.emailLead.findMany({
-    where: { campaignId: campaign.id, unsubscribed: false, bounced: false }
+    where: { campaignId: leadsCampaignId, unsubscribed: false, bounced: false }
   });
 
   if (parsed.data.leadIds?.length) {

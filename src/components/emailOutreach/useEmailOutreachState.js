@@ -38,6 +38,7 @@ const DEFAULT_AUTOMATION_FORM = {
   subject: "",
   bodyHtml: "",
   segmentId: "",
+  targetCampaignId: "",
   selectedLeadIds: [],
   scheduledAt: "",
   delayBetweenMinutes: "0"
@@ -543,6 +544,30 @@ export function useEmailOutreachState() {
 
   const [automationForm, setAutomationForm] = useState(DEFAULT_AUTOMATION_FORM);
   const [automationNotice, setAutomationNotice] = useState("Automation ready. Select a campaign or create a new one.");
+
+  // A separate list of leads, only populated when "Send To" is redirected
+  // to a different List than the one being composed in (targetCampaignId)
+  // — kept apart from allLeads above so switching the send target doesn't
+  // clobber the composed campaign's own leads elsewhere in the UI.
+  const [targetListLeads, setTargetListLeads] = useState([]);
+  useEffect(() => {
+    const targetId = automationForm.targetCampaignId;
+    if (!targetId || targetId === selectedCampaignId) {
+      setTargetListLeads([]);
+      return;
+    }
+    emailLeadsApi
+      .list(targetId)
+      .then(setTargetListLeads)
+      .catch(() => setTargetListLeads([]));
+  }, [automationForm.targetCampaignId, selectedCampaignId]);
+
+  // Switching which List this composed email sends to also clears any
+  // manually-picked specific leads — those ids belonged to the previous
+  // target's own lead set and would silently mismatch the new one.
+  function handleChangeSendTarget(campaignId) {
+    setAutomationForm((current) => ({ ...current, targetCampaignId: campaignId, selectedLeadIds: [] }));
+  }
   const [newLeadForm, setNewLeadForm] = useState({ name: "", company: "", email: "", country: "" });
   const [csvText, setCsvText] = useState("");
   const [csvPreview, setCsvPreview] = useState(null);
@@ -977,6 +1002,7 @@ export function useEmailOutreachState() {
       subject: campaign.subject ?? "",
       bodyHtml: campaign.bodyHtml ?? "",
       segmentId: "",
+      targetCampaignId: "",
       selectedLeadIds: [],
       scheduledAt: "",
       delayBetweenMinutes: "0"
@@ -1082,11 +1108,18 @@ export function useEmailOutreachState() {
     }
 
     try {
+      const targetCampaignId = automationForm.targetCampaignId && automationForm.targetCampaignId !== saved.id
+        ? automationForm.targetCampaignId
+        : null;
+      const targetName = targetCampaignId ? campaigns.find((c) => c.id === targetCampaignId)?.name : null;
+      const sentToLabel = targetName ? `"${saved.name}" → "${targetName}"` : `"${saved.name}"`;
+
       const result = await emailCampaignsApi.sendNow(saved.id, {
-        // Picking specific leads overrides the segment/all-leads choice —
-        // see toggleLeadSelection in CampaignsTab.jsx.
+        // Picking specific leads overrides the segment/all-leads/target-list
+        // choice — see toggleLeadSelection in CampaignsTab.jsx.
         leadIds: automationForm.selectedLeadIds?.length ? automationForm.selectedLeadIds : undefined,
         segmentId: automationForm.segmentId || null,
+        targetCampaignId,
         scheduledAt: automationForm.scheduledAt ? new Date(automationForm.scheduledAt).toISOString() : null,
         delayBetweenMinutes: Number(automationForm.delayBetweenMinutes) || 0
       });
@@ -1094,15 +1127,15 @@ export function useEmailOutreachState() {
       if (result.queued > 0) {
         setAutomationNotice(
           result.scheduled
-            ? `"${saved.name}": ${result.queued} email(s) scheduled.`
-            : `"${saved.name}": ${result.queued} email(s) queued to send now.`
+            ? `${sentToLabel}: ${result.queued} email(s) scheduled.`
+            : `${sentToLabel}: ${result.queued} email(s) queued to send now.`
         );
       } else if (result.sentImmediately > 0 || result.failed > 0) {
         setAutomationNotice(
-          `"${saved.name}": ${result.sentImmediately} sent immediately, ${result.failed} failed (sending queue is disabled — no delay throttle was applied).`
+          `${sentToLabel}: ${result.sentImmediately} sent immediately, ${result.failed} failed (sending queue is disabled — no delay throttle was applied).`
         );
       } else {
-        setAutomationNotice(result.message ?? `"${saved.name}": nothing was sent.`);
+        setAutomationNotice(result.message ?? `${sentToLabel}: nothing was sent.`);
       }
     } catch (error) {
       setAutomationNotice(`Could not send "${saved.name}" — ${error.message}`);
@@ -1252,7 +1285,7 @@ export function useEmailOutreachState() {
 
   return {
     campaigns, segments, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
-    repliedLeads, allLeads, systemStatus, dashboardSummary, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
+    repliedLeads, allLeads, targetListLeads, handleChangeSendTarget, systemStatus, dashboardSummary, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
     automationForm, automationNotice, newLeadForm, setNewLeadForm,
     csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, csvImportBusy, csvPreviewBusy, previewHtml, setPreviewHtml,
     emailAccounts, newAccountForm, setNewAccountForm,
