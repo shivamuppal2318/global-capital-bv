@@ -33,7 +33,7 @@ const DEFAULT_AUTOMATION_FORM = {
   abTest: true,
   autoPause: true,
   replyType: "interested",
-  preferredPath: "nda-first",
+  preferredPath: "zoom-first",
   replyTo: "",
   subject: "",
   bodyHtml: "",
@@ -77,17 +77,14 @@ function buildAutomationSteps(campaignName, delayDays, followUpCount) {
 // Reflects the SELECTED LEAD's actual tracked progress (ndaSignedAt,
 // callStatus derived from Calendly webhooks / manual call-completed
 // confirmation — see schema.prisma's EmailLead comments), not just the
-// Automation tab's generic reply-type/path config. The config still decides
-// which branch applies and, for "interested", which step comes first
-// (preferredPath is a real per-campaign setting) — but "done" only shows
-// once this lead's own data confirms it happened. Steps with no tracked
-// field yet (data room, IOI/LOI) can only honestly show "pending" — there's
-// nothing in EmailLead to confirm those completed.
+// reply-type classification. The reply type decides which branch of steps
+// applies — but "done" only shows once this lead's own data confirms it
+// happened. Steps with no tracked field yet (data room, IOI/LOI) can only
+// honestly show "pending" — there's nothing in EmailLead to confirm those
+// completed.
 function buildWorkflowSteps(flowState, lead) {
   const ndaDone = Boolean(lead?.ndaSignedAt);
   const zoomDone = lead?.callStatus === "completed";
-  const zoomBooked = zoomDone || lead?.callStatus === "booked";
-  const ndaFirst = flowState.preferredPath !== "zoom-first";
 
   const steps = [
     {
@@ -104,34 +101,23 @@ function buildWorkflowSteps(flowState, lead) {
     }
   ];
 
+  // "Interested" (they mentioned NDA/signing) still goes through a Zoom
+  // call before the NDA is actually sent — same as an explicit zoom-request
+  // — a deliberate policy so every lead gets a human touchpoint before the
+  // legal document goes out, even one who says they're ready to sign.
   if (flowState.replyType === "interested") {
-    if (ndaFirst) {
-      steps.push({
-        key: "nda",
-        title: "Send NDA e-signature",
-        desc: "Auto-send NDA email and schedule up to 2 reminders, 3 working days apart.",
-        state: ndaDone ? "done" : "current"
-      });
-      steps.push({
-        key: "zoom1",
-        title: "Schedule Zoom Call 1",
-        desc: "Send booking link and confirm introductory Zoom meeting.",
-        state: zoomDone ? "done" : zoomBooked || ndaDone ? "current" : "pending"
-      });
-    } else {
-      steps.push({
-        key: "zoom1",
-        title: "Schedule Zoom Call 1",
-        desc: "Send booking link and confirm introductory Zoom meeting.",
-        state: zoomDone ? "done" : "current"
-      });
-      steps.push({
-        key: "nda",
-        title: "Send NDA e-signature",
-        desc: "Auto-send NDA email and schedule up to 2 reminders, 3 working days apart.",
-        state: ndaDone ? "done" : zoomDone ? "current" : "pending"
-      });
-    }
+    steps.push({
+      key: "zoom1",
+      title: "Schedule Zoom Call 1",
+      desc: "Send booking link and confirm introductory Zoom meeting before the NDA.",
+      state: zoomDone ? "done" : "current"
+    });
+    steps.push({
+      key: "nda",
+      title: "Send NDA e-signature",
+      desc: "Auto-send NDA email and schedule up to 2 reminders, 3 working days apart.",
+      state: ndaDone ? "done" : zoomDone ? "current" : "pending"
+    });
     steps.push({
       key: "data-room",
       title: "Request Data Room",
@@ -201,11 +187,13 @@ function buildWorkflowSteps(flowState, lead) {
 }
 
 function buildReplyAction(flowState) {
+  // Even a lead who explicitly mentioned the NDA still gets a Zoom-booking
+  // email first, not the NDA itself — see buildWorkflowSteps above for why.
   if (flowState.replyType === "interested") {
     return {
-      subject: "NDA signature + next steps",
-      body: "Thanks for the interest. Please find the NDA signature link attached. Once signed, we will unlock the next diligence step and share the data-room request checklist.",
-      cta: "Send NDA email"
+      subject: "Let's find 15 minutes before the NDA",
+      body: "Great to hear you're ready to move forward. Before we send the NDA over, we like to do a quick intro call first — here's our Calendly link to pick a time: https://calendly.com/globalcapitalbv/intro-call. We'll cover mandate fit, then send the NDA and data-room checklist right after.",
+      cta: "Send Calendly invite"
     };
   }
 
@@ -238,17 +226,25 @@ export const replyRules = [
   { id: "info", label: 'Reply contains "deck/details"', keywords: ["deck", "detail", "brochure", "info"], replyType: "info-request" }
 ];
 
-function getStageFromReplyType(replyType, preferredPath) {
-  if (replyType === "interested") {
-    return preferredPath === "zoom-first" ? "Zoom 1 Pending" : "NDA Sent";
-  }
-  if (replyType === "zoom-request") {
+function getStageFromReplyType(replyType) {
+  // "interested" (even one who mentioned the NDA) and "zoom-request" both
+  // land on the same next stage — a Zoom call happens before the NDA goes
+  // out either way, see buildWorkflowSteps/buildReplyAction above.
+  if (replyType === "interested" || replyType === "zoom-request") {
     return "Zoom 1 Pending";
   }
   if (replyType === "info-request") {
     return "Info Shared";
   }
   return "Reminder Pending";
+}
+
+// Every reply type now goes Zoom-first before any NDA is sent — kept as a
+// named helper (rather than always setting the literal string "zoom-first")
+// so the one real branch point (info-request/no-reply have no zoom step at
+// all) stays legible at each call site below.
+function preferredPathForReplyType(replyType) {
+  return replyType === "interested" || replyType === "zoom-request" ? "zoom-first" : "nda-first";
 }
 
 // Backend enums are UPPER_SNAKE (Prisma ReplyType/EmailCampaignStatus); the
@@ -489,7 +485,7 @@ export function useEmailOutreachState() {
           ...current,
           campaignName: mapped[0].campaign,
           replyType: mapped[0].replyType,
-          preferredPath: mapped[0].replyType === "zoom-request" ? "zoom-first" : "nda-first"
+          preferredPath: preferredPathForReplyType(mapped[0].replyType)
         }));
       })
       .catch(() => {
@@ -630,7 +626,7 @@ export function useEmailOutreachState() {
   }
 
   function handleApplyRule(rule) {
-    const nextPreferredPath = rule.replyType === "zoom-request" ? "zoom-first" : "nda-first";
+    const nextPreferredPath = preferredPathForReplyType(rule.replyType);
     setAutomationForm((current) => ({
       ...current,
       replyType: rule.replyType,
@@ -645,7 +641,7 @@ export function useEmailOutreachState() {
       ...current,
       campaignName: lead.campaign,
       replyType: lead.replyType,
-      preferredPath: lead.replyType === "zoom-request" ? "zoom-first" : "nda-first"
+      preferredPath: preferredPathForReplyType(lead.replyType)
     }));
     setAutomationNotice(`Loaded ${lead.name}'s reply into the follow-up panel.`);
   }
@@ -1137,7 +1133,7 @@ export function useEmailOutreachState() {
       return;
     }
 
-    const nextStage = getStageFromReplyType(automationForm.replyType, automationForm.preferredPath);
+    const nextStage = getStageFromReplyType(automationForm.replyType);
 
     // Two-tier: prefer sending via the saved Template (backend applies
     // merge fields, branded HTML, unsubscribe link, deliverability checks
@@ -1232,8 +1228,8 @@ export function useEmailOutreachState() {
     try {
       const result = await emailLeadsApi.simulateReply(selectedLead.id, replyPreview);
       const localReplyType = backendReplyTypeToLocal(result.replyType);
-      const nextPreferredPath = localReplyType === "zoom-request" ? "zoom-first" : "nda-first";
-      const nextStage = getStageFromReplyType(localReplyType, nextPreferredPath);
+      const nextPreferredPath = preferredPathForReplyType(localReplyType);
+      const nextStage = getStageFromReplyType(localReplyType);
 
       setRepliedLeads((current) =>
         current.map((lead) =>
