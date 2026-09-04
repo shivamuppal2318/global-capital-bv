@@ -214,24 +214,6 @@ export function VisitPlanningModule() {
         value: String(metrics?.completed ?? 0),
         note: has(metrics?.completionRate) ? `${metrics.completionRate}% of planned` : "None yet",
         noteTone: "green"
-      },
-      {
-        label: "Cost per visit",
-        value: has(metrics?.costPerVisit) ? `$${metrics.costPerVisit.toLocaleString()}` : "—",
-        note: metrics?.visitsWithCost ? `${metrics.visitsWithCost} visits costed` : "No costs recorded",
-        noteTone: "amber"
-      },
-      {
-        label: "Cluster efficiency",
-        value: has(metrics?.clusterEfficiency) ? `${metrics.clusterEfficiency}%` : "—",
-        note: "Visits sharing a geography",
-        noteTone: "blue"
-      },
-      {
-        label: "Reports submitted",
-        value: has(metrics?.reportRate) ? `${metrics.reportRate}%` : "—",
-        note: metrics?.completed ? `${metrics.reportsSubmitted}/${metrics.completed} completed visits` : "No visits done",
-        noteTone: metrics?.reportRate === 100 ? "green" : "amber"
       }
     ],
     [metrics]
@@ -275,7 +257,7 @@ export function VisitPlanningModule() {
           completed visit comes back with a report.
         </p>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
           {cards.map((c) => (
             <StatCard key={c.label} card={c} />
           ))}
