@@ -821,7 +821,7 @@ model VisitPlan {
   // Actual spend, in whole currency units. Numeric here (unlike IOI/term
   // sheet amounts) because cost-per-visit has to be averaged.
   costAmount   Float?
-  costCurrency String  @default("EUR")
+  costCurrency String  @default("USD")
 
   travelMode String?
 
@@ -1427,7 +1427,7 @@ model IoiRecord {
   // Where a range is genuinely all that is known, record the midpoint here
   // and put the range itself in notes.
   value         Float?
-  valueCurrency String @default("EUR")
+  valueCurrency String @default("USD")
 
   // The spec asks for IOI-by-industry and IOI-by-geography distributions.
   // Lead carries neither (it has `territory`, which is a sales region, not

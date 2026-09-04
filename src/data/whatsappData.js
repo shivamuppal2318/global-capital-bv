@@ -181,7 +181,7 @@ export const botFlowsData = {
     { type: "trigger", label: "Trigger", detail: "Keyword match: \"hi\", \"hello\", \"invest\"" },
     { type: "message", label: "Send message", detail: "Greeting + quick-reply menu (Raise capital / Invest / Portfolio support)" },
     { type: "question", label: "Ask question", detail: "\"What's your target raise size?\" — free text" },
-    { type: "condition", label: "Condition", detail: "Raise size ≥ €2M → continue · else → nurture sequence" },
+    { type: "condition", label: "Condition", detail: "Raise size ≥ $2M → continue · else → nurture sequence" },
     { type: "action", label: "CRM action", detail: "Create lead, set Capital Ask, assign to territory owner" },
     { type: "action", label: "Handoff", detail: "Transfer to human agent with full transcript" }
   ]

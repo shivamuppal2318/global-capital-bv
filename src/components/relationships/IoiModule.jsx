@@ -42,7 +42,7 @@ const has = (v) => v !== null && v !== undefined;
 
 // Money reads better abbreviated at these magnitudes: an average IOI is
 // millions, and "€3,000,000" in a KPI tile wraps and loses its shape.
-function fmtMoney(value, currency = "EUR") {
+function fmtMoney(value, currency = "USD") {
   if (!has(value)) return "—";
   const symbol = { EUR: "€", USD: "$", GBP: "£" }[currency] ?? `${currency} `;
   const abs = Math.abs(value);
@@ -112,7 +112,7 @@ export function IoiModule() {
     signedAt: "",
     expiresAt: "",
     value: "",
-    valueCurrency: "EUR",
+    valueCurrency: "USD",
     industry: "",
     geography: "",
     counterparty: "",
@@ -152,7 +152,7 @@ export function IoiModule() {
       signedAt: asDateInput(r.signedAt),
       expiresAt: asDateInput(r.expiresAt),
       value: r.value ?? "",
-      valueCurrency: r.valueCurrency ?? "EUR",
+      valueCurrency: r.valueCurrency ?? "USD",
       industry: r.industry ?? "",
       geography: r.geography ?? "",
       counterparty: r.counterparty ?? "",
