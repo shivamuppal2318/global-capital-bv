@@ -1001,7 +1001,36 @@ export function CrmWorkspaceModule() {
       if (result.invalidCount) parts.push(`${result.invalidCount} failed a deliverability check`);
       if (result.failedCount) parts.push(`${result.failedCount} failed`);
       if (skippedNoEmail) parts.push(`${skippedNoEmail} skipped — no email on file`);
-      setAddToListResult({ ok: true, text: parts.join(", ") + "." });
+
+      // rows[] was built from withEmail in the same order, so a row number
+      // from the API (1-based) maps straight back to the lead it came from
+      // — lets the result show which lead each outcome belongs to, not just a count.
+      const rowLead = (rowNumber) => withEmail[rowNumber - 1];
+      const invalidDetails = (result.invalid || []).map((r) => ({
+        name: rowLead(r.row)?.name ?? r.email,
+        email: r.email,
+        reason: r.reason
+      }));
+      const duplicateDetails = (result.duplicates || []).map((r) => ({
+        name: rowLead(r.row)?.name ?? r.email,
+        email: r.email,
+        reason: r.reason
+      }));
+      const failedDetails = (result.failed || []).map((r) => ({
+        name: rowLead(r.row)?.name ?? r.email,
+        email: r.email,
+        reason: r.reason
+      }));
+      const skippedNoEmailDetails = selected.filter((l) => !l.email).map((l) => ({ name: l.name }));
+
+      setAddToListResult({
+        ok: true,
+        text: parts.join(", ") + ".",
+        invalidDetails,
+        duplicateDetails,
+        failedDetails,
+        skippedNoEmailDetails
+      });
       setSelectedLeadIds(new Set());
     } catch (err) {
       setAddToListResult({ ok: false, text: err.message });
@@ -1196,9 +1225,51 @@ export function CrmWorkspaceModule() {
               with no email on file are skipped too.
             </p>
             {addToListResult ? (
-              <p className={`mt-2 text-[13px] font-medium ${addToListResult.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>
-                {addToListResult.text}
-              </p>
+              <div className="mt-2">
+                <p className={`text-[13px] font-medium ${addToListResult.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>
+                  {addToListResult.text}
+                </p>
+                {addToListResult.invalidDetails?.length ? (
+                  <div className="mt-1.5 text-[12px] text-[#8592ab]">
+                    <p className="font-semibold text-[#5f6f89]">Failed deliverability check:</p>
+                    <ul className="mt-0.5 list-disc pl-4">
+                      {addToListResult.invalidDetails.map((d, i) => (
+                        <li key={i}>{d.name} ({d.email}) — {d.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {addToListResult.duplicateDetails?.length ? (
+                  <div className="mt-1.5 text-[12px] text-[#8592ab]">
+                    <p className="font-semibold text-[#5f6f89]">Already in this list:</p>
+                    <ul className="mt-0.5 list-disc pl-4">
+                      {addToListResult.duplicateDetails.map((d, i) => (
+                        <li key={i}>{d.name} ({d.email})</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {addToListResult.failedDetails?.length ? (
+                  <div className="mt-1.5 text-[12px] text-[#8592ab]">
+                    <p className="font-semibold text-[#5f6f89]">Failed to add:</p>
+                    <ul className="mt-0.5 list-disc pl-4">
+                      {addToListResult.failedDetails.map((d, i) => (
+                        <li key={i}>{d.name} ({d.email}) — {d.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {addToListResult.skippedNoEmailDetails?.length ? (
+                  <div className="mt-1.5 text-[12px] text-[#8592ab]">
+                    <p className="font-semibold text-[#5f6f89]">Skipped — no email on file:</p>
+                    <ul className="mt-0.5 list-disc pl-4">
+                      {addToListResult.skippedNoEmailDetails.map((d, i) => (
+                        <li key={i}>{d.name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ) : null}
