@@ -88,6 +88,26 @@ export function OutreachDoeModule() {
     ];
   }, [data, scoped]);
 
+  // Same ten company-wide pipeline numbers as the Scorecard rows above,
+  // reshaped into columns for the per-rep compression table below — every
+  // DOE's row repeats the same value, same convention WhatsApp Reply Rate
+  // and Zoom Call Booked already use there.
+  const pipelineColumns = useMemo(() => {
+    const k = data?.pipelineKpis;
+    return [
+      { key: "responseRate", label: "Response Rate", value: fmtPct(k?.responseRate) },
+      { key: "ndaConversion", label: "NDA Conversion", value: fmtPct(k?.ndaConversion) },
+      { key: "zoomConversion", label: "Zoom Call 1", value: fmtPct(k?.zoomConversion) },
+      { key: "dataRoomCompletion", label: "Data Room", value: fmtPct(k?.dataRoomCompletion) },
+      { key: "ioiConversion", label: "IOI Signed", value: fmtPct(k?.ioiConversion) },
+      { key: "zoomCall2Conversion", label: "Zoom Call 2", value: fmtPct(k?.zoomCall2Conversion) },
+      { key: "fieldVisitCompletion", label: "Field Visit", value: fmtPct(k?.fieldVisitCompletion) },
+      { key: "termSheetConversion", label: "Term Sheet Closed", value: fmtPct(k?.termSheetConversion) },
+      { key: "pipelineValue", label: "Pipeline Value", value: fmtMoney(k?.pipelineValue) },
+      { key: "avgDealAge", label: "Average Deal Age", value: fmtDays(k?.avgDealAge) }
+    ];
+  }, [data]);
+
   const cards = useMemo(
     () => [
       { label: "Outreach Sent", value: fmtNum(data?.top.outreachSent), note: "Emails sent", noteTone: "blue" },
@@ -222,13 +242,13 @@ export function OutreachDoeModule() {
         <SectionTitle
           icon={RadarIcon}
           iconClass="text-[#3046b2]"
-          subtitle="Every DOE Scorecard KPI, side by side per rep — three columns are attributable per person, three are company-wide since they aren't linked to a DOE yet."
+          subtitle="Every DOE Scorecard KPI, side by side per rep — three columns are attributable per person, the rest are company-wide since they aren't linked to a DOE yet."
         >
           DOE Performance Compression
         </SectionTitle>
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[820px] border-collapse text-left">
+          <table className="w-full min-w-[2200px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
                 {[
@@ -237,7 +257,8 @@ export function OutreachDoeModule() {
                   { label: "Positive Response %" },
                   { label: "Cold Email Open Rate" },
                   { label: "WhatsApp Reply Rate", companyWide: true },
-                  { label: "Zoom Call Booked", companyWide: true }
+                  { label: "Zoom Call Booked", companyWide: true },
+                  ...pipelineColumns.map((c) => ({ label: c.label, companyWide: true }))
                 ].map((h) => (
                   <th key={h.label} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
                     {h.label}
@@ -257,6 +278,11 @@ export function OutreachDoeModule() {
                   <td className="py-3 pr-4 text-[13px] text-[#9aa6bd]">
                     {has(data.companyWide.zoomCallsPerDay) ? `${data.companyWide.zoomCallsPerDay}/day` : "—"}
                   </td>
+                  {pipelineColumns.map((c) => (
+                    <td key={c.key} className="py-3 pr-4 text-[13px] text-[#9aa6bd]">
+                      {c.value}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -270,8 +296,9 @@ export function OutreachDoeModule() {
 
           {!loading && data && data.scorecard.length > 0 ? (
             <p className="mt-3 text-[12px] text-[#9aa6bd]">
-              WhatsApp Reply Rate and Zoom Call Booked repeat the same company-wide number in every row — Agent and
-              Meeting records aren't linked to a DOE yet, so there's no real per-rep split for these two.
+              Every column marked (company-wide) repeats the same number in every row — none of those records
+              (Agent, Meeting, NDA, Data Room, IOI, Field Visit, Term Sheet) are linked to a single DOE, so there's
+              no real per-rep split for them yet.
             </p>
           ) : null}
         </div>
