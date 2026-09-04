@@ -34,7 +34,13 @@ const DEFAULT_AUTOMATION_FORM = {
   autoPause: true,
   replyType: "interested",
   preferredPath: "nda-first",
-  replyTo: ""
+  replyTo: "",
+  subject: "",
+  bodyHtml: "",
+  segmentId: "",
+  selectedLeadIds: [],
+  scheduledAt: "",
+  delayBetweenMinutes: "0"
 };
 
 function normalizeCampaigns(campaigns) {
@@ -379,6 +385,8 @@ export function useEmailOutreachState() {
           abTest: campaign.abTest,
           autoPause: campaign.autoPause,
           replyTo: campaign.replyTo ?? "",
+          subject: campaign.subject ?? "",
+          bodyHtml: campaign.bodyHtml ?? "",
           sent: campaign.engagement?.sent ? String(campaign.engagement.sent) : "—",
           open: campaign.engagement?.openRate != null ? `${campaign.engagement.openRate}%` : "—",
           click: campaign.engagement?.clickRate != null ? `${campaign.engagement.clickRate}%` : "—",
@@ -944,6 +952,37 @@ export function useEmailOutreachState() {
     }
   }
 
+  // The one place that selects a campaign AND loads its real saved settings
+  // into the form — used by CampaignsTab's own row-open action, and by
+  // LeadsTab's "Open" (which used to only call setSelectedCampaignId,
+  // leaving automationForm showing whichever OTHER campaign's
+  // name/subject/body was last edited — a real, confusing bug: the leads
+  // checklist and breadcrumb would correctly show the newly-opened
+  // campaign while the Campaign Name/Subject fields still showed the
+  // previous one's stale values, and Save would silently create a
+  // duplicate instead of updating either).
+  function selectCampaign(campaign) {
+    setSelectedCampaignId(campaign.id);
+    setAutomationForm((current) => ({
+      ...current,
+      campaignName: campaign.name,
+      audience: campaign.audience,
+      template: campaign.template,
+      dailyLimit: campaign.dailyLimit,
+      delayDays: campaign.delayDays,
+      followUpCount: campaign.followUpCount,
+      abTest: campaign.abTest,
+      autoPause: campaign.autoPause,
+      replyTo: campaign.replyTo ?? "",
+      subject: campaign.subject ?? "",
+      bodyHtml: campaign.bodyHtml ?? "",
+      segmentId: "",
+      selectedLeadIds: [],
+      scheduledAt: "",
+      delayBetweenMinutes: "0"
+    }));
+  }
+
   // Shared by CampaignsTab's "New Campaign" and AutomationTab's "New Drip
   // Campaign" buttons — see DEFAULT_AUTOMATION_FORM above for why this is
   // one function instead of each tab resetting its own way.
@@ -969,7 +1008,9 @@ export function useEmailOutreachState() {
       followUpCount,
       abTest: automationForm.abTest,
       autoPause: automationForm.autoPause,
-      replyTo: automationForm.replyTo?.trim() || null
+      replyTo: automationForm.replyTo?.trim() || null,
+      subject: automationForm.subject?.trim() || null,
+      bodyHtml: automationForm.bodyHtml?.trim() || null
     };
 
     // The campaign name still matching the currently-selected (already
@@ -993,6 +1034,9 @@ export function useEmailOutreachState() {
         id: campaign.id,
         name: campaign.name,
         status: backendCampaignStatusToLocal(campaign.status),
+        emailAccountId: campaign.emailAccountId ?? null,
+        subject: campaign.subject ?? "",
+        bodyHtml: campaign.bodyHtml ?? "",
         sent: "—",
         open: "—",
         click: "—",
@@ -1012,6 +1056,56 @@ export function useEmailOutreachState() {
     } catch (error) {
       setAutomationNotice(`Could not save "${automationForm.campaignName}" — backend unreachable (${error.message}).`);
       return null;
+    }
+  }
+
+  // Sends the selected campaign's own composed subject/bodyHtml to its own
+  // leads, optionally narrowed by a Segment. Saves the form first — so
+  // Send Now always sends exactly what's currently typed, not whatever was
+  // last saved — same reasoning as isEditingSelected in
+  // handleSaveAutomation. No local-only fallback: nothing genuine to send
+  // without the backend.
+  async function handleSendNow() {
+    if (!selectedCampaign) {
+      setAutomationNotice("Select or save a campaign first.");
+      return;
+    }
+    if (!automationForm.subject?.trim() || !automationForm.bodyHtml?.trim()) {
+      setAutomationNotice("Add a subject and body before sending.");
+      return;
+    }
+
+    const saved = await handleSaveAutomation();
+    if (!saved) {
+      setAutomationNotice(`Could not save "${selectedCampaign.name}" before sending — nothing was sent.`);
+      return;
+    }
+
+    try {
+      const result = await emailCampaignsApi.sendNow(saved.id, {
+        // Picking specific leads overrides the segment/all-leads choice —
+        // see toggleLeadSelection in CampaignsTab.jsx.
+        leadIds: automationForm.selectedLeadIds?.length ? automationForm.selectedLeadIds : undefined,
+        segmentId: automationForm.segmentId || null,
+        scheduledAt: automationForm.scheduledAt ? new Date(automationForm.scheduledAt).toISOString() : null,
+        delayBetweenMinutes: Number(automationForm.delayBetweenMinutes) || 0
+      });
+
+      if (result.queued > 0) {
+        setAutomationNotice(
+          result.scheduled
+            ? `"${saved.name}": ${result.queued} email(s) scheduled.`
+            : `"${saved.name}": ${result.queued} email(s) queued to send now.`
+        );
+      } else if (result.sentImmediately > 0 || result.failed > 0) {
+        setAutomationNotice(
+          `"${saved.name}": ${result.sentImmediately} sent immediately, ${result.failed} failed (sending queue is disabled — no delay throttle was applied).`
+        );
+      } else {
+        setAutomationNotice(result.message ?? `"${saved.name}": nothing was sent.`);
+      }
+    } catch (error) {
+      setAutomationNotice(`Could not send "${saved.name}" — ${error.message}`);
     }
   }
 
@@ -1167,7 +1261,7 @@ export function useEmailOutreachState() {
     convertingLeadId, convertResults, handleConvertToLead,
     handleFormChange, handleTemplateDraftChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
     handleToggleCampaignStatus, handleAddLead, handleImportCsv, handleAddEmailAccount,
-    handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation, startNewCampaign,
+    handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation, handleSendNow, selectCampaign, startNewCampaign,
     handleSendNextEmail, handleSaveTemplate, handlePreviewTemplate, simulateIncomingReply
   };
 }

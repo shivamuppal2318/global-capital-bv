@@ -22,6 +22,19 @@ export function hasAnyZoomInfoMatch({ companyAttributes, contactAttributes, scoo
   return Boolean(companyAttributes || contactAttributes || scoops.length);
 }
 
+// Company + Scoops only, no contact lookup — for a Market Intelligence
+// signal, whose entityName is a company, not a person (see
+// routes/marketIntelligence.js's POST /signals/:id/enrich). Returns the
+// same shape hasAnyZoomInfoMatch above already accepts (contactAttributes
+// simply omitted, which its `||` check already tolerates).
+export async function lookupCompanyInZoomInfo({ token, companyName }) {
+  const [companyAttributes, scoops] = await Promise.all([
+    enrichCompanyByName({ token, companyName }),
+    searchScoopsByCompany({ token, companyName }).catch(() => [])
+  ]);
+  return { companyAttributes, scoops };
+}
+
 // Only fills industry/territory if they're still empty (never overwrites a
 // value a rep already set); zoomInfoData/zoomInfoContactData/zoomInfoScoops
 // are display-only, so those are written whenever the corresponding lookup

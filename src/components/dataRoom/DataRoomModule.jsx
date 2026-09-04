@@ -256,6 +256,15 @@ export function DataRoomModule() {
   };
 
   const handleVerify = async (doc) => {
+    // A real, client-visible confirmation once verified (see the client
+    // portal's Data Room checklist) — worth guarding against an accidental
+    // click, same reasoning as every other real/consequential action in
+    // this app that confirms first.
+    const confirmed = doc.verified
+      ? window.confirm(`Unmark "${doc.originalName}" as verified? The client will no longer see it marked verified.`)
+      : window.confirm(`Confirm "${doc.originalName}" is verified? The client will see this document marked verified.`);
+    if (!confirmed) return;
+
     try {
       const updated = await documentsApi.verify(doc.id, !doc.verified);
       setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)));

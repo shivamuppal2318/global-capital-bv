@@ -45,5 +45,9 @@ export const leadsApi = {
   // "Bulk Enrich" quick action — how many leads it would touch, then the
   // batch run itself. See server/src/routes/leads.js.
   enrichCandidatesCount: () => request("/enrich-candidates-count"),
-  bulkEnrich: () => request("/bulk-enrich", { method: "POST" })
+  bulkEnrich: () => request("/bulk-enrich", { method: "POST" }),
+  // Real ZoomInfo prospecting search — "Find Companies (ZoomInfo)" panel.
+  // mode: "companies" | "contacts". Nothing is persisted server-side;
+  // the caller pre-fills the New Record form from a chosen result.
+  zoomInfoSearch: ({ mode, filters, page }) => request("/zoominfo-search", { method: "POST", body: { mode, filters, page } })
 };

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { dealStagesApi } from "../../lib/dealStagesApi";
 import { leadsApi } from "../../lib/leadsApi";
 import { documentsApi } from "../../lib/documentsApi";
+import { outreachDoeApi } from "../../lib/outreachDoeApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
 import { CheckCircleIcon, PlusIcon, SearchIcon, XIcon } from "../Icons";
 import { FIELD_LABEL, FIELD_PLACEHOLDER, STAGE_CONFIG, STATUS_LABEL, STATUS_TONE } from "./stageConfig";
@@ -20,6 +21,12 @@ const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : "—");
 // labels each one shows.
 export function DealStageModule({ stage }) {
   const config = STAGE_CONFIG[stage];
+  // Most stages use the full 5-value status vocabulary; a stage's own
+  // config can narrow it (see FIELD_VISIT in stageConfig.js) and relabel
+  // whichever values it kept, without touching the shared enum or the
+  // other stages that still use it in full.
+  const stageStatuses = config.statuses ?? STATUSES;
+  const stageStatusLabel = { ...STATUS_LABEL, ...config.statusLabels };
 
   const [records, setRecords] = useState([]);
   const [leads, setLeads] = useState([]);
@@ -33,6 +40,16 @@ export function DealStageModule({ stage }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
   const [notice, setNotice] = useState(null);
+  // Uploading a new document directly from this form — a real upload, not
+  // just picking one already sitting in the Data Room. Reuses the same
+  // documentsApi.upload the Data Room screen itself uses, so the file
+  // lands there too (leadId-scoped), not a second, separate store.
+  const [documentUploading, setDocumentUploading] = useState(false);
+  const [documentUploadError, setDocumentUploadError] = useState(null);
+  // Real DOE names — same list Outreach/DOE's own scorecard is built from
+  // (distinct EmailLead.owner values) — so "Owner" here picks from the
+  // same real identities instead of free-typed, possibly-inconsistent text.
+  const [doeNames, setDoeNames] = useState([]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -58,6 +75,9 @@ export function DealStageModule({ stage }) {
     leadsApi.list().then(setLeads).catch(() => {});
     if (config.fields.includes("document")) {
       documentsApi.list().then(setDocuments).catch(() => {});
+    }
+    if (config.fields.includes("owner")) {
+      outreachDoeApi.facets().then((f) => setDoeNames(f.does)).catch(() => {});
     }
   }, [config]);
 
@@ -85,7 +105,8 @@ export function DealStageModule({ stage }) {
       .catch(() => {});
   }, [stage]);
 
-  const startNew = () =>
+  const startNew = () => {
+    setDocumentUploadError(null);
     setEditing({
       leadId: "",
       status: "IN_PROGRESS",
@@ -101,8 +122,10 @@ export function DealStageModule({ stage }) {
       notes: "",
       documentId: ""
     });
+  };
 
-  const startEdit = (r) =>
+  const startEdit = (r) => {
+    setDocumentUploadError(null);
     setEditing({
       id: r.id,
       leadId: r.lead?.id ?? "",
@@ -119,6 +142,25 @@ export function DealStageModule({ stage }) {
       notes: r.notes ?? "",
       documentId: r.document?.id ?? ""
     });
+  };
+
+  // Uploads straight from this form via the real Data Room upload route —
+  // the new document lands in the Data Room too (leadId-scoped), and is
+  // immediately selected here, same as picking an existing one.
+  const handleUploadDocument = async (file) => {
+    if (!file) return;
+    setDocumentUploading(true);
+    setDocumentUploadError(null);
+    try {
+      const doc = await documentsApi.upload(file, { leadId: editing.leadId || undefined, category: config.label });
+      setDocuments((current) => [doc, ...current]);
+      setEditing((current) => ({ ...current, documentId: doc.id }));
+    } catch (err) {
+      setDocumentUploadError(err.message);
+    } finally {
+      setDocumentUploading(false);
+    }
+  };
 
   const handleSave = async (e) => {
     e?.preventDefault();
@@ -218,12 +260,21 @@ export function DealStageModule({ stage }) {
         <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">{config.label}</h1>
         <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">{config.blurb}</p>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-4">
-          <StatCard card={{ label: "Records", value: String(stageSummary?.total ?? 0), note: "At this stage", noteTone: "blue" }} />
-          <StatCard card={{ label: "In progress", value: String(stageSummary?.IN_PROGRESS ?? 0), note: "Open now", noteTone: "amber" }} />
-          <StatCard card={{ label: "Completed", value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
-          <StatCard card={{ label: "Declined", value: String(stageSummary?.DECLINED ?? 0), note: "Not proceeding", noteTone: "red" }} />
-        </div>
+        {stage === "FIELD_VISIT" ? (
+          // Only two real states for a visit — see stageConfig.js's note
+          // on FIELD_VISIT.statuses.
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <StatCard card={{ label: "Planned", value: String(stageSummary?.NOT_STARTED ?? 0), note: "Not yet visited", noteTone: "amber" }} />
+            <StatCard card={{ label: "Completed", value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-4 sm:grid-cols-4">
+            <StatCard card={{ label: "Records", value: String(stageSummary?.total ?? 0), note: "At this stage", noteTone: "blue" }} />
+            <StatCard card={{ label: "In progress", value: String(stageSummary?.IN_PROGRESS ?? 0), note: "Open now", noteTone: "amber" }} />
+            <StatCard card={{ label: "Completed", value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
+            <StatCard card={{ label: "Declined", value: String(stageSummary?.DECLINED ?? 0), note: "Not proceeding", noteTone: "red" }} />
+          </div>
+        )}
 
         {fieldVisitKpis ? (
           <div className="mt-4 grid gap-4 sm:grid-cols-3 xl:grid-cols-5">
@@ -302,8 +353,8 @@ export function DealStageModule({ stage }) {
               <div>
                 <label className={labelClass}>Status</label>
                 <select className={inputClass} value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}>
-                  {STATUSES.map((s) => (
-                    <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                  {stageStatuses.map((s) => (
+                    <option key={s} value={s}>{stageStatusLabel[s]}</option>
                   ))}
                 </select>
               </div>
@@ -322,12 +373,29 @@ export function DealStageModule({ stage }) {
                 </div>
               ) : null}
 
-              {["amount", "valuation", "location", "attendees", "counterparty", "owner"].filter(uses).map((f) => (
+              {["amount", "valuation", "location", "attendees", "counterparty"].filter(uses).map((f) => (
                 <div key={f}>
                   <label className={labelClass}>{FIELD_LABEL[f]}</label>
                   <input className={inputClass} value={editing[f]} onChange={(e) => setEditing({ ...editing, [f]: e.target.value })} placeholder={FIELD_PLACEHOLDER[f]} />
                 </div>
               ))}
+
+              {uses("owner") ? (
+                <div>
+                  <label className={labelClass}>{FIELD_LABEL.owner}</label>
+                  <select className={inputClass} value={editing.owner} onChange={(e) => setEditing({ ...editing, owner: e.target.value })}>
+                    <option value="">Select a DOE…</option>
+                    {/* Keeps an existing value selectable even if it's since
+                        fallen out of the live DOE list (e.g. no cold-outreach
+                        leads currently assigned to them) rather than silently
+                        blanking out real, already-saved data. */}
+                    {editing.owner && !doeNames.includes(editing.owner) ? <option value={editing.owner}>{editing.owner}</option> : null}
+                    {doeNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
 
               {uses("clientRating") ? (
                 <div>
@@ -354,7 +422,22 @@ export function DealStageModule({ stage }) {
                       <option key={d.id} value={d.id}>{d.originalName}</option>
                     ))}
                   </select>
-                  <p className="mt-1 text-[12px] text-[#8592ab]">Pulled from the Data Room — upload it there first.</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx"
+                      disabled={documentUploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        handleUploadDocument(file);
+                      }}
+                      className="text-[13px] text-[#5f6f89] file:mr-3 file:rounded-[8px] file:border-0 file:bg-[#eef1ff] file:px-3 file:py-1.5 file:text-[13px] file:font-semibold file:text-[#3046b2]"
+                    />
+                    {documentUploading ? <span className="text-[12px] text-[#8592ab]">Uploading…</span> : null}
+                  </div>
+                  {documentUploadError ? <p className="mt-1 text-[12px] font-medium text-[#e0483f]">{documentUploadError}</p> : null}
+                  <p className="mt-1 text-[12px] text-[#8592ab]">Upload a new file here, or pick one already in the Data Room above.</p>
                 </div>
               ) : null}
 
@@ -381,7 +464,7 @@ export function DealStageModule({ stage }) {
         </div>
 
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {["All", ...STATUSES].map((s) => (
+          {["All", ...stageStatuses].map((s) => (
             <button
               key={s}
               type="button"
@@ -390,7 +473,7 @@ export function DealStageModule({ stage }) {
                 statusFilter === s ? "bg-[#3046b2] text-white" : "bg-[#eef1f7] text-[#4f6181] hover:bg-[#e2e8f2]"
               }`}
             >
-              {s === "All" ? "All" : STATUS_LABEL[s]}
+              {s === "All" ? "All" : stageStatusLabel[s]}
             </button>
           ))}
         </div>
@@ -420,7 +503,7 @@ export function DealStageModule({ stage }) {
                       <p className="text-[14px] font-medium text-[#102246]">
                         {r.lead ? `${r.lead.name} — ${r.lead.company}` : "Unlinked lead"}
                       </p>
-                      <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                      <Badge tone={STATUS_TONE[r.status]}>{stageStatusLabel[r.status]}</Badge>
                       {r.document ? <Badge tone="blue">{r.document.originalName}</Badge> : null}
                     </div>
                     <p className="mt-0.5 text-[12px] text-[#8592ab]">

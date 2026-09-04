@@ -40,7 +40,15 @@ export const STAGE_CONFIG = {
     scheduledLabel: "Visit date",
     completedLabel: "Report filed",
     fields: ["location", "attendees", "scheduledAt", "completedAt", "owner", "document", "clientRating", "notes"],
-    emptyHint: "Record a visit once it's happened, with findings in the notes."
+    emptyHint: "Record a visit once it's happened, with findings in the notes.",
+    // A visit only really has two real states — hasn't happened yet, or
+    // has — unlike NDA/IOI/Term Sheet, which can genuinely be declined or
+    // put on hold mid-negotiation. Reuses the existing NOT_STARTED/
+    // COMPLETED enum values (no schema change) rather than adding a real
+    // "PLANNED" status — just restricted to these two here, everywhere
+    // this stage shows status, and relabeled so it reads naturally.
+    statuses: ["NOT_STARTED", "COMPLETED"],
+    statusLabels: { NOT_STARTED: "Planned" }
   },
   TERM_SHEET: {
     label: "Term Sheet",

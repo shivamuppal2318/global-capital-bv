@@ -1,4 +1,6 @@
 import { prisma } from "../db.js";
+import { deriveZoomStage2 } from "./clientPortalStages.js";
+import { REQUIRED_DOCUMENT_LABELS } from "./requiredDocuments.js";
 
 // A single CRM lead's real journey across the full deal lifecycle — a
 // per-record complement to Executive Dashboard's company-wide Funnel
@@ -13,23 +15,35 @@ import { prisma } from "../db.js";
 // this CRM Lead, so it's approximated from the lead's own status instead
 // of left out — status past "NEW" is real evidence contact was made, even
 // though it can't say exactly when the first email went out.
-export const STAGES = ["OUTREACH", "NDA", "ZOOM_CALL", "DATA_ROOM", "IOI", "FIELD_VISIT", "TERM_SHEET"];
+// Zoom Call 2 sits after IOI, not right after Zoom Call (1) — same
+// ordering/reasoning as the client portal's own stepper (see
+// clientPortalStages.js's PORTAL_STAGES comment): the second call is the
+// deeper due-diligence conversation that happens once a lead has actually
+// committed to an IOI, not a generic "second meeting of any kind".
+export const STAGES = ["OUTREACH", "NDA", "ZOOM_CALL", "DATA_ROOM", "IOI", "ZOOM_CALL_2", "FIELD_VISIT", "TERM_SHEET"];
 export const STAGE_LABELS = {
   OUTREACH: "Outreach",
   NDA: "NDA",
   ZOOM_CALL: "Zoom Call",
   DATA_ROOM: "Data Room",
   IOI: "IOI",
+  ZOOM_CALL_2: "Zoom Call 2",
   FIELD_VISIT: "Field Visit",
   TERM_SHEET: "Term Sheet"
 };
 
 export async function computeLeadPipeline(leadId) {
-  const [lead, nda, meetings, dataRoomRecord, ioi, fieldVisitRecord, termSheetRecord] = await Promise.all([
+  const [lead, nda, meetings, dataRoomDocs, ioi, fieldVisitRecord, termSheetRecord] = await Promise.all([
     prisma.lead.findUnique({ where: { id: leadId }, select: { status: true } }),
     prisma.ndaRecord.findUnique({ where: { leadId } }),
     prisma.meeting.findMany({ where: { leadId }, orderBy: { startTime: "desc" } }),
-    prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "DATA_ROOM" } } }),
+    // Real received-document count against the required checklist (same
+    // categories/logic as documents.js's own /kpis route) — not the
+    // DealStageRecord for this stage, which has no real staff edit screen
+    // (DATA_ROOM isn't in stageConfig.js's MODULE_TO_STAGE) and can only
+    // ever sit at NOT_STARTED or IN_PROGRESS via the client portal's
+    // upload side-effect, never reflecting how much has actually come in.
+    prisma.document.findMany({ where: { leadId, category: { in: REQUIRED_DOCUMENT_LABELS } }, select: { category: true } }),
     prisma.ioiRecord.findUnique({ where: { leadId } }),
     prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "FIELD_VISIT" } } }),
     prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "TERM_SHEET" } } })
@@ -61,6 +75,22 @@ export async function computeLeadPipeline(leadId) {
     return { status: "in_progress", detail: record.status.replace("_", " ").toLowerCase() };
   };
 
+  // A lead only counts as meaningfully "in" Data Room once more than half
+  // the required checklist has actually come in — a couple of stray
+  // uploads out of ten shouldn't read the same as real diligence
+  // progress. All required categories in = done (same "received, not
+  // necessarily staff-verified yet" bar the client portal's own
+  // deriveDataRoomStage already uses, for consistency).
+  const dataRoom = (() => {
+    const requested = REQUIRED_DOCUMENT_LABELS.length;
+    const received = new Set(dataRoomDocs.map((d) => d.category)).size;
+    const percent = requested > 0 ? Math.round((received / requested) * 100) : 0;
+    const detail = `${received} of ${requested} required document(s) received (${percent}%)`;
+    if (received >= requested) return { status: "done", detail };
+    if (percent > 50) return { status: "in_progress", detail };
+    return { status: "not_started", detail };
+  })();
+
   const ioi_ = (() => {
     if (!ioi) return { status: "not_started", detail: "No IOI record" };
     if (ioi.status === "SIGNED") return { status: "done", detail: "Signed" };
@@ -68,12 +98,25 @@ export async function computeLeadPipeline(leadId) {
     return { status: "in_progress", detail: ioi.status.toLowerCase() };
   })();
 
+  // Reuses clientPortalStages.js's deriveZoomStage2 as-is (already tested,
+  // already the source of truth for "which meeting counts as the second
+  // call" — chronologically the 2nd meeting, regardless of how the first
+  // one went) rather than a second, separately-maintained implementation.
+  // Its vocabulary ("completed") is mapped onto this file's own
+  // ("done") — everything else it returns (not_started/in_progress) is
+  // already identical.
+  const zoomCall2 = (() => {
+    const { status, detail } = deriveZoomStage2(meetings);
+    return { status: status === "completed" ? "done" : status, detail };
+  })();
+
   const summaries = {
     OUTREACH: outreach,
     NDA: nda_,
     ZOOM_CALL: zoomCall,
-    DATA_ROOM: stageRecordSummary(dataRoomRecord),
+    DATA_ROOM: dataRoom,
     IOI: ioi_,
+    ZOOM_CALL_2: zoomCall2,
     FIELD_VISIT: stageRecordSummary(fieldVisitRecord),
     TERM_SHEET: stageRecordSummary(termSheetRecord)
   };
@@ -180,10 +223,26 @@ export async function computeDealBoard() {
 
   leads.forEach((lead, leadIdx) => {
     const pipeline = pipelines[leadIdx];
+    // The deal's real current column is its earliest unresolved gate
+    // (in_progress or blocked) — e.g. an NDA that's been sent but not
+    // signed yet — not just whichever stage was touched most recently.
+    // Real deals often have parallel activity (a Zoom call can happen, or
+    // Data Room docs get requested, before the NDA is actually countersigned),
+    // and "furthest touched" was placing the card past a stage that hadn't
+    // actually been resolved — an unsigned NDA would vanish from the NDA
+    // column the moment ANY later stage had activity, even though the deal
+    // is really still stuck at NDA. Only when nothing is currently
+    // unresolved (every reached stage is "done") does the card fall back
+    // to the furthest one reached, same as before.
     let currentIdx = 0;
+    let firstUnresolvedIdx = null;
     pipeline.forEach((stageSummary, idx) => {
       if (stageSummary.status !== "not_started") currentIdx = idx;
+      if (firstUnresolvedIdx === null && (stageSummary.status === "in_progress" || stageSummary.status === "blocked")) {
+        firstUnresolvedIdx = idx;
+      }
     });
+    if (firstUnresolvedIdx !== null) currentIdx = firstUnresolvedIdx;
 
     board[currentIdx].deals.push({
       id: lead.id,

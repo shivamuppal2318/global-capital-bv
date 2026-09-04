@@ -157,3 +157,61 @@ export async function searchScoopsByCompany({ token, companyName }) {
     }))
     .slice(0, SCOOP_LIMIT);
 }
+
+// Real prospecting search (CRM Workspace's "Find Companies (ZoomInfo)"
+// panel) — distinct from the enrich functions above, which all require
+// already knowing the exact company/contact name. Search finds NEW
+// companies/people by broad criteria instead. A separate capability tier
+// from Enrich; confirmed live against this account's real credentials
+// before wiring in (same discipline as every other function in this
+// file — see the top-of-file note on not guessing endpoints).
+//
+// Filter field names/value formats are exact and live-verified, not
+// guessed — the API 400s with a very specific, unhelpful-looking message
+// for anything wrong (e.g. employeeRangeMin/Max must be numeric STRINGS,
+// not numbers; managementLevel must be a comma-delimited string built
+// from exactly: "Board Member", "C Level Exec", "VP Level Exec",
+// "Director", "Manager", "Non Manager").
+async function runZoomInfoSearch({ token, url, type, filters, page, pageSize }) {
+  const query = new URLSearchParams({ "page[number]": String(page ?? 1), "page[size]": String(pageSize ?? 25) });
+  const response = await fetch(`${url}?${query.toString()}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/vnd.api+json"
+    },
+    body: JSON.stringify({ data: { type, attributes: filters } })
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.errors?.[0]?.detail ?? body?.detail ?? "ZoomInfo rejected the search request.");
+  }
+
+  return {
+    results: (body?.data ?? []).map((item) => ({ id: item.id, ...item.attributes })),
+    totalResults: body?.meta?.totalResults ?? body?.meta?.page?.total ?? 0,
+    page: page ?? 1
+  };
+}
+
+export async function searchCompanies({ token, filters, page, pageSize }) {
+  return runZoomInfoSearch({
+    token,
+    url: "https://api.zoominfo.com/gtm/data/v1/companies/search",
+    type: "CompanySearch",
+    filters,
+    page,
+    pageSize
+  });
+}
+
+export async function searchContacts({ token, filters, page, pageSize }) {
+  return runZoomInfoSearch({
+    token,
+    url: "https://api.zoominfo.com/gtm/data/v1/contacts/search",
+    type: "ContactSearch",
+    filters,
+    page,
+    pageSize
+  });
+}

@@ -17,7 +17,7 @@ function downloadSampleLeadsCsv() {
 export function LeadsTab({ mailing }) {
   const {
     campaigns, allLeads, automationForm, handleFormChange, handleSaveAutomation, automationNotice,
-    selectedCampaign, selectedCampaignId, setSelectedCampaignId, startNewCampaign,
+    selectedCampaign, selectedCampaignId, selectCampaign, startNewCampaign,
     newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
     csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, handleImportCsv, csvPreviewBusy, csvImportBusy
   } = mailing;
@@ -296,7 +296,7 @@ export function LeadsTab({ mailing }) {
                         <button
                           type="button"
                           onClick={() => {
-                            setSelectedCampaignId(row.id);
+                            selectCampaign(row);
                             setViewMode("subscribers");
                           }}
                           className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#3046b2]"

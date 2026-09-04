@@ -3,9 +3,11 @@ import { z } from "zod";
 import nodemailer from "nodemailer";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
-import { isQueueEnabled } from "../queue/cadenceQueue.js";
+import { isQueueEnabled, enqueueCampaignBlast } from "../queue/cadenceQueue.js";
 import { recordAudit } from "../lib/auditLog.js";
 import { ownerWhereClause, ownerIdForCreate } from "../lib/channelPartnerScope.js";
+import { filterMatchingLeads } from "../lib/segmentMatching.js";
+import { sendCampaignBlastEmail } from "../lib/campaignBlastSender.js";
 
 export const emailCampaignsRouter = Router();
 
@@ -64,8 +66,22 @@ const createCampaignSchema = z.object({
   // actually sent the email, the normal behavior with no header override.
   // preprocess so a blank input field (an empty string, not omitted)
   // normalizes to null instead of failing .email() validation.
-  replyTo: z.preprocess((val) => (val === "" ? null : val), z.string().trim().email().nullable().optional())
+  replyTo: z.preprocess((val) => (val === "" ? null : val), z.string().trim().email().nullable().optional()),
+  // This campaign's own one-time blast content (POST /:id/send-now) — not
+  // the per-reply-type EmailTemplate bodies, which drive the cadence
+  // instead. Optional/nullable: a campaign can be saved before its content
+  // is composed.
+  subject: z.string().nullable().optional(),
+  bodyHtml: z.string().nullable().optional()
 });
+
+// Every activity kind that represents a real email actually going out —
+// used both here and by dashboard-summary's funnel below. Was previously
+// only "BRANCH_EMAIL_SENT" here (a pre-existing narrower check than
+// dashboard-summary's own SEND_KINDS-based one), which would have made a
+// campaign's own Sent count silently ignore its real CAMPAIGN_BLAST_SENT
+// sends — the very metric this feature needs to show correctly.
+const SEND_KINDS = ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"];
 
 // Real open/click rates, computed from ActivityLog rows the tracking pixel
 // and click-redirect actually write (see routes/tracking.js) — not the
@@ -86,7 +102,7 @@ async function distinctLeadCount(campaignId, kind) {
 
 async function withEngagementRates(campaign) {
   const [sent, opened, clicked] = await Promise.all([
-    prisma.emailActivityLog.count({ where: { kind: "BRANCH_EMAIL_SENT", lead: { campaignId: campaign.id } } }),
+    prisma.emailActivityLog.count({ where: { kind: { in: SEND_KINDS }, lead: { campaignId: campaign.id } } }),
     distinctLeadCount(campaign.id, "EMAIL_OPENED"),
     distinctLeadCount(campaign.id, "LINK_CLICKED")
   ]);
@@ -127,7 +143,6 @@ async function loadOwnedCampaignOr404(req, res, id) {
   return campaign;
 }
 
-const SEND_KINDS = ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT"];
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // Buckets raw ActivityLog rows into local UTC-day counts in JS rather than a
@@ -256,7 +271,9 @@ const updateCampaignSchema = z.object({
   followUpCount: z.number().int().min(0).optional(),
   abTest: z.boolean().optional(),
   autoPause: z.boolean().optional(),
-  replyTo: z.preprocess((val) => (val === "" ? null : val), z.string().trim().email().nullable().optional())
+  replyTo: z.preprocess((val) => (val === "" ? null : val), z.string().trim().email().nullable().optional()),
+  subject: z.string().nullable().optional(),
+  bodyHtml: z.string().nullable().optional()
 });
 
 // Edits an existing campaign's settings in place. Added because the "Save
@@ -409,4 +426,94 @@ emailCampaignsRouter.delete("/:id/cadence-steps/:stepId", asyncHandler(async (re
   await prisma.cadenceStep.delete({ where: { id: req.params.stepId } });
   await recordAudit({ req, action: "campaign.cadence_step_removed", entityType: "EmailCampaign", entityId: req.params.id, detail: existing.title });
   res.status(204).end();
+}));
+
+const sendNowSchema = z.object({
+  // A manual pick of specific leads by id — takes priority over segmentId
+  // below when given (checking any lead in the composer's checklist means
+  // "just these", overriding the Send To dropdown).
+  leadIds: z.array(z.string()).optional(),
+  // Null/omitted = every one of this campaign's own leads (its "List").
+  // Given, it narrows that same set via segmentMatching.js's
+  // filterMatchingLeads — a segment is used purely as a condition-filter
+  // here, independent of that segment's own campaignId (cross-campaign)
+  // meaning, so any segment can be reused as a filter against any
+  // campaign's leads.
+  segmentId: z.string().nullable().optional(),
+  // One optional one-time future send time — not a recurring/cron
+  // schedule. Null/omitted = send immediately.
+  scheduledAt: z.string().datetime().nullable().optional(),
+  // Only meaningful with the queue enabled — staggers each recipient's
+  // send by this many minutes past the previous one. Ignored (can't
+  // stagger) in the synchronous no-queue fallback below.
+  delayBetweenMinutes: z.number().min(0).default(0)
+});
+
+// Sends this campaign's own composed subject/bodyHtml to its own leads
+// (optionally narrowed by a Segment) — the real "Send Now" action MailX's
+// Campaign composer has and ours never did. Two paths depending on
+// whether the cadence queue (BullMQ/Redis) is available, same fallback
+// convention as everywhere else in this app that touches the queue.
+emailCampaignsRouter.post("/:id/send-now", asyncHandler(async (req, res) => {
+  const parsed = sendNowSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const campaign = await loadOwnedCampaignOr404(req, res, req.params.id);
+  if (!campaign) return;
+
+  if (!campaign.subject || !campaign.bodyHtml) {
+    return res.status(400).json({ error: `"${campaign.name}" has no composed email content yet — add a subject and body, then save, before sending.` });
+  }
+
+  let leads = await prisma.emailLead.findMany({
+    where: { campaignId: campaign.id, unsubscribed: false, bounced: false }
+  });
+
+  if (parsed.data.leadIds?.length) {
+    const idSet = new Set(parsed.data.leadIds);
+    leads = leads.filter((lead) => idSet.has(lead.id));
+  } else if (parsed.data.segmentId) {
+    const segment = await prisma.emailSegment.findUnique({ where: { id: parsed.data.segmentId } });
+    if (!segment) {
+      return res.status(404).json({ error: "Segment not found" });
+    }
+    leads = filterMatchingLeads(leads, segment);
+  }
+
+  if (leads.length === 0) {
+    return res.json({ queued: 0, sentImmediately: 0, failed: 0, message: "No matching leads to send to — nothing was sent." });
+  }
+
+  const delayBetweenMs = (parsed.data.delayBetweenMinutes || 0) * 60_000;
+
+  if (isQueueEnabled()) {
+    const baseDelayMs = parsed.data.scheduledAt ? Math.max(0, new Date(parsed.data.scheduledAt).getTime() - Date.now()) : 0;
+    await Promise.all(
+      leads.map((lead, index) =>
+        enqueueCampaignBlast({ leadId: lead.id, campaignId: campaign.id, delayMs: baseDelayMs + index * delayBetweenMs })
+      )
+    );
+    await prisma.emailCampaign.update({ where: { id: campaign.id }, data: { status: "SENDING" } });
+    await recordAudit({ req, action: "campaign.blast_queued", entityType: "EmailCampaign", entityId: campaign.id, detail: `${leads.length} lead(s) queued for "${campaign.name}"` });
+    return res.json({ queued: leads.length, sentImmediately: 0, failed: 0, scheduled: Boolean(parsed.data.scheduledAt) });
+  }
+
+  // No Redis — send immediately, synchronously, no delay throttle possible
+  // (documented existing fallback pattern, same as cadence steps/dashboard
+  // no-reply follow-ups elsewhere in this app). One bad/capped lead
+  // doesn't stop the rest of the batch.
+  let sentImmediately = 0;
+  let failed = 0;
+  for (const lead of leads) {
+    try {
+      await sendCampaignBlastEmail(lead.id, campaign.id);
+      sentImmediately += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  await recordAudit({ req, action: "campaign.blast_sent", entityType: "EmailCampaign", entityId: campaign.id, detail: `${sentImmediately} sent, ${failed} failed for "${campaign.name}"` });
+  res.json({ queued: 0, sentImmediately, failed, scheduled: false });
 }));

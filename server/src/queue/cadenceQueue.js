@@ -8,6 +8,7 @@ import { resolveEmailAccount } from "../lib/accountRouting.js";
 import { isLeadEligibleForCadenceStep } from "../lib/cadenceEligibility.js";
 import { unsubscribeUrlFor, interestButtonHtml, plainTextToHtml } from "../lib/leadSender.js";
 import { injectTrackingPixel, wrapLinksForClickTracking } from "../lib/emailTracking.js";
+import { sendCampaignBlastEmail } from "../lib/campaignBlastSender.js";
 
 const QUEUE_NAME = "cadence-steps";
 
@@ -55,6 +56,28 @@ export async function enqueueCadenceStep({ leadId, campaignId, stepIndex, subjec
   );
 }
 
+// A campaign's own composed one-time blast (see routes/emailCampaigns.js's
+// POST /:id/send-now) — a distinct job name on the same queue/worker rather
+// than new infra, but NOT routed through the "send-step" cadence logic
+// below: that logic skips leads who already replied and force-converts the
+// body via plainTextToHtml + an injected "I'm Interested" button, neither of
+// which is right for a one-time blast of real authored HTML.
+export async function enqueueCampaignBlast({ leadId, campaignId, delayMs }) {
+  const q = getCadenceQueue();
+  if (!q) {
+    throw new Error("Cadence queue is disabled (REDIS_URL not set).");
+  }
+  await q.add(
+    "send-blast",
+    { leadId, campaignId },
+    {
+      delay: delayMs,
+      attempts: 3,
+      backoff: { type: "exponential", delay: 60_000 }
+    }
+  );
+}
+
 export function startCadenceWorker() {
   if (!isQueueEnabled()) {
     console.log("[cadence-worker] REDIS_URL not set — worker not started.");
@@ -69,6 +92,11 @@ export function startCadenceWorker() {
   worker = new Worker(
     QUEUE_NAME,
     async (job) => {
+      if (job.name === "send-blast") {
+        await sendCampaignBlastEmail(job.data.leadId, job.data.campaignId);
+        return;
+      }
+
       const { leadId, campaignId, subject, body } = job.data;
       const lead = await prisma.emailLead.findUniqueOrThrow({ where: { id: leadId } });
       const campaign = await prisma.emailCampaign.findUniqueOrThrow({ where: { id: campaignId }, include: { emailAccount: true } });

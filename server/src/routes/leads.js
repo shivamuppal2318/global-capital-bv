@@ -9,7 +9,7 @@ import { plainTextToHtml } from "../lib/leadSender.js";
 import { computeLeadPipeline, computePipelineSummary, computeDealBoard, computeLeadTimeline } from "../lib/leadPipeline.js";
 import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
-import { getAccessToken } from "../lib/zoominfoClient.js";
+import { getAccessToken, searchCompanies, searchContacts } from "../lib/zoominfoClient.js";
 import {
   lookupLeadInZoomInfo,
   hasAnyZoomInfoMatch,
@@ -90,6 +90,39 @@ router.get("/enrich-candidates-count", blockChannelPartner, async (req, res, nex
   try {
     const count = await prisma.lead.count({ where: enrichCandidateWhereClause() });
     res.json({ count });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Real ZoomInfo prospecting search — CRM Workspace's "Find Companies
+// (ZoomInfo)" panel. Distinct from the /:id/enrich routes below (those
+// need an existing Lead to already know a company/contact name to look
+// up); this discovers NEW companies/people from ZoomInfo's own database
+// by broad criteria. Nothing is persisted here — the frontend pre-fills
+// the existing "New Record" form from a chosen result, and the rep
+// reviews/saves it through the unchanged POST / below, same as any
+// other manually-entered lead. Real API credits spent — staff-only, and
+// must stay ahead of GET /:id, same reasoning as enrich-candidates-count.
+router.post("/zoominfo-search", blockChannelPartner, async (req, res, next) => {
+  try {
+    const { mode, filters, page } = req.body ?? {};
+    if (mode !== "companies" && mode !== "contacts") {
+      return res.status(400).json({ error: 'mode must be "companies" or "contacts".' });
+    }
+    if (!filters || typeof filters !== "object") {
+      return res.status(400).json({ error: "filters is required." });
+    }
+
+    const credentials = await getZoomInfoCredentials();
+    if (!credentials) {
+      return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
+    }
+
+    const token = await getAccessToken(credentials);
+    const search = mode === "companies" ? searchCompanies : searchContacts;
+    const result = await search({ token, filters, page: page || 1, pageSize: 25 });
+    res.json(result);
   } catch (err) {
     next(err);
   }

@@ -138,7 +138,7 @@ channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
     prisma.emailLead.count({ where: { campaign: { ownerChannelPartnerId: partner.id } } }),
     prisma.emailActivityLog.findFirst({
       where: {
-        kind: { in: ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT"] },
+        kind: { in: ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"] },
         lead: { campaign: { ownerChannelPartnerId: partner.id } }
       },
       orderBy: { createdAt: "desc" },

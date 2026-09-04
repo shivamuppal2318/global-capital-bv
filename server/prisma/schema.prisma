@@ -1097,6 +1097,10 @@ enum EmailActivityKind {
   CALL_COMPLETED
   EMAIL_OPENED
   LINK_CLICKED
+  // A campaign's own composed content (subject/bodyHtml), sent via
+  // POST /:id/send-now — distinct from BULK_INTRO_SENT, which is logged on
+  // lead-add regardless of whether a cadence step actually fired.
+  CAMPAIGN_BLAST_SENT
 }
 
 enum BounceKind {
@@ -1125,6 +1129,13 @@ model EmailCampaign {
   // through). Null = replies just go to whichever mailbox actually sent
   // the email, the normal email behavior with no header override.
   replyTo String?
+
+  // This campaign's own composed one-time blast content — sent to its own
+  // leads (optionally narrowed by a Segment) via POST /:id/send-now. Null =
+  // nothing composed yet; distinct from the per-reply-type EmailTemplate
+  // bodies, which drive the reply-classification cadence instead.
+  subject  String?
+  bodyHtml String?
 
   // Which mailbox this campaign sends through. Null = fall back to the
   // single global EMAIL_PROVIDER/.env-configured provider.
@@ -1370,6 +1381,17 @@ model MarketSignal {
   // deal sourcing, since a company mid-raise is an active, reachable
   // opportunity today. See lib/marketIntelligence/aiProcessor.js.
   isSeekingFunding Boolean?
+
+  // Real ZoomInfo company profile + recent buying-trigger activity
+  // ("Scoops"), looked up by entityName directly — independent of
+  // matchedLeadId/createdLeadId below, since plenty of real signals
+  // (IGNORED: no lead match, no default campaign to create one in) never
+  // get an EmailLead at all. Manual, one-click action (POST
+  // /signals/:id/enrich), not automatic — same "real API credits spent is
+  // a rep's explicit choice" reasoning as the Lead enrichment action.
+  zoomInfoCompanyData Json?
+  zoomInfoScoops      Json?
+  zoomInfoEnrichedAt  DateTime?
 
   // Routing outcome: either an existing lead this signal updated, or a
   // newly-created one from an Apollo lookup — never both.
