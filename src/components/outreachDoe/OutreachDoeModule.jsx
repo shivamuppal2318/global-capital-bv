@@ -53,7 +53,6 @@ export function OutreachDoeModule() {
     return [
       { key: "outreachPerDay", label: "Outreach/Day", actual: scoped.outreachPerDay, unit: "", attributable: true },
       { key: "positiveResponseRate", label: "Positive Response %", actual: scoped.positiveResponseRate, unit: "%", attributable: true },
-      { key: "linkedinAcceptanceRate", label: "LinkedIn Acceptance", actual: data.companyWide.linkedinAcceptanceRate, unit: "%", attributable: false, note: "Not tracked — no LinkedIn integration" },
       { key: "coldEmailOpenRate", label: "Cold Email Open Rate", actual: scoped.coldEmailOpenRate, unit: "%", attributable: true },
       { key: "whatsappReplyRate", label: "WhatsApp Reply Rate", actual: data.companyWide.whatsappReplyRate, unit: "%", attributable: false, note: "Company-wide — WhatsApp agents aren't linked to a DOE yet" },
       { key: "zoomCallsPerDay", label: "Zoom Call Booked", actual: data.companyWide.zoomCallsPerDay, unit: "/day", attributable: false, note: "Company-wide — meetings aren't linked to a DOE yet" }
