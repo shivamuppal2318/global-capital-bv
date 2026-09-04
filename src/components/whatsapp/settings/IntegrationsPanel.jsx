@@ -60,7 +60,7 @@ export function IntegrationsPanel() {
     "full_name": "Marco Reyes",
     "email": "marco@example.com",
     "company": "Sunridge Capital",
-    "deal_size": "€3M Seed",
+    "deal_size": "$3M Seed",
     "source": "Website Form"
   }'`;
 

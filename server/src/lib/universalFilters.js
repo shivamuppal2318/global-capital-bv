@@ -16,10 +16,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // --- Ticket size bands -----------------------------------------------------
 
 export const TICKET_SIZE_BANDS = [
-  { key: "under_1m", label: "Under €1M", max: 1_000_000 },
-  { key: "1m_5m", label: "€1M–€5M", max: 5_000_000 },
-  { key: "5m_20m", label: "€5M–€20M", max: 20_000_000 },
-  { key: "20m_plus", label: "€20M+", max: Infinity }
+  { key: "under_1m", label: "Under $1M", max: 1_000_000 },
+  { key: "1m_5m", label: "$1M–$5M", max: 5_000_000 },
+  { key: "5m_20m", label: "$5M–$20M", max: 20_000_000 },
+  { key: "20m_plus", label: "$20M+", max: Infinity }
 ];
 
 // capitalAsk arrives as free text ("EUR 3M", "TBC") — parseApproxAmount

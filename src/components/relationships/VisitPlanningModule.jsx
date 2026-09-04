@@ -93,7 +93,7 @@ export function VisitPlanningModule() {
       purpose: "",
       travelMode: "",
       costAmount: "",
-      costCurrency: "EUR",
+      costCurrency: "USD",
       owner: "",
       notes: "",
       reportSubmitted: false,
@@ -132,7 +132,7 @@ export function VisitPlanningModule() {
       purpose: p.purpose ?? "",
       travelMode: p.travelMode ?? "",
       costAmount: p.costAmount ?? "",
-      costCurrency: p.costCurrency ?? "EUR",
+      costCurrency: p.costCurrency ?? "USD",
       owner: p.owner ?? "",
       notes: p.notes ?? "",
       reportSubmitted: Boolean(p.reportSubmitted),
@@ -217,7 +217,7 @@ export function VisitPlanningModule() {
       },
       {
         label: "Cost per visit",
-        value: has(metrics?.costPerVisit) ? `€${metrics.costPerVisit.toLocaleString()}` : "—",
+        value: has(metrics?.costPerVisit) ? `$${metrics.costPerVisit.toLocaleString()}` : "—",
         note: metrics?.visitsWithCost ? `${metrics.visitsWithCost} visits costed` : "No costs recorded",
         noteTone: "amber"
       },

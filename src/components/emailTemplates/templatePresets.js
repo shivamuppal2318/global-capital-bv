@@ -39,7 +39,7 @@ export const templatePresets = [
 <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:${BRAND.dark};">We're evaluating a mandate that lines up closely with {{company}}'s trajectory — sharing a quick overview below.</p>
 <div style="background:${BRAND.bg};border-left:4px solid ${BRAND.primary};border-radius:8px;padding:18px 20px;margin:0 0 20px;">
   <p style="margin:0 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${BRAND.gray};">Mandate highlight</p>
-  <p style="margin:0;font-size:16px;font-weight:600;color:${BRAND.dark};">€2.35B pipeline · 24 deals in diligence</p>
+  <p style="margin:0;font-size:16px;font-weight:600;color:${BRAND.dark};">$2.35B pipeline · 24 deals in diligence</p>
 </div>
 <p style="margin:0;font-size:15px;line-height:1.7;color:${BRAND.dark};">If this looks relevant, I'd love to walk through the details on a short call.</p>
 ${ctaButton("Book a call", "https://calendly.com/globalcapitalbv/intro-call")}`

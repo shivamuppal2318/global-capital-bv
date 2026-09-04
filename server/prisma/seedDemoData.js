@@ -261,7 +261,7 @@ async function main() {
         purpose: "Site inspection",
         owner: "Rahul R",
         costAmount: 420,
-        costCurrency: "EUR",
+        costCurrency: "USD",
         reportSubmitted: true,
         reportAt: daysAgo(3)
       },
@@ -275,7 +275,7 @@ async function main() {
         purpose: "Management meeting",
         owner: "Meera S",
         costAmount: 650,
-        costCurrency: "EUR"
+        costCurrency: "USD"
       },
       {
         leadId: ritu.id,

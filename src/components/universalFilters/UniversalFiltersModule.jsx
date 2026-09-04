@@ -30,10 +30,10 @@ const LIFECYCLE_STAGES = [
 ];
 
 const TICKET_SIZE_BANDS = [
-  { key: "under_1m", label: "Under €1M" },
-  { key: "1m_5m", label: "€1M–€5M" },
-  { key: "5m_20m", label: "€5M–€20M" },
-  { key: "20m_plus", label: "€20M+" },
+  { key: "under_1m", label: "Under $1M" },
+  { key: "1m_5m", label: "$1M–$5M" },
+  { key: "5m_20m", label: "$5M–$20M" },
+  { key: "20m_plus", label: "$20M+" },
   { key: "unspecified", label: "Unspecified" }
 ];
 
