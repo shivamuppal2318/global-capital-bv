@@ -18,6 +18,13 @@ export function SettingsTab({ mailing, availableTabs }) {
   // (POST /api/email-accounts/:id/test) and API client already existed;
   // this is what was actually missing, a button in the UI to call them.
   const [accountTestResults, setAccountTestResults] = useState({});
+  // Which mailbox's "Activity" panel is open (one at a time) — real sends
+  // logged against that account, fetched on demand rather than for every
+  // mailbox up front.
+  const [activityOpenId, setActivityOpenId] = useState(null);
+  const [activityData, setActivityData] = useState(null);
+  const [activityBusy, setActivityBusy] = useState(false);
+  const [activityError, setActivityError] = useState(null);
 
   async function handleTestAccount(id) {
     setAccountTestResults((current) => ({ ...current, [id]: { pending: true } }));
@@ -26,6 +33,25 @@ export function SettingsTab({ mailing, availableTabs }) {
       setAccountTestResults((current) => ({ ...current, [id]: result }));
     } catch (err) {
       setAccountTestResults((current) => ({ ...current, [id]: { success: false, message: err.message } }));
+    }
+  }
+
+  async function toggleActivity(accountId) {
+    if (activityOpenId === accountId) {
+      setActivityOpenId(null);
+      return;
+    }
+    setActivityOpenId(accountId);
+    setActivityData(null);
+    setActivityError(null);
+    setActivityBusy(true);
+    try {
+      const result = await emailAccountsApi.activity(accountId);
+      setActivityData(result);
+    } catch (err) {
+      setActivityError(err.message);
+    } finally {
+      setActivityBusy(false);
     }
   }
 
@@ -198,6 +224,13 @@ export function SettingsTab({ mailing, availableTabs }) {
                       >
                         {testResult?.pending ? "Testing..." : "Test"}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleActivity(account.id)}
+                        className="text-[12px] font-semibold text-[#3046b2]"
+                      >
+                        {activityOpenId === account.id ? "Hide activity" : "Activity"}
+                      </button>
                       {account.isActive ? (
                         <button type="button" onClick={() => handleDeactivateAccount(account.id)} className="text-[12px] font-semibold text-[#5f6f89]">
                           Deactivate
@@ -210,6 +243,37 @@ export function SettingsTab({ mailing, availableTabs }) {
                       {testResult.success ? <CheckCircleIcon className="mt-0.5 size-3.5 shrink-0" /> : null}
                       {testResult.message}
                     </p>
+                  ) : null}
+                  {activityOpenId === account.id ? (
+                    <div className="mt-2.5 rounded-[10px] border border-[#e7edf5] bg-[#f8faff] px-3 py-2.5">
+                      {activityBusy ? (
+                        <p className="text-[12px] text-[#9aa6ba]">Loading activity...</p>
+                      ) : activityError ? (
+                        <p className="text-[12px] text-[#c94b6b]">{activityError}</p>
+                      ) : activityData ? (
+                        <>
+                          <p className="text-[12px] font-semibold text-[#334463]">
+                            {activityData.totalSent} email{activityData.totalSent === 1 ? "" : "s"} sent through this mailbox
+                          </p>
+                          {activityData.activity.length ? (
+                            <ul className="mt-2 max-h-64 space-y-2 overflow-y-auto">
+                              {activityData.activity.map((row) => (
+                                <li key={row.id} className="border-t border-[#e7edf5] pt-2 first:border-t-0 first:pt-0">
+                                  <p className="truncate text-[12.5px] font-medium text-[#102246]">{row.title}</p>
+                                  <p className="truncate text-[12px] text-[#6a7790]">
+                                    To {row.lead?.name || row.lead?.email || "unknown lead"}
+                                    {row.lead?.company ? ` (${row.lead.company})` : ""} · {new Date(row.createdAt).toLocaleString()}
+                                  </p>
+                                  <p className="truncate text-[11.5px] text-[#8a95aa]">{row.detail}</p>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="mt-1.5 text-[12px] text-[#9aa6ba]">Nothing sent through this mailbox yet.</p>
+                          )}
+                        </>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               );

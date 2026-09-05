@@ -136,6 +136,35 @@ emailAccountsRouter.put("/:id", asyncHandler(async (req, res) => {
   res.json(redact(account));
 }));
 
+// Real per-mailbox send activity — schema.prisma's EmailActivityLog.emailAccountId
+// is only ever set on BRANCH_EMAIL_SENT rows (the actual mailbox a send went
+// out through, resolved by accountRouting.js), so no kind filter is needed
+// here: every row this query returns already is a real send through this
+// specific mailbox. Lets an admin pick a mailbox and see exactly what's been
+// sent through it, e.g. to sanity-check a deactivation actually took effect.
+emailAccountsRouter.get("/:id/activity", asyncHandler(async (req, res) => {
+  const account = await prisma.emailAccount.findUnique({ where: { id: req.params.id } });
+  if (!account) {
+    return res.status(404).json({ error: "Email account not found" });
+  }
+  if (!canAccess(req, account)) {
+    return res.status(403).json({ error: "You don't have access to this mailbox." });
+  }
+
+  const where = { emailAccountId: account.id };
+  const [totalSent, activity] = await Promise.all([
+    prisma.emailActivityLog.count({ where }),
+    prisma.emailActivityLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: { lead: { select: { name: true, email: true, company: true } } }
+    })
+  ]);
+
+  res.json({ totalSent, activity });
+}));
+
 emailAccountsRouter.post("/:id/deactivate", asyncHandler(async (req, res) => {
   const existing = await prisma.emailAccount.findUnique({ where: { id: req.params.id } });
   if (!existing) {

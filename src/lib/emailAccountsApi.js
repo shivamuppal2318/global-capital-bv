@@ -16,6 +16,9 @@ export const emailAccountsApi = {
   update: (id, body) => request(`/${id}`, { method: "PUT", body }),
   test: (id) => request(`/${id}/test`, { method: "POST" }),
   deactivate: (id) => request(`/${id}/deactivate`, { method: "POST" }),
+  // Real per-mailbox send activity (which leads were actually emailed
+  // through this account) — backs the "Activity" toggle on each mailbox row.
+  activity: (id) => request(`/${id}/activity`),
   remove: (id) => request(`/${id}`, { method: "DELETE" }),
   // Real IMAP poller status/trigger — backs the Mailbox tab's "Fetch Now"
   // and "Fetch Diagnostics", both previously decorative.
