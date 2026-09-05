@@ -880,6 +880,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     // A preview describes an exact snapshot of the pasted text — once the
     // text changes, that snapshot is stale and must be rebuilt before import.
     setCsvPreview(null);
+    setAutomationNotice(value.trim() ? "CSV loaded. Click Preview CSV to check rows before import." : "");
   }
 
   async function handleAddEmailAccount() {
