@@ -34,8 +34,12 @@ export function DashboardTab({ mailing, onNavigateTab }) {
 
   const totalCampaigns = campaigns.length;
   // Real saved segments (Segments tab) — a named, reusable, filter-defined
-  // group of leads, the actual "list" concept this app has.
-  const totalLists = segments.length;
+  // group of leads. Labeled "Segments" here, not "Lists" — this session's
+  // "List" work (New List/Add to List/Send To's cross-list targeting) made
+  // "List" mean an EmailCampaign everywhere else in this app (already
+  // counted by Total Campaigns above), so calling this stat "Lists" too
+  // just reads as a wrong/duplicate number next to it.
+  const totalSegments = segments.length;
   const totalSubscribers = campaigns.reduce((sum, campaign) => sum + (campaign.leadCount ?? (Number.parseInt(campaign.sent, 10) || 0)), 0);
   const unreadMail = repliedLeads.filter((lead) => !lead.movedToWorkflow).length;
   const emailsSent = campaigns.reduce((sum, campaign) => sum + (campaign.sentCount ?? (Number.parseInt(campaign.sent, 10) || 0)), 0);
@@ -58,7 +62,7 @@ export function DashboardTab({ mailing, onNavigateTab }) {
       <div className="rounded-[26px] border border-[#d6deea] bg-[linear-gradient(180deg,#f8fbff_0%,#f3f7fc_100%)] px-5 py-5 shadow-[0_8px_28px_rgba(30,48,87,0.08)]">
         <div className="grid gap-3 lg:grid-cols-4">
           <MetricCard label="Total Campaigns" value={totalCampaigns} icon={MailIcon} iconClass="text-[#2995db]" />
-          <MetricCard label="Lists" value={totalLists} icon={TagIcon} iconClass="text-[#2b9b60]" />
+          <MetricCard label="Segments" value={totalSegments} icon={TagIcon} iconClass="text-[#2b9b60]" />
           <MetricCard label="Subscribers" value={totalSubscribers} icon={UsersIcon} iconClass="text-[#f29c38]" />
           <MetricCard label="Unread Mail" value={unreadMail} icon={InboxIcon} iconClass="text-[#e0483f]" />
         </div>
