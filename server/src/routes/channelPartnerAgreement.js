@@ -6,6 +6,7 @@ import { verifyChannelPartnerToken } from "../lib/channelPartnerSignToken.js";
 import { hashPassword } from "../lib/auth.js";
 import { channelPartnerAgreementFillFormFragment } from "../lib/signedDocumentRenderer.js";
 import { LOGO_DATA_URI } from "../lib/brandLogo.js";
+import { CHANNEL_PARTNER_OPTIONAL_MODULE_IDS } from "../lib/channelPartnerPermissions.js";
 
 export const channelPartnerAgreementRouter = Router();
 
@@ -262,7 +263,18 @@ channelPartnerAgreementRouter.post("/:partnerId/:token", requireValidToken, asyn
       }
     }),
     prisma.channelPartnerUser.create({
-      data: { channelPartnerId: partner.id, name: parsed.data.fullName, email: parsed.data.email, passwordHash }
+      // Every optional module granted from day one -- a freshly signed
+      // partner should land with a fully working portal, not one an admin
+      // has to remember to go switch modules on for afterwards. Admin can
+      // still dial individual modules back later via the Channel Partners
+      // admin screen's Feature access editor.
+      data: {
+        channelPartnerId: partner.id,
+        name: parsed.data.fullName,
+        email: parsed.data.email,
+        passwordHash,
+        permissions: CHANNEL_PARTNER_OPTIONAL_MODULE_IDS
+      }
     })
   ]);
 
