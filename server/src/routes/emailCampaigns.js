@@ -571,3 +571,33 @@ emailCampaignsRouter.get("/:id/recent-sends", asyncHandler(async (req, res) => {
     }))
   );
 }));
+
+// Every real send this campaign has ever made -- unlike /recent-sends above
+// (deliberately scoped to just the composer's own "last Send Now" blasts),
+// this is every SEND_KINDS row (bulk CSV imports and cadence follow-ups
+// included), matching exactly what the campaigns list's own "Emails Sent"
+// count (withEngagementRates' `sent`) already counts. Backs the list view's
+// "who did this campaign actually send to" popup, reachable without first
+// opening the campaign.
+emailCampaignsRouter.get("/:id/sent-activity", asyncHandler(async (req, res) => {
+  const campaign = await loadOwnedCampaignOr404(req, res, req.params.id);
+  if (!campaign) return;
+
+  const rows = await prisma.emailActivityLog.findMany({
+    where: { kind: { in: SEND_KINDS }, lead: { campaignId: campaign.id } },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    include: { lead: { select: { name: true, email: true } } }
+  });
+
+  res.json(
+    rows.map((r) => ({
+      id: r.id,
+      leadName: r.lead.name,
+      leadEmail: r.lead.email,
+      detail: r.detail,
+      createdAt: r.createdAt,
+      status: r.detail.startsWith("Sending") ? "pending" : r.detail.startsWith("Failed") ? "failed" : "sent"
+    }))
+  );
+}));

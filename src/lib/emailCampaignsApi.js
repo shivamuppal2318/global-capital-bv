@@ -32,6 +32,11 @@ export const emailCampaignsApi = {
   // lets the composer show "did it actually go out" without digging into a
   // lead's own activity timeline.
   recentSends: (id) => request(`/${id}/recent-sends`),
+  // Every real send this campaign has ever made (bulk CSV imports and
+  // cadence follow-ups included, not just "last Send Now" blasts) --
+  // matches the campaigns list's own "Emails Sent" count. Backs the list
+  // view's per-campaign sent-leads popup.
+  sentActivity: (id) => request(`/${id}/sent-activity`),
   // A campaign's real follow-up sequence — see routes/emailLeads.js's
   // scheduleCadenceSteps, which is what actually reads these when a lead
   // is added. Add-to-end/edit/delete only; no reordering yet.

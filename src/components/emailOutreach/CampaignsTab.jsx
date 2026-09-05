@@ -128,7 +128,7 @@ export function CampaignsTab({ mailing }) {
     setListActivityRows([]);
     setListActivityLoading(true);
     emailCampaignsApi
-      .recentSends(campaign.id)
+      .sentActivity(campaign.id)
       .then(setListActivityRows)
       .catch(() => setListActivityRows([]))
       .finally(() => setListActivityLoading(false));
