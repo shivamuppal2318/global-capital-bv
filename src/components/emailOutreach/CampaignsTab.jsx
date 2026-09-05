@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton, Field } from "../ui.jsx";
-import { FunnelIcon, SendIcon, MegaphoneIcon, SearchIcon } from "../Icons.jsx";
+import { FunnelIcon, SendIcon, MegaphoneIcon, SearchIcon, EyeIcon, XIcon } from "../Icons.jsx";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
 
 const campaignToneClass = {
@@ -106,6 +106,10 @@ export function CampaignsTab({ mailing }) {
   // process and finalize its activity row; a real send isn't synchronous).
   const [recentSends, setRecentSends] = useState([]);
   const [recentSendsLoading, setRecentSendsLoading] = useState(false);
+  // Which recent-send row's full detail (message id, deliverability
+  // warnings, etc.) is open in a popup -- that text is often too long to
+  // read truncated inline in the row itself.
+  const [activityDetailRow, setActivityDetailRow] = useState(null);
   function loadRecentSends() {
     if (!selectedCampaignId) return;
     setRecentSendsLoading(true);
@@ -528,17 +532,27 @@ export function CampaignsTab({ mailing }) {
                       </p>
                       <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">{row.detail}</p>
                     </div>
-                    <span
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                        row.status === "sent"
-                          ? "bg-[#dff5e7] text-[#2b9b60]"
-                          : row.status === "failed"
-                            ? "bg-[#ffe4ee] text-[#ef5b8f]"
-                            : "bg-[#fff4de] text-[#c47f1a]"
-                      }`}
-                    >
-                      {row.status === "sent" ? "Sent" : row.status === "failed" ? "Failed" : "Sending…"}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActivityDetailRow(row)}
+                        title="View full activity detail"
+                        className="grid size-7 place-items-center rounded-[8px] border border-[#d6deea] text-[#5f6f89] hover:bg-[#f0f3f9]"
+                      >
+                        <EyeIcon className="size-3.5" />
+                      </button>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          row.status === "sent"
+                            ? "bg-[#dff5e7] text-[#2b9b60]"
+                            : row.status === "failed"
+                              ? "bg-[#ffe4ee] text-[#ef5b8f]"
+                              : "bg-[#fff4de] text-[#c47f1a]"
+                        }`}
+                      >
+                        {row.status === "sent" ? "Sent" : row.status === "failed" ? "Failed" : "Sending…"}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -547,6 +561,44 @@ export function CampaignsTab({ mailing }) {
                 {recentSendsLoading ? "Loading…" : "No blast sends yet for this campaign."}
               </p>
             )}
+          </div>
+        ) : null}
+
+        {activityDetailRow ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" onClick={() => setActivityDetailRow(null)}>
+            <div
+              className="w-full max-w-[480px] rounded-[16px] border border-[#d6deea] bg-white p-5 shadow-[0_12px_36px_rgba(16,34,70,0.18)]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-semibold text-[#102246]">{activityDetailRow.leadName}</p>
+                  <p className="truncate text-[12px] text-[#8592ab]">{activityDetailRow.leadEmail}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActivityDetailRow(null)}
+                  className="grid size-7 shrink-0 place-items-center rounded-[8px] text-[#8592ab] hover:bg-[#f0f3f9]"
+                >
+                  <XIcon className="size-4" />
+                </button>
+              </div>
+              <span
+                className={`mt-3 inline-block rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  activityDetailRow.status === "sent"
+                    ? "bg-[#dff5e7] text-[#2b9b60]"
+                    : activityDetailRow.status === "failed"
+                      ? "bg-[#ffe4ee] text-[#ef5b8f]"
+                      : "bg-[#fff4de] text-[#c47f1a]"
+                }`}
+              >
+                {activityDetailRow.status === "sent" ? "Sent" : activityDetailRow.status === "failed" ? "Failed" : "Sending…"}
+              </span>
+              <p className="mt-3 whitespace-pre-wrap break-words text-[13px] leading-6 text-[#334463]">{activityDetailRow.detail}</p>
+              {activityDetailRow.createdAt ? (
+                <p className="mt-3 text-[12px] text-[#9aa6ba]">{new Date(activityDetailRow.createdAt).toLocaleString()}</p>
+              ) : null}
+            </div>
           </div>
         ) : null}
       </section>
