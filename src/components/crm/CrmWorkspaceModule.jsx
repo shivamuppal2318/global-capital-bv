@@ -1079,32 +1079,11 @@ export function CrmWorkspaceModule() {
         stats={stats}
         onNewRecord={() => setAddModalOpen(true)}
         onImport={() => setImportModalOpen(true)}
-        onFindCompanies={() => setZoomInfoPanelOpen((open) => !open)}
-        zoomInfoPanelOpen={zoomInfoPanelOpen}
         viewsOpen={viewsOpen}
         setViewsOpen={setViewsOpen}
         statusFilter={statusFilter}
         setStatusFilter={setStatusFilter}
       />
-
-      {zoomInfoPanelOpen ? (
-        <ZoomInfoSearchPanel
-          mode={zoomInfoMode}
-          setMode={setZoomInfoMode}
-          companyFilters={zoomInfoCompanyFilters}
-          setCompanyFilters={setZoomInfoCompanyFilters}
-          contactFilters={zoomInfoContactFilters}
-          setContactFilters={setZoomInfoContactFilters}
-          searching={zoomInfoSearching}
-          error={zoomInfoError}
-          results={zoomInfoResults}
-          totalResults={zoomInfoTotalResults}
-          page={zoomInfoPage}
-          hasSearched={zoomInfoHasSearched}
-          onSearch={handleZoomInfoSearch}
-          onAddAsLead={handleAddZoomInfoResultAsLead}
-        />
-      ) : null}
 
       {dealBoard ? (
         <Card className="px-5 py-5">
@@ -1165,6 +1144,13 @@ export function CrmWorkspaceModule() {
           <div className="text-right">
             <div className="flex flex-wrap justify-end gap-2">
               <ActionButton
+                label="Find Companies (ZoomInfo)"
+                icon={GlobeIcon}
+                small
+                active={zoomInfoPanelOpen}
+                onClick={() => setZoomInfoPanelOpen((open) => !open)}
+              />
+              <ActionButton
                 label={selectedLeadIds.size ? `Add to List (${selectedLeadIds.size})` : "Add to List"}
                 icon={TagIcon}
                 small
@@ -1186,6 +1172,27 @@ export function CrmWorkspaceModule() {
             ) : null}
           </div>
         </div>
+
+        {zoomInfoPanelOpen ? (
+          <div className="border-b border-[#e7edf5] px-5 py-4">
+            <ZoomInfoSearchPanel
+              mode={zoomInfoMode}
+              setMode={setZoomInfoMode}
+              companyFilters={zoomInfoCompanyFilters}
+              setCompanyFilters={setZoomInfoCompanyFilters}
+              contactFilters={zoomInfoContactFilters}
+              setContactFilters={setZoomInfoContactFilters}
+              searching={zoomInfoSearching}
+              error={zoomInfoError}
+              results={zoomInfoResults}
+              totalResults={zoomInfoTotalResults}
+              page={zoomInfoPage}
+              hasSearched={zoomInfoHasSearched}
+              onSearch={handleZoomInfoSearch}
+              onAddAsLead={handleAddZoomInfoResultAsLead}
+            />
+          </div>
+        ) : null}
 
         {addToListOpen ? (
           <div className="border-b border-[#e7edf5] bg-[#f8faff] px-5 py-4">
@@ -1462,10 +1469,8 @@ function ZoomInfoSearchPanel({
   const hasMore = page * 25 < totalResults;
 
   return (
-    <Card className="px-5 py-5">
-      <SectionTitle icon={GlobeIcon} iconClass="text-[#2f96da]">
-        Find Companies (ZoomInfo)
-      </SectionTitle>
+    <div>
+      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Find Companies (ZoomInfo)</p>
       <p className="mt-1 text-[13px] text-[#6a7790]">
         Real search against ZoomInfo's database — a genuine API lookup, not a preview. Results are browse-only until
         you click "Add as Lead" on one.
@@ -1575,7 +1580,7 @@ function ZoomInfoSearchPanel({
       ) : !searching && !error ? (
         <p className="mt-4 text-[13px] text-[#9aa6ba]">No search run yet — set some filters above and click Search.</p>
       ) : null}
-    </Card>
+    </div>
   );
 }
 
@@ -1618,7 +1623,7 @@ const VIEW_OPTIONS = [
   { value: "LOST", label: "Lost" }
 ];
 
-function Header({ stats, onNewRecord, onImport, onFindCompanies, zoomInfoPanelOpen, viewsOpen, setViewsOpen, statusFilter, setStatusFilter }) {
+function Header({ stats, onNewRecord, onImport, viewsOpen, setViewsOpen, statusFilter, setStatusFilter }) {
   return (
     <section>
       <div className="flex items-start justify-between gap-4">
@@ -1631,7 +1636,6 @@ function Header({ stats, onNewRecord, onImport, onFindCompanies, zoomInfoPanelOp
         <div className="relative flex flex-wrap justify-end gap-3 pt-1">
           <ActionButton label="New record" icon={PlusIcon} primary onClick={onNewRecord} />
           <ActionButton label="Import" icon={UploadIcon} onClick={onImport} />
-          <ActionButton label="Find Companies (ZoomInfo)" icon={GlobeIcon} active={zoomInfoPanelOpen} onClick={onFindCompanies} />
           <ActionButton
             label="Views"
             icon={FunnelIcon}
