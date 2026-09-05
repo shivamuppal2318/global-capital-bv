@@ -219,12 +219,14 @@ export function DealStageModule({ stage }) {
         <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">{config.label}</h1>
         <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">{config.blurb}</p>
 
-        {stage === "FIELD_VISIT" ? (
-          // Only two real states for a visit — see stageConfig.js's note
-          // on FIELD_VISIT.statuses.
+        {stageStatuses.length === 2 ? (
+          // A stage restricted to just two real statuses (see
+          // stageConfig.js's statuses/statusLabels — Field Visit and Term
+          // Sheet both opted into this) gets a matching two-card summary
+          // instead of the generic four-card one below.
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <StatCard card={{ label: "Planned", value: String(stageSummary?.NOT_STARTED ?? 0), note: "Not yet visited", noteTone: "amber" }} />
-            <StatCard card={{ label: "Completed", value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
+            <StatCard card={{ label: stageStatusLabel.NOT_STARTED, value: String(stageSummary?.NOT_STARTED ?? 0), note: config.plannedNote ?? "Not started yet", noteTone: "amber" }} />
+            <StatCard card={{ label: stageStatusLabel.COMPLETED, value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
           </div>
         ) : (
           <div className="mt-6 grid gap-4 sm:grid-cols-4">
