@@ -178,13 +178,11 @@ emailAccountsRouter.delete("/:id", asyncHandler(async (req, res) => {
     return res.status(403).json({ error: "You don't have access to this mailbox." });
   }
 
-  const campaignsUsingAccount = await prisma.emailCampaign.count({ where: { emailAccountId: req.params.id } });
-  if (campaignsUsingAccount > 0) {
-    return res.status(409).json({
-      error: `${campaignsUsingAccount} campaign(s) are still assigned to this account. Reassign them to a different mailbox first, or click "Deactivate" instead of deleting.`
-    });
-  }
-
+  // Any campaign still assigned to this account falls back to the default
+  // global provider automatically — schema.prisma's EmailCampaign.emailAccount
+  // relation is onDelete: SetNull, so this is a safe, designed-for fallback,
+  // not a dangling reference. No need to force a manual reassign/deactivate
+  // step first; Delete just works directly.
   await prisma.emailAccount.delete({ where: { id: existing.id } });
   await recordAudit({ req, action: "mailbox.deleted", entityType: "EmailAccount", entityId: existing.id, detail: existing.label });
   res.status(204).end();
