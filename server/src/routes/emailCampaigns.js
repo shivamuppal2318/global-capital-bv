@@ -538,3 +538,31 @@ emailCampaignsRouter.post("/:id/send-now", asyncHandler(async (req, res) => {
   await recordAudit({ req, action: "campaign.blast_sent", entityType: "EmailCampaign", entityId: campaign.id, detail: `${sentImmediately} sent, ${failed} failed for "${campaign.name}"` });
   res.json({ queued: 0, sentImmediately, failed, scheduled: false });
 }));
+
+// Real per-recipient status for this campaign's most recent blast sends —
+// so the composer can show "did it actually go out" without anyone having
+// to dig through a lead's own activity timeline (see sendCampaignBlastEmail:
+// the "Sending…" placeholder always resolves to either a "Sent via…" or
+// "Failed to send:…" detail, which is all this endpoint needs to read).
+emailCampaignsRouter.get("/:id/recent-sends", asyncHandler(async (req, res) => {
+  const campaign = await loadOwnedCampaignOr404(req, res, req.params.id);
+  if (!campaign) return;
+
+  const rows = await prisma.emailActivityLog.findMany({
+    where: { kind: "CAMPAIGN_BLAST_SENT", lead: { campaignId: campaign.id } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    include: { lead: { select: { name: true, email: true } } }
+  });
+
+  res.json(
+    rows.map((r) => ({
+      id: r.id,
+      leadName: r.lead.name,
+      leadEmail: r.lead.email,
+      detail: r.detail,
+      createdAt: r.createdAt,
+      status: r.detail.startsWith("Sending") ? "pending" : r.detail.startsWith("Failed") ? "failed" : "sent"
+    }))
+  );
+}));

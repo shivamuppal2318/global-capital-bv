@@ -48,7 +48,8 @@ export const STAGE_CONFIG = {
     // "PLANNED" status — just restricted to these two here, everywhere
     // this stage shows status, and relabeled so it reads naturally.
     statuses: ["NOT_STARTED", "COMPLETED"],
-    statusLabels: { NOT_STARTED: "Planned" }
+    statusLabels: { NOT_STARTED: "Planned" },
+    plannedNote: "Not yet visited"
   },
   TERM_SHEET: {
     label: "Term Sheet",
@@ -57,7 +58,13 @@ export const STAGE_CONFIG = {
     scheduledLabel: "Issued on",
     completedLabel: "Signed on",
     fields: ["amount", "valuation", "counterparty", "scheduledAt", "completedAt", "owner", "document", "notes"],
-    emptyHint: "Add a term sheet once terms have gone out."
+    emptyHint: "Add a term sheet once terms have gone out.",
+    // Same "just two real states" simplification as Field Visit, at the
+    // user's request — negotiation/decline are no longer tracked as
+    // separate statuses for this stage, only whether it's signed yet.
+    statuses: ["NOT_STARTED", "COMPLETED"],
+    statusLabels: { NOT_STARTED: "Planned", COMPLETED: "Signed" },
+    plannedNote: "Not yet issued"
   }
 };
 

@@ -27,6 +27,11 @@ export const emailCampaignsApi = {
   // Sends this campaign's own composed subject/bodyHtml to its own leads,
   // optionally narrowed by a Segment. body: { segmentId?, scheduledAt?, delayBetweenMinutes? }
   sendNow: (id, body) => request(`/${id}/send-now`, { method: "POST", body }),
+  // Real per-recipient status for this campaign's most recent blast sends
+  // (sent/failed/pending, with the provider's own message id or error) —
+  // lets the composer show "did it actually go out" without digging into a
+  // lead's own activity timeline.
+  recentSends: (id) => request(`/${id}/recent-sends`),
   // A campaign's real follow-up sequence — see routes/emailLeads.js's
   // scheduleCadenceSteps, which is what actually reads these when a lead
   // is added. Add-to-end/edit/delete only; no reordering yet.
