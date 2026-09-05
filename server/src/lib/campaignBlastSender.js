@@ -1,6 +1,6 @@
 import { prisma } from "./prisma.js";
 import { getEmailProvider } from "./emailProvider.js";
-import { fillMergeFields } from "./renderTemplate.js";
+import { fillMergeFields, firstNameOf } from "./renderTemplate.js";
 import { isUnderDailyCap } from "./sendCap.js";
 import { isAccountUnderDailyCap } from "./accountSendCap.js";
 import { resolveEmailAccount } from "./accountRouting.js";
@@ -60,7 +60,7 @@ export async function sendCampaignBlastEmail(leadId, campaignId) {
   }
 
   const unsubscribeUrl = unsubscribeUrlFor(lead.id);
-  const mergeFields = { leadName: lead.name, company: lead.company, email: lead.email, unsubscribeUrl };
+  const mergeFields = { leadName: lead.name, firstName: firstNameOf(lead.name), company: lead.company, email: lead.email, unsubscribeUrl };
   const subject = fillMergeFields(campaign.subject, mergeFields);
   const bodyHtml = fillMergeFields(campaign.bodyHtml, mergeFields);
   const warnings = checkSpamSignals({ subject, body: bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() });

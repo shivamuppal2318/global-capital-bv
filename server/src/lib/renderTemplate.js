@@ -10,6 +10,14 @@ export function fillMergeFields(text, variables) {
   return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => (key in variables ? String(variables[key]) : match));
 }
 
+// A lead's name is stored as one combined string (see EmailLead.name) even
+// when it was entered via separate First Name/Last Name fields — this just
+// takes the first word of it, so {{firstName}} gives a more natural-sounding
+// greeting ("Hi Jane,") than {{leadName}}'s full name ("Hi Jane Doe,").
+export function firstNameOf(fullName) {
+  return String(fullName ?? "").trim().split(/\s+/)[0] ?? "";
+}
+
 function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

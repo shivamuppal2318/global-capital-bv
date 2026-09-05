@@ -154,8 +154,8 @@ export function EmailTemplatesCadencesModule() {
                 placeholder="Compose the template body here. Merge fields like {{leadName}}, {{company}}, and {{unsubscribeUrl}} can be used."
               />
               <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
-                Format with the toolbar, or click the HTML button to edit raw HTML. Merge tags: `first_name`, `last_name`,
-                `email`, `company`, `unsubscribe_url`
+                Format with the toolbar, or click the HTML button to edit raw HTML. Merge tags: {"{{leadName}}"},
+                {"{{firstName}}"}, {"{{company}}"}, {"{{unsubscribeUrl}}"}, {"{{ndaSignUrl}}"}
               </p>
             </label>
 

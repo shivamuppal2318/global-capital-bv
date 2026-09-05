@@ -1,6 +1,6 @@
 import { prisma } from "./prisma.js";
 import { getEmailProvider } from "./emailProvider.js";
-import { renderEmail } from "./renderTemplate.js";
+import { renderEmail, firstNameOf } from "./renderTemplate.js";
 import { checkSpamSignals } from "./spamCheck.js";
 import { isUnderDailyCap } from "./sendCap.js";
 import { isAccountUnderDailyCap } from "./accountSendCap.js";
@@ -199,6 +199,7 @@ export async function sendTemplateEmail(leadId, templateKey) {
   const unsubscribeUrl = unsubscribeUrlFor(lead.id);
   const rendered = renderEmail(template, {
     leadName: lead.name,
+    firstName: firstNameOf(lead.name),
     company: lead.company,
     unsubscribeUrl,
     ndaSignUrl: ndaSignUrlFor(lead.id)

@@ -131,7 +131,7 @@ export function CampaignsTab({ mailing }) {
   // previewed instantly with sample data, without a save-then-fetch round
   // trip. The actual send always merges real lead data server-side.
   function fillSampleMergeFields(text) {
-    const sample = { leadName: "Sample Lead", company: "Sample Company Ltd", email: "sample@example.com", unsubscribeUrl: "#unsubscribe" };
+    const sample = { leadName: "Sample Lead", firstName: "Sample", company: "Sample Company Ltd", email: "sample@example.com", unsubscribeUrl: "#unsubscribe" };
     return (text ?? "").replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => (key in sample ? sample[key] : match));
   }
 
@@ -247,6 +247,7 @@ export function CampaignsTab({ mailing }) {
                 />
                 <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
                   Raw HTML. Merge tags: <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{leadName}}"}</code>{" "}
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{firstName}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{company}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{email}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{unsubscribeUrl}}"}</code>. This is the one-
