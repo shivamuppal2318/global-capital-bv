@@ -104,7 +104,7 @@ export function EmailOutreachModule({ initialTab = "dashboard", visibleTabs }) {
         })}
       </nav>
 
-      <ActiveContent mailing={mailing} onNavigateTab={setActiveTab} />
+      <ActiveContent mailing={mailing} onNavigateTab={setActiveTab} availableTabs={shownTabs.map((tab) => tab.id)} />
     </div>
   );
 }

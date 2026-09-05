@@ -29,8 +29,9 @@ function pctToNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function DashboardTab({ mailing, onNavigateTab }) {
+export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
   const { campaigns, segments, systemStatus, repliedLeads, startNewList } = mailing;
+  const canOpenTab = (tab) => !availableTabs || availableTabs.includes(tab);
 
   const totalCampaigns = campaigns.length;
   // Real saved segments (Segments tab) — a named, reusable, filter-defined
@@ -136,20 +137,24 @@ export function DashboardTab({ mailing, onNavigateTab }) {
               >
                 New List
               </button>
-              <button
-                type="button"
-                onClick={() => onNavigateTab?.("templates")}
-                className="w-full rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#102246]"
-              >
-                New Template
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigateTab?.("mailbox")}
-                className="w-full rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#102246]"
-              >
-                Mailbox
-              </button>
+              {canOpenTab("templates") ? (
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab?.("templates")}
+                  className="w-full rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#102246]"
+                >
+                  New Template
+                </button>
+              ) : null}
+              {canOpenTab("mailbox") ? (
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab?.("mailbox")}
+                  className="w-full rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#102246]"
+                >
+                  Mailbox
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
