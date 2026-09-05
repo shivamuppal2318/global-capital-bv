@@ -53,6 +53,10 @@ export function ChannelPartnerModule() {
   const [agreementNotice, setAgreementNotice] = useState(null);
   const [agreementLinkUrl, setAgreementLinkUrl] = useState(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  // Whether the link was also emailed to the partner's contact address by
+  // default (see channelPartnersApi.agreementLink) — shown next to the
+  // copy-friendly link box, not folded into agreementNotice above.
+  const [agreementEmailStatus, setAgreementEmailStatus] = useState(null);
   // Real Channel Partner Portal activity — what a partner has actually done
   // with their own login (own campaigns/leads, see channelPartnerScope.js),
   // shown as an expandable section per partner, one open at a time, same
@@ -124,6 +128,7 @@ export function ChannelPartnerModule() {
     setAgreementNoticeId(null);
     setAgreementLinkUrl(null);
     setLinkCopied(false);
+    setAgreementEmailStatus(null);
     try {
       const result = await channelPartnersApi.agreementLink(partner.id);
       if (result.signed) {
@@ -132,6 +137,13 @@ export function ChannelPartnerModule() {
         setLinkCopied(await copyToClipboard(result.url));
         setAgreementNotice(null);
         setAgreementLinkUrl(result.url);
+        if (!result.contactEmail) {
+          setAgreementEmailStatus("No contact email on file for this partner — copy and send the link manually.");
+        } else if (result.emailSent) {
+          setAgreementEmailStatus(`Also emailed to ${result.contactEmail}.`);
+        } else {
+          setAgreementEmailStatus(`Could not email ${result.contactEmail} (${result.emailError}) — copy and send manually.`);
+        }
       }
       setAgreementNoticeId(partner.id);
     } catch (err) {
@@ -473,7 +485,7 @@ export function ChannelPartnerModule() {
                 <div className="mt-2.5 rounded-[12px] border border-[#e7edf5] bg-[#fbfcfe] p-3">
                   <p className="flex items-center gap-1.5 text-[12px] font-semibold text-[#2b9b60]">
                     <CheckCircleIcon className="size-3.5" />
-                    {linkCopied ? "Link copied to clipboard" : "Link generated"} — send it to the partner however you'd like
+                    {linkCopied ? "Link copied to clipboard" : "Link generated"} — you can still send it manually below
                   </p>
                   <div className="mt-2 flex items-center gap-2">
                     <input
@@ -491,6 +503,9 @@ export function ChannelPartnerModule() {
                       {linkCopied ? "Copied" : "Copy"}
                     </button>
                   </div>
+                  {agreementEmailStatus ? (
+                    <p className="mt-2 text-[12px] text-[#6a7790]">{agreementEmailStatus}</p>
+                  ) : null}
                 </div>
               ) : null}
 

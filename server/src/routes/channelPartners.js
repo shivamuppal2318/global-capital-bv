@@ -6,6 +6,8 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { STANDARD_COMMISSION_TIERS, computeChannelPartnerCommission, isMaintenanceFeeEligible } from "../lib/channelPartnerCommission.js";
 import { signChannelPartnerToken } from "../lib/channelPartnerSignToken.js";
 import { hashPassword } from "../lib/auth.js";
+import { getEmailProvider } from "../lib/emailProvider.js";
+import { plainTextToHtml } from "../lib/leadSender.js";
 import { CHANNEL_PARTNER_OPTIONAL_MODULES, CHANNEL_PARTNER_OPTIONAL_MODULE_IDS } from "../lib/channelPartnerPermissions.js";
 
 export const channelPartnersRouter = Router();
@@ -95,12 +97,13 @@ channelPartnersRouter.get("/:id/estimate-commission", asyncHandler(async (req, r
 }));
 
 // Generates the real signed link to the public agreement-signing page (see
-// routes/channelPartnerAgreement.js) — an admin copies this and sends it to
-// the partner however they want (email, WhatsApp, ...). Deliberately
-// doesn't send anything itself: this app has no established channel for a
-// one-off message to a channel partner's contact the way it does for
-// EmailLead cadence sends, so generating the link and letting a human
-// decide how to deliver it is the honest scope for now.
+// routes/channelPartnerAgreement.js) and, by default, emails it straight to
+// the partner's own contact address too — an admin can still copy/share it
+// manually (e.g. over WhatsApp) from the response, but doesn't have to.
+// Uses the single global env-configured provider (no per-partner mailbox
+// concept exists), and skips the send entirely — rather than failing the
+// whole request — when there's no contactEmail on file or the agreement is
+// already signed (nothing left to invite them to).
 channelPartnersRouter.get("/:id/agreement-link", asyncHandler(async (req, res) => {
   const partner = await prisma.channelPartner.findUnique({ where: { id: req.params.id } });
   if (!partner) {
@@ -109,12 +112,33 @@ channelPartnersRouter.get("/:id/agreement-link", asyncHandler(async (req, res) =
 
   const base = process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
   const url = `${base}/api/channel-partner-agreement/${partner.id}/${signChannelPartnerToken(partner.id)}`;
+  const signed = Boolean(partner.agreementSignedAt);
+
+  let emailSent = false;
+  let emailError = null;
+  if (!signed && partner.contactEmail) {
+    const body = `Hi ${partner.contactName || partner.name},\n\nPlease review and sign your Channel Partner Agreement with Global Capital BV here:\n\n${url}\n\nLet us know if you have any questions.\n\nBest regards,\nGlobal Capital BV`;
+    try {
+      await getEmailProvider().send({
+        to: partner.contactEmail,
+        subject: "Your Channel Partner Agreement — Global Capital BV",
+        body,
+        html: plainTextToHtml(body)
+      });
+      emailSent = true;
+    } catch (err) {
+      emailError = err.message;
+    }
+  }
 
   res.json({
     url,
-    signed: Boolean(partner.agreementSignedAt),
+    signed,
     signedAt: partner.agreementSignedAt,
-    signedName: partner.agreementSignedName
+    signedName: partner.agreementSignedName,
+    contactEmail: partner.contactEmail ?? null,
+    emailSent,
+    emailError
   });
 }));
 
