@@ -68,7 +68,10 @@ marketIntelligenceRouter.post("/run", asyncHandler(async (req, res) => {
 }));
 
 marketIntelligenceRouter.get("/signals", asyncHandler(async (req, res) => {
-  const where = req.query.status ? { status: String(req.query.status) } : {};
+  // The screen hides FAILED rows from the main feed, so the default API
+  // response should not spend its 100-row window on a recent failed batch
+  // and leave the visible list empty while older usable signals exist.
+  const where = req.query.status ? { status: String(req.query.status) } : { status: { in: ["PROCESSED", "IGNORED", "PENDING"] } };
   const signals = await prisma.marketSignal.findMany({
     where,
     orderBy: { fetchedAt: "desc" },
