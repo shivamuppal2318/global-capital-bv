@@ -1,6 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { nextFetchRange } from "../src/lib/imapPoller.js";
+import { nextFetchRange, deriveImapHost } from "../src/lib/imapPoller.js";
+
+// --- deriveImapHost --------------------------------------------------------
+
+test("deriveImapHost: mirrors smtp.<domain> as imap.<domain> for a generic provider", () => {
+  assert.equal(deriveImapHost("smtp.hostinger.com"), "imap.hostinger.com");
+});
+
+test("deriveImapHost: prefixes imap. when the smtp host has no smtp. prefix to swap", () => {
+  assert.equal(deriveImapHost("mail.example.com"), "imap.mail.example.com");
+});
+
+test("deriveImapHost: known providers use their real IMAP host, not the generic guess", () => {
+  assert.equal(deriveImapHost("smtp.office365.com"), "outlook.office365.com");
+  assert.equal(deriveImapHost("smtp-mail.outlook.com"), "outlook.office365.com");
+  assert.equal(deriveImapHost("smtp.mail.yahoo.com"), "imap.mail.yahoo.com");
+});
 
 test("first ever run (no saved state) baselines to uidNext - 1, nothing to fetch yet", () => {
   const result = nextFetchRange({ uidValidity: "100", uidNext: 50, savedState: null });

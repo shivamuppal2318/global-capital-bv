@@ -2,9 +2,68 @@ import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { prisma } from "./prisma.js";
 import { recordReply } from "./replyRecorder.js";
+import { decryptSecret } from "./credentialCrypto.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 60_000;
 const POLL_STATE_KEY = "imap_poll_uid_state";
+
+// Well-known providers whose IMAP host doesn't follow the generic
+// smtp.X -> imap.X pattern below. Extend this list rather than making the
+// admin type an IMAP host by hand for a provider that's already common.
+const KNOWN_IMAP_HOSTS = {
+  "smtp.office365.com": "outlook.office365.com",
+  "smtp-mail.outlook.com": "outlook.office365.com",
+  "smtp.mail.yahoo.com": "imap.mail.yahoo.com"
+};
+
+// Lets adding a mailbox in Settings (POST /api/email-accounts) be the only
+// configuration step — no separate IMAP_HOST env var to hand-edit on the
+// server every time the watched mailbox changes (see EmailAccount's real
+// smtpHost/smtpUser/smtpPassEncrypted, already stored for sending). Most
+// hosting-provider mailboxes (Hostinger included) mirror their SMTP host as
+// "imap.<same-domain>", which is what the fallback branch assumes when a
+// provider isn't in the KNOWN_IMAP_HOSTS table above.
+export function deriveImapHost(smtpHost) {
+  if (KNOWN_IMAP_HOSTS[smtpHost]) return KNOWN_IMAP_HOSTS[smtpHost];
+  return smtpHost.startsWith("smtp.") ? `imap.${smtpHost.slice("smtp.".length)}` : `imap.${smtpHost}`;
+}
+
+// The one mailbox IMAP actually watches — same "single watched inbox"
+// design as before (one poll-state key, see POLL_STATE_KEY), just resolved
+// from whichever real mailbox is actually configured in Settings instead of
+// requiring a matching IMAP_HOST/SMTP_USER/SMTP_PASS env var to be kept in
+// sync by hand. Prefers the shared company mailbox (no owner) since that's
+// the one real replies land in; falls back to whichever active mailbox was
+// configured most recently. Env vars still win when set (e.g. local dev
+// without a database), so nothing here breaks an existing setup.
+async function resolveWatchedAccount() {
+  if (process.env.IMAP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    return {
+      host: process.env.IMAP_HOST,
+      port: Number(process.env.IMAP_PORT ?? 993),
+      secure: process.env.IMAP_SECURE !== "false",
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    };
+  }
+
+  const account = await prisma.emailAccount.findFirst({
+    where: { isActive: true, ownerId: null, ownerChannelPartnerId: null },
+    orderBy: { updatedAt: "desc" }
+  });
+  const fallback =
+    account ??
+    (await prisma.emailAccount.findFirst({ where: { isActive: true }, orderBy: { updatedAt: "desc" } }));
+  if (!fallback) return null;
+
+  return {
+    host: deriveImapHost(fallback.smtpHost),
+    port: 993,
+    secure: true,
+    user: fallback.smtpUser,
+    pass: decryptSecret(fallback.smtpPassEncrypted)
+  };
+}
 
 // Persisted across restarts (the same generic key/value table AppSecret
 // already uses for the JWT secret) so the poller's own notion of "already
@@ -53,8 +112,8 @@ export function nextFetchRange({ uidValidity, uidNext, savedState }) {
 // have a "forward every incoming email to this URL" feature the way
 // Postmark/SendGrid/Mailgun's inbound-parse products do, so polling over
 // IMAP is the practical alternative for a mailbox like this one.
-export function isImapPollerEnabled() {
-  return Boolean(process.env.IMAP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+export async function isImapPollerEnabled() {
+  return Boolean(await resolveWatchedAccount());
 }
 
 let intervalHandle = null;
@@ -65,11 +124,12 @@ let intervalHandle = null;
 // nothing to show.
 let lastPollResult = null;
 
-export function getImapStatus() {
+export async function getImapStatus() {
+  const account = await resolveWatchedAccount();
   return {
-    enabled: isImapPollerEnabled(),
-    host: process.env.IMAP_HOST ?? null,
-    watching: process.env.SMTP_USER ?? null,
+    enabled: Boolean(account),
+    host: account?.host ?? null,
+    watching: account?.user ?? null,
     lastPoll: lastPollResult
   };
 }
@@ -90,17 +150,18 @@ async function pollAndRecord() {
 // backend at all. Runs the exact same pollOnce() the automatic interval
 // below uses, just on demand instead of waiting up to a minute for it.
 export async function fetchNow() {
-  if (!isImapPollerEnabled()) {
-    throw Object.assign(new Error("IMAP is not configured (IMAP_HOST/SMTP_USER/SMTP_PASS)."), { status: 409 });
+  if (!(await isImapPollerEnabled())) {
+    throw Object.assign(new Error("No mailbox is configured to watch yet — add one in Settings, or set IMAP_HOST/SMTP_USER/SMTP_PASS."), { status: 409 });
   }
   return pollAndRecord();
 }
 
+// Always starts the interval loop, even with no mailbox configured yet —
+// resolveWatchedAccount() is re-checked on every single tick (see runPoll
+// below), so adding a mailbox in Settings later starts real polling on the
+// next tick automatically. No IMAP_HOST env var to hand-edit, and no
+// backend restart, ever needed after the first deploy.
 export function startImapPoller() {
-  if (!isImapPollerEnabled()) {
-    console.log("[imap-poller] IMAP_HOST/SMTP_USER/SMTP_PASS not fully set — poller not started.");
-    return null;
-  }
   if (intervalHandle) {
     return intervalHandle;
   }
@@ -118,8 +179,9 @@ export function startImapPoller() {
   // hang, not a substitute for fixing the root cause when one is found.
   const POLL_TIMEOUT_MS = 30_000;
 
-  const runPoll = () => {
-    Promise.race([
+  const runPoll = async () => {
+    if (!(await isImapPollerEnabled())) return;
+    await Promise.race([
       pollAndRecord(),
       new Promise((_, reject) => setTimeout(() => reject(new Error(`poll timed out after ${POLL_TIMEOUT_MS}ms`)), POLL_TIMEOUT_MS))
     ]).catch((err) => console.error("[imap-poller] poll failed:", err.message));
@@ -127,7 +189,7 @@ export function startImapPoller() {
 
   runPoll();
   intervalHandle = setInterval(runPoll, pollIntervalMs);
-  console.log(`[imap-poller] watching ${process.env.SMTP_USER} every ${pollIntervalMs}ms`);
+  console.log(`[imap-poller] started (checks every ${pollIntervalMs}ms for a mailbox to watch)`);
   return intervalHandle;
 }
 
@@ -141,11 +203,16 @@ export function stopImapPoller() {
 // Exported separately from the interval loop so it can be called directly
 // for a one-off check/test without waiting for the interval.
 export async function pollOnce() {
+  const watched = await resolveWatchedAccount();
+  if (!watched) {
+    throw new Error("No mailbox is configured to watch yet — add one in Settings, or set IMAP_HOST/SMTP_USER/SMTP_PASS.");
+  }
+
   const client = new ImapFlow({
-    host: process.env.IMAP_HOST,
-    port: Number(process.env.IMAP_PORT ?? 993),
-    secure: process.env.IMAP_SECURE !== "false",
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    host: watched.host,
+    port: watched.port,
+    secure: watched.secure,
+    auth: { user: watched.user, pass: watched.pass },
     logger: false
   });
 

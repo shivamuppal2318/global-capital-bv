@@ -102,7 +102,7 @@ export function MailboxTab({ mailing, onNavigateTab }) {
           {imapStatus ? (
             <>
               <p className={imapStatus.enabled ? "text-[#2b9b60]" : "text-[#c94b6b]"}>
-                IMAP: {imapStatus.enabled ? `configured — watching ${imapStatus.watching} on ${imapStatus.host}` : "not configured (IMAP_HOST/SMTP_USER/SMTP_PASS)"}
+                IMAP: {imapStatus.enabled ? `configured — watching ${imapStatus.watching} on ${imapStatus.host}` : "not configured — add a mailbox in Settings, or set IMAP_HOST/SMTP_USER/SMTP_PASS"}
               </p>
               {imapStatus.lastPoll ? (
                 <p className="mt-1.5 text-[#5f6f89]">
