@@ -54,6 +54,7 @@ const PIPELINE_STATUS_STYLE = {
 // clutter. Opens only when a row in New Enquiries is clicked.
 function LeadDetailModal({
   lead, overview, pipeline, pipelineLoading, onClose,
+  partnerMode = false,
   editing, editForm, setEditForm, saving, saveError, startEdit, setEditing, saveEdit,
   activeTab, setActiveTab, facets, inviting, inviteResult, onSendInvite,
   previewLoading, previewError, onViewClientDashboard,
@@ -128,13 +129,15 @@ function LeadDetailModal({
             />
             <ActionButton label={editing ? "Editing…" : "Edit"} icon={PencilIcon} onClick={startEdit} disabled={editing} />
             <ActionButton label="Tags" icon={TagIcon} active={tagsEditing} onClick={onOpenTags} />
-            <ActionButton
-              label={inviting ? "Inviting…" : "Send Portal Invite"}
-              icon={SendIcon}
-              onClick={onSendInvite}
-              disabled={inviting || Boolean(lead.clientUser)}
-            />
-            <ActionButton label={enriching ? "Enriching…" : "Enrich"} icon={GlobeIcon} onClick={onEnrich} disabled={enriching} />
+            {!partnerMode ? (
+              <ActionButton
+                label={inviting ? "Inviting…" : "Send Portal Invite"}
+                icon={SendIcon}
+                onClick={onSendInvite}
+                disabled={inviting || Boolean(lead.clientUser)}
+              />
+            ) : null}
+            {!partnerMode ? <ActionButton label={enriching ? "Enriching…" : "Enrich"} icon={GlobeIcon} onClick={onEnrich} disabled={enriching} /> : null}
           </div>
 
           {!lead.email ? <p className="mt-2 text-[12px] text-[#8592ab]">Send Mail needs an email address on file for this lead.</p> : null}
@@ -179,7 +182,7 @@ function LeadDetailModal({
             </div>
           ) : null}
 
-          {lead.clientUser ? (
+          {lead.clientUser && !partnerMode ? (
             <div className="mt-4 rounded-[14px] border border-[#e7edf5] bg-[#f8faff] px-4 py-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-[13px] font-semibold text-[#102246]">Client Portal Account</p>
@@ -466,7 +469,7 @@ function EventList({ loading, events, emptyText }) {
   );
 }
 
-export function CrmWorkspaceModule() {
+export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   const [leads, setLeads] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1143,13 +1146,15 @@ export function CrmWorkspaceModule() {
           </div>
           <div className="text-right">
             <div className="flex flex-wrap justify-end gap-2">
-              <ActionButton
-                label="Find Companies (ZoomInfo)"
-                icon={GlobeIcon}
-                small
-                active={zoomInfoPanelOpen}
-                onClick={() => setZoomInfoPanelOpen((open) => !open)}
-              />
+              {!partnerMode ? (
+                <ActionButton
+                  label="Find Companies (ZoomInfo)"
+                  icon={GlobeIcon}
+                  small
+                  active={zoomInfoPanelOpen}
+                  onClick={() => setZoomInfoPanelOpen((open) => !open)}
+                />
+              ) : null}
               <ActionButton
                 label={selectedLeadIds.size ? `Add to List (${selectedLeadIds.size})` : "Add to List"}
                 icon={TagIcon}
@@ -1157,13 +1162,15 @@ export function CrmWorkspaceModule() {
                 onClick={openAddToList}
                 disabled={selectedLeadIds.size === 0}
               />
-              <ActionButton
-                label={bulkEnriching ? "Enriching…" : "Bulk Enrich"}
-                icon={GlobeIcon}
-                small
-                onClick={handleBulkEnrich}
-                disabled={bulkEnriching}
-              />
+              {!partnerMode ? (
+                <ActionButton
+                  label={bulkEnriching ? "Enriching…" : "Bulk Enrich"}
+                  icon={GlobeIcon}
+                  small
+                  onClick={handleBulkEnrich}
+                  disabled={bulkEnriching}
+                />
+              ) : null}
             </div>
             {bulkEnrichResult ? (
               <p className={`mt-1.5 max-w-[280px] text-[12px] font-medium ${bulkEnrichResult.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>
@@ -1173,7 +1180,7 @@ export function CrmWorkspaceModule() {
           </div>
         </div>
 
-        {zoomInfoPanelOpen ? (
+        {zoomInfoPanelOpen && !partnerMode ? (
           <div className="border-b border-[#e7edf5] px-5 py-4">
             <ZoomInfoSearchPanel
               mode={zoomInfoMode}
@@ -1369,6 +1376,7 @@ export function CrmWorkspaceModule() {
           overview={overview}
           pipeline={pipeline}
           pipelineLoading={pipelineLoading}
+          partnerMode={partnerMode}
           onClose={() => {
             setDetailOpen(false);
             setEditing(false);

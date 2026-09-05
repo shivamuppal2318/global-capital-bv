@@ -187,8 +187,8 @@ export async function computeLeadTimeline(leadId) {
 // go well there. Built by reusing computeLeadPipeline per lead rather than
 // a second, separately-written query, so this can never drift out of sync
 // with what the per-lead Deal Journey popup shows for the same lead.
-export async function computePipelineSummary() {
-  const leads = await prisma.lead.findMany({ select: { id: true, name: true } });
+export async function computePipelineSummary(where = {}) {
+  const leads = await prisma.lead.findMany({ where, select: { id: true, name: true } });
   const pipelines = await Promise.all(leads.map((l) => computeLeadPipeline(l.id)));
 
   return STAGES.map((stage, idx) => {
@@ -215,8 +215,8 @@ export async function computePipelineSummary() {
 // least once", so one lead counts toward several stages at once); a Kanban
 // board needs each deal to live in exactly one column, its current stage,
 // the way a real pipeline board works.
-export async function computeDealBoard() {
-  const leads = await prisma.lead.findMany({ select: { id: true, name: true, company: true, capitalAsk: true, updatedAt: true } });
+export async function computeDealBoard(where = {}) {
+  const leads = await prisma.lead.findMany({ where, select: { id: true, name: true, company: true, capitalAsk: true, updatedAt: true } });
   const pipelines = await Promise.all(leads.map((l) => computeLeadPipeline(l.id)));
 
   const board = STAGES.map((stage) => ({ id: stage, label: STAGE_LABELS[stage], deals: [] }));

@@ -19,15 +19,12 @@ import {
 
 const router = Router();
 
-// A Channel Partner's CRM Workspace access is read-only and scoped to
-// their own referred leads (see leadOwnerWhereClause) -- everything that
-// writes, and the two company-wide aggregates below that have no filter
-// param to scope by, is refused outright rather than silently exposing
-// (aggregates) or letting an external partner edit (writes) deal records
-// that are really staff/DOE responsibility.
+// Some staff-only actions spend third-party API credits or administer the
+// client portal, so partners still cannot call those. Ordinary CRM Workspace
+// actions below are scoped through leadOwnerWhereClause instead.
 function blockChannelPartner(req, res, next) {
   if (req.channelPartner) {
-    return res.status(403).json({ error: "Your account has read-only access to your own referred leads." });
+    return res.status(403).json({ error: "This staff-only action is not available in the partner portal." });
   }
   next();
 }
@@ -64,9 +61,9 @@ router.get("/", async (req, res, next) => {
 // Health chart (which also shows conversion rates between stages). Must be
 // registered before "/:id" below, or Express would match "pipeline-summary"
 // itself as an :id.
-router.get("/pipeline-summary", blockChannelPartner, async (req, res, next) => {
+router.get("/pipeline-summary", async (req, res, next) => {
   try {
-    res.json(await computePipelineSummary());
+    res.json(await computePipelineSummary(leadOwnerWhereClause(req)));
   } catch (err) {
     next(err);
   }
@@ -74,9 +71,9 @@ router.get("/pipeline-summary", blockChannelPartner, async (req, res, next) => {
 
 // Kanban board: one column per stage, one card per lead in its current
 // stage. Same "register before /:id" reasoning as pipeline-summary above.
-router.get("/deal-board", blockChannelPartner, async (req, res, next) => {
+router.get("/deal-board", async (req, res, next) => {
   try {
-    res.json(await computeDealBoard());
+    res.json(await computeDealBoard(leadOwnerWhereClause(req)));
   } catch (err) {
     next(err);
   }
@@ -187,9 +184,9 @@ router.get("/:id/timeline", async (req, res, next) => {
 // changes — distinct from the Timeline above (deal-progression milestones
 // derived from other modules' own records). Sourced only from
 // LeadActivityLog.
-router.get("/:id/interactions", blockChannelPartner, async (req, res, next) => {
+router.get("/:id/interactions", async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    const lead = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) }, select: { id: true } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
 
     const activity = await prisma.leadActivityLog.findMany({ where: { leadId: lead.id }, orderBy: { createdAt: "desc" } });
@@ -206,9 +203,9 @@ router.get("/:id/interactions", blockChannelPartner, async (req, res, next) => {
 // EmailLead does, so leadSender.js's sendRawEmail/sendTemplateEmail (built
 // specifically for that, with tracking/compliance baked in) would be the
 // wrong fit here.
-router.post("/:id/send-mail", blockChannelPartner, async (req, res, next) => {
+router.post("/:id/send-mail", async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    const lead = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
     if (!lead.email) return res.status(400).json({ error: "This lead has no email address on file." });
 
@@ -336,9 +333,9 @@ router.post("/bulk-enrich", blockChannelPartner, async (req, res, next) => {
 // distinct value to filter on.
 const TEXT_FIELDS = ["owner", "territory", "leadSource", "industry", "channelPartner", "teamLeader", "manager", "doe", "capitalAsk"];
 
-router.patch("/:id", blockChannelPartner, async (req, res, next) => {
+router.patch("/:id", async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    const lead = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
 
     const data = {};
@@ -351,6 +348,7 @@ router.patch("/:id", blockChannelPartner, async (req, res, next) => {
     for (const field of TEXT_FIELDS) {
       if (req.body[field] !== undefined) data[field] = req.body[field]?.toString().trim() || null;
     }
+    if (req.channelPartner) data.channelPartner = req.channelPartner.businessName;
     // capitalAsk is required (non-nullable) — an empty submission leaves it
     // as-is rather than clearing a field the schema doesn't allow to be null.
     if (data.capitalAsk === null) data.capitalAsk = lead.capitalAsk;
@@ -472,7 +470,7 @@ router.post("/inbound", async (req, res, next) => {
 // The CRM Workspace screen's own "New record" button — a logged-in rep
 // creating a lead directly, as opposed to /inbound above (an external
 // platform, gated by its own webhook API key instead of a session).
-router.post("/", blockChannelPartner, async (req, res, next) => {
+router.post("/", async (req, res, next) => {
   try {
     const { name, company, email, mobile, capitalAsk, owner, leadSource, territory, notes } = req.body ?? {};
     const trimmedName = typeof name === "string" ? name.trim() : "";
@@ -480,7 +478,10 @@ router.post("/", blockChannelPartner, async (req, res, next) => {
     if (!email && !mobile) return res.status(400).json({ error: "At least one contact method is required (email or mobile)." });
 
     const lead = await prisma.lead.create({
-      data: buildLeadCreateData({ name: trimmedName, company, email, mobile, capitalAsk, owner, leadSource, territory, notes })
+      data: {
+        ...buildLeadCreateData({ name: trimmedName, company, email, mobile, capitalAsk, owner, leadSource, territory, notes }),
+        channelPartner: req.channelPartner ? req.channelPartner.businessName : undefined
+      }
     });
 
     res.status(201).json(lead);
@@ -493,7 +494,7 @@ router.post("/", blockChannelPartner, async (req, res, next) => {
 // abort the whole batch (same "isolate each item" principle as the email
 // cold-outreach bulk-create route), so failures are collected and reported
 // rather than thrown.
-router.post("/bulk", blockChannelPartner, async (req, res, next) => {
+router.post("/bulk", async (req, res, next) => {
   try {
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
     if (rows.length === 0) return res.status(400).json({ error: "No rows provided." });
@@ -515,16 +516,19 @@ router.post("/bulk", blockChannelPartner, async (req, res, next) => {
 
       try {
         await prisma.lead.create({
-          data: buildLeadCreateData({
-            name,
-            email: email || null,
-            mobile: mobile || null,
-            company: row.company,
-            capitalAsk: row.capitalAsk,
-            owner: row.owner,
-            leadSource: row.leadSource || "CSV import",
-            territory: row.territory
-          })
+          data: {
+            ...buildLeadCreateData({
+              name,
+              email: email || null,
+              mobile: mobile || null,
+              company: row.company,
+              capitalAsk: row.capitalAsk,
+              owner: row.owner,
+              leadSource: row.leadSource || "CSV import",
+              territory: row.territory
+            }),
+            channelPartner: req.channelPartner ? req.channelPartner.businessName : undefined
+          }
         });
         createdCount += 1;
       } catch (err) {
