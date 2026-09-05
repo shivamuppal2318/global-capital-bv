@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActionButton, Field } from "../ui.jsx";
 import { SearchIcon } from "../Icons.jsx";
 import { buildLeadsCsv } from "../../lib/csvLeads.js";
@@ -18,10 +18,22 @@ export function LeadsTab({ mailing }) {
   const {
     campaigns, allLeads, automationForm, handleFormChange, handleSaveAutomation, automationNotice,
     selectedCampaign, selectedCampaignId, selectCampaign, startNewCampaign,
+    leadsViewSignal, setLeadsViewSignal,
     newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
     csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, handleImportCsv, csvPreviewBusy, csvImportBusy
   } = mailing;
   const [viewMode, setViewMode] = useState("list");
+
+  // One-shot signal from outside this tab (Dashboard's "New List" Quick
+  // Action, via startNewList) — this tab's own viewMode is local state with
+  // no other way in, so this is how a different tab gets here in one click
+  // instead of landing on the plain list view.
+  useEffect(() => {
+    if (leadsViewSignal === "form") {
+      setViewMode("form");
+      setLeadsViewSignal(null);
+    }
+  }, [leadsViewSignal, setLeadsViewSignal]);
   const [searchText, setSearchText] = useState("");
   const [doubleOptIn, setDoubleOptIn] = useState(false);
   const [listDescription, setListDescription] = useState("");

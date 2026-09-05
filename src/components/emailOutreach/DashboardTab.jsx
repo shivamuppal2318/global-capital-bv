@@ -30,7 +30,7 @@ function pctToNumber(value) {
 }
 
 export function DashboardTab({ mailing, onNavigateTab }) {
-  const { campaigns, segments, systemStatus, repliedLeads } = mailing;
+  const { campaigns, segments, systemStatus, repliedLeads, startNewList } = mailing;
 
   const totalCampaigns = campaigns.length;
   // Real saved segments (Segments tab) — a named, reusable, filter-defined
@@ -121,6 +121,20 @@ export function DashboardTab({ mailing, onNavigateTab }) {
                 className="w-full rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)]"
               >
                 New Campaign
+              </button>
+              <button
+                type="button"
+                // startNewList resets the form and signals LeadsTab to open
+                // straight to its "New List" form — a List is the same
+                // EmailCampaign record a Campaign is, just created from the
+                // Leads tab's form instead of the Campaigns tab's composer.
+                onClick={() => {
+                  startNewList?.();
+                  onNavigateTab?.("leads");
+                }}
+                className="w-full rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#102246]"
+              >
+                New List
               </button>
               <button
                 type="button"

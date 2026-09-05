@@ -1008,6 +1008,18 @@ export function useEmailOutreachState() {
     setAutomationForm({ ...DEFAULT_AUTOMATION_FORM, campaignName: "" });
   }
 
+  // A List is the same EmailCampaign record a Campaign is — just created
+  // from the Leads tab's own "New List" form instead of the Campaigns tab's
+  // composer. This one-shot signal is how the Dashboard's "New List" Quick
+  // Action gets there in one click: LeadsTab's own viewMode is local state
+  // (there's no other way for a different tab to reach into it), so this
+  // tells it to switch to "form" once, then clears itself.
+  const [leadsViewSignal, setLeadsViewSignal] = useState(null);
+  function startNewList() {
+    startNewCampaign();
+    setLeadsViewSignal("form");
+  }
+
   async function handleSaveAutomation() {
     const followUpCount = Number(automationForm.followUpCount) || 3;
     const dailyLimit = Number(automationForm.dailyLimit) || 2000;
@@ -1269,6 +1281,7 @@ export function useEmailOutreachState() {
     handleFormChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
     handleToggleCampaignStatus, handleAddLead, handleImportCsv, handleAddEmailAccount,
     handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation, handleSendNow, selectCampaign, startNewCampaign,
+    startNewList, leadsViewSignal, setLeadsViewSignal,
     handleSendNextEmail, handlePreviewTemplate, simulateIncomingReply
   };
 }
