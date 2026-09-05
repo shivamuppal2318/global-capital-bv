@@ -96,6 +96,7 @@ export const channelPartnersApi = {
   // Portal login (separate from referredLeads above, which matches
   // Lead.channelPartner by name) — see server/src/routes/channelPartners.js.
   activity: (id) => apiFetch(`${channelPartnersBase}/${id}/activity`),
+  portalLoginLink: (id) => apiFetch(`${channelPartnersBase}/${id}/portal-login-link`, { method: "POST" }),
   optionalModules: () => apiFetch(`${channelPartnersBase}/optional-modules`),
   // Every Channel Partner Portal login, for Admin Panel -> Channel
   // Partners (the same home Employees has for staff logins).

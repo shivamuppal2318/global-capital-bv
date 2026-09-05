@@ -5,7 +5,7 @@ import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { STANDARD_COMMISSION_TIERS, computeChannelPartnerCommission, isMaintenanceFeeEligible } from "../lib/channelPartnerCommission.js";
 import { signChannelPartnerToken } from "../lib/channelPartnerSignToken.js";
-import { hashPassword } from "../lib/auth.js";
+import { hashPassword, signChannelPartnerUserToken } from "../lib/auth.js";
 import { getEmailProvider } from "../lib/emailProvider.js";
 import { plainTextToHtml } from "../lib/leadSender.js";
 import { CHANNEL_PARTNER_OPTIONAL_MODULES, CHANNEL_PARTNER_OPTIONAL_MODULE_IDS } from "../lib/channelPartnerPermissions.js";
@@ -206,6 +206,25 @@ channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
       campaignName: activity.lead.campaign.name
     }))
   });
+}));
+
+channelPartnersRouter.post("/:id/portal-login-link", asyncHandler(async (req, res) => {
+  const partner = await prisma.channelPartner.findUnique({
+    where: { id: req.params.id },
+    include: { portalUser: { include: { channelPartner: { select: { id: true, name: true } } } } }
+  });
+  if (!partner) {
+    return res.status(404).json({ error: "Channel partner not found" });
+  }
+  if (!partner.portalUser) {
+    return res.status(409).json({ error: "No portal account yet — the partner must sign the agreement first." });
+  }
+  if (partner.portalUser.status === "SUSPENDED") {
+    return res.status(403).json({ error: "This partner portal account is suspended." });
+  }
+
+  const token = signChannelPartnerUserToken(partner.portalUser, "15m");
+  res.json({ url: `${req.protocol}://${req.get("host")}/partner?loginToken=${encodeURIComponent(token)}` });
 }));
 
 function publicPortalUser(portalUser) {

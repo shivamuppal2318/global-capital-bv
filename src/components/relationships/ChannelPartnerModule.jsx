@@ -67,9 +67,24 @@ export function ChannelPartnerModule() {
   const [activityBusy, setActivityBusy] = useState(false);
   const [activityError, setActivityError] = useState(null);
   const [portalLinkCopied, setPortalLinkCopied] = useState(false);
+  const [portalLoginBusyId, setPortalLoginBusyId] = useState(null);
+  const [portalLoginError, setPortalLoginError] = useState(null);
 
   async function handleCopyPortalLink(url) {
     setPortalLinkCopied(await copyToClipboard(url));
+  }
+
+  async function openPortalAsPartner(partner) {
+    setPortalLoginBusyId(partner.id);
+    setPortalLoginError(null);
+    try {
+      const result = await channelPartnersApi.portalLoginLink(partner.id);
+      window.open(result.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setPortalLoginError(err.message);
+    } finally {
+      setPortalLoginBusyId(null);
+    }
   }
 
   async function toggleActivity(partner) {
@@ -82,6 +97,7 @@ export function ChannelPartnerModule() {
     setActivityError(null);
     setActivityBusy(true);
     setPortalLinkCopied(false);
+    setPortalLoginError(null);
     try {
       const result = await channelPartnersApi.activity(partner.id);
       setActivityData(result);
@@ -630,13 +646,16 @@ export function ChannelPartnerModule() {
                           </button>
                           <a
                             href={`${window.location.origin}/partner`}
-                            target="_blank"
-                            rel="noreferrer"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              openPortalAsPartner(p);
+                            }}
                             className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[12px] font-medium text-[#3046b2] hover:bg-[#f4f7fb]"
                           >
-                            Open portal
+                            {portalLoginBusyId === p.id ? "Opening..." : "Open portal"}
                           </a>
                         </div>
+                        {portalLoginError ? <p className="text-[12px] font-medium text-[#e0483f]">{portalLoginError}</p> : null}
                       </div>
                     )
                   ) : null}

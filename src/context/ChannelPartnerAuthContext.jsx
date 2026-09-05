@@ -12,6 +12,18 @@ export function ChannelPartnerAuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const loginToken = new URLSearchParams(window.location.search).get("loginToken");
+    if (loginToken) {
+      channelPartnerPortalAuthApi
+        .acceptLoginToken(loginToken)
+        .then(setPartnerUser)
+        .catch(() => channelPartnerPortalAuthApi.logout())
+        .finally(() => {
+          window.history.replaceState({}, "", window.location.pathname);
+          setLoading(false);
+        });
+      return;
+    }
     if (!channelPartnerPortalAuthApi.hasToken()) {
       setLoading(false);
       return;
