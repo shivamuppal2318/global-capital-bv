@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { filterMatchingLeads, SEGMENT_FIELDS, SEGMENT_OPERATORS } from "../lib/segmentMatching.js";
+import { ownerWhereClause } from "../lib/channelPartnerScope.js";
 
 export const emailSegmentsRouter = Router();
 
@@ -33,30 +34,54 @@ const campaignSelect = { select: { id: true, name: true } };
 // the cost of a query per segment on every list/get. Fine at this app's
 // lead volumes; would need caching or a materialized count if that ever
 // stopped being true.
-async function withMatchingCount(segment) {
+async function withMatchingCount(req, segment) {
   const leads = await prisma.emailLead.findMany({
-    where: segment.campaignId ? { campaignId: segment.campaignId } : {}
+    where: {
+      ...(segment.campaignId ? { campaignId: segment.campaignId } : {}),
+      campaign: ownerWhereClause(req)
+    }
   });
   return { ...segment, matchingCount: filterMatchingLeads(leads, segment).length, totalInScope: leads.length };
 }
 
-emailSegmentsRouter.get("/", asyncHandler(async (_req, res) => {
+function segmentWhereClause(req) {
+  return req.channelPartner ? { campaign: ownerWhereClause(req) } : {};
+}
+
+async function loadOwnedCampaignForSegment(req, res, campaignId) {
+  if (!campaignId) {
+    if (req.channelPartner) {
+      res.status(400).json({ error: "Pick one of your lists for this segment." });
+      return null;
+    }
+    return true;
+  }
+  const campaign = await prisma.emailCampaign.findFirst({ where: { id: campaignId, ...ownerWhereClause(req) }, select: { id: true } });
+  if (!campaign) {
+    res.status(404).json({ error: "Campaign not found" });
+    return null;
+  }
+  return campaign;
+}
+
+emailSegmentsRouter.get("/", asyncHandler(async (req, res) => {
   const segments = await prisma.emailSegment.findMany({
+    where: segmentWhereClause(req),
     orderBy: { createdAt: "desc" },
     include: { campaign: campaignSelect }
   });
-  res.json(await Promise.all(segments.map(withMatchingCount)));
+  res.json(await Promise.all(segments.map((segment) => withMatchingCount(req, segment))));
 }));
 
 emailSegmentsRouter.get("/:id", asyncHandler(async (req, res) => {
-  const segment = await prisma.emailSegment.findUnique({
-    where: { id: req.params.id },
+  const segment = await prisma.emailSegment.findFirst({
+    where: { id: req.params.id, ...segmentWhereClause(req) },
     include: { campaign: campaignSelect }
   });
   if (!segment) {
     return res.status(404).json({ error: "Segment not found" });
   }
-  res.json(await withMatchingCount(segment));
+  res.json(await withMatchingCount(req, segment));
 }));
 
 emailSegmentsRouter.post("/", asyncHandler(async (req, res) => {
@@ -64,6 +89,7 @@ emailSegmentsRouter.post("/", asyncHandler(async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  if (!(await loadOwnedCampaignForSegment(req, res, parsed.data.campaignId))) return;
 
   const segment = await prisma.emailSegment.create({
     data: {
@@ -75,7 +101,7 @@ emailSegmentsRouter.post("/", asyncHandler(async (req, res) => {
     include: { campaign: campaignSelect }
   });
 
-  res.status(201).json(await withMatchingCount(segment));
+  res.status(201).json(await withMatchingCount(req, segment));
 }));
 
 emailSegmentsRouter.put("/:id", asyncHandler(async (req, res) => {
@@ -84,10 +110,11 @@ emailSegmentsRouter.put("/:id", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const existing = await prisma.emailSegment.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.emailSegment.findFirst({ where: { id: req.params.id, ...segmentWhereClause(req) } });
   if (!existing) {
     return res.status(404).json({ error: "Segment not found" });
   }
+  if (parsed.data.campaignId !== undefined && !(await loadOwnedCampaignForSegment(req, res, parsed.data.campaignId))) return;
 
   const segment = await prisma.emailSegment.update({
     where: { id: req.params.id },
@@ -100,11 +127,11 @@ emailSegmentsRouter.put("/:id", asyncHandler(async (req, res) => {
     include: { campaign: campaignSelect }
   });
 
-  res.json(await withMatchingCount(segment));
+  res.json(await withMatchingCount(req, segment));
 }));
 
 emailSegmentsRouter.delete("/:id", asyncHandler(async (req, res) => {
-  const existing = await prisma.emailSegment.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.emailSegment.findFirst({ where: { id: req.params.id, ...segmentWhereClause(req) } });
   if (!existing) {
     return res.status(404).json({ error: "Segment not found" });
   }
