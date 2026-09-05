@@ -322,14 +322,6 @@ const assignAccountSchema = z.object({
 });
 
 emailCampaignsRouter.post("/:id/email-account", asyncHandler(async (req, res) => {
-  // Phase 1 gives Channel Partners no mailboxes of their own — their
-  // campaigns always fall back to the shared global env-configured sender
-  // (see channelPartnerScope.js's comment), so assigning one of the real
-  // company mailboxes to a partner's campaign isn't offered at all.
-  if (req.channelPartner) {
-    return res.status(403).json({ error: "Channel Partner campaigns use the shared default sender — mailbox assignment is staff-only." });
-  }
-
   const parsed = assignAccountSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -342,6 +334,15 @@ emailCampaignsRouter.post("/:id/email-account", asyncHandler(async (req, res) =>
     }
     if (!account.isActive) {
       return res.status(409).json({ error: `Email account "${account.label}" is deactivated.` });
+    }
+    if (req.channelPartner && account.ownerChannelPartnerId !== req.channelPartner.id) {
+      return res.status(403).json({ error: "You don't have access to this mailbox." });
+    }
+    if (!req.channelPartner && req.user.role !== "ADMIN" && account.ownerId !== req.user.id) {
+      return res.status(403).json({ error: "You don't have access to this mailbox." });
+    }
+    if (!req.channelPartner && account.ownerChannelPartnerId) {
+      return res.status(403).json({ error: "You don't have access to this mailbox." });
     }
   }
 

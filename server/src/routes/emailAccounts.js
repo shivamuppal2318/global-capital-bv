@@ -17,15 +17,22 @@ function redact(account) {
   return safe;
 }
 
-// Employees only see/manage mailboxes they own; Admins see everything
-// (owned + shared). A shared mailbox (ownerId null) is only editable by an
-// Admin, never by an arbitrary employee.
-function canAccess(user, account) {
-  return user.role === "ADMIN" || account.ownerId === user.id;
+function actorMailboxWhere(req) {
+  if (req.channelPartner) return { ownerChannelPartnerId: req.channelPartner.id };
+  return req.user.role === "ADMIN" ? { ownerChannelPartnerId: null } : { ownerId: req.user.id };
+}
+
+// Employees only see/manage mailboxes they own; Admins see staff/shared
+// mailboxes; Channel Partners see/manage only their own portal mailboxes.
+function canAccess(req, account) {
+  if (req.channelPartner) return account.ownerChannelPartnerId === req.channelPartner.id;
+  return req.user.role === "ADMIN"
+    ? !account.ownerChannelPartnerId
+    : account.ownerId === req.user.id;
 }
 
 emailAccountsRouter.get("/", asyncHandler(async (req, res) => {
-  const where = req.user.role === "ADMIN" ? {} : { ownerId: req.user.id };
+  const where = actorMailboxWhere(req);
   const accounts = await prisma.emailAccount.findMany({ where, orderBy: { label: "asc" } });
   res.json(accounts.map(redact));
 }));
@@ -51,7 +58,7 @@ emailAccountsRouter.get("/:id", asyncHandler(async (req, res) => {
   if (!account) {
     return res.status(404).json({ error: "Email account not found" });
   }
-  if (!canAccess(req.user, account)) {
+  if (!canAccess(req, account)) {
     return res.status(403).json({ error: "You don't have access to this mailbox." });
   }
   res.json(redact(account));
@@ -78,7 +85,8 @@ const createAccountSchema = z.object({
   // no country routing (only used via direct campaign assignment).
   country: z.string().trim().min(1).nullable().optional(),
   // Admin-only: assign a mailbox to a specific employee, or omit/null it to
-  // create a shared company mailbox. Ignored (forced to self) for employees.
+  // create a shared company mailbox. Ignored (forced to self) for employees
+  // and Channel Partners.
   ownerId: z.string().nullable().optional()
 });
 
@@ -89,10 +97,12 @@ emailAccountsRouter.post("/", asyncHandler(async (req, res) => {
   }
 
   const { smtpPass, ownerId, ...rest } = parsed.data;
-  const resolvedOwnerId = req.user.role === "ADMIN" ? (ownerId ?? null) : req.user.id;
+  const ownerPatch = req.channelPartner
+    ? { ownerId: null, ownerChannelPartnerId: req.channelPartner.id }
+    : { ownerId: req.user.role === "ADMIN" ? (ownerId ?? null) : req.user.id, ownerChannelPartnerId: null };
 
   const account = await prisma.emailAccount.create({
-    data: { ...rest, ownerId: resolvedOwnerId, smtpPassEncrypted: encryptSecret(smtpPass) }
+    data: { ...rest, ...ownerPatch, smtpPassEncrypted: encryptSecret(smtpPass) }
   });
   await recordAudit({ req, action: "mailbox.created", entityType: "EmailAccount", entityId: account.id, detail: `${account.label} (${account.smtpHost})` });
 
@@ -106,7 +116,7 @@ emailAccountsRouter.put("/:id", asyncHandler(async (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: "Email account not found" });
   }
-  if (!canAccess(req.user, existing)) {
+  if (!canAccess(req, existing)) {
     return res.status(403).json({ error: "You don't have access to this mailbox." });
   }
 
@@ -119,7 +129,7 @@ emailAccountsRouter.put("/:id", asyncHandler(async (req, res) => {
   // Only an Admin may reassign ownership (e.g. move a mailbox between
   // employees, or shared <-> personal); an employee editing their own
   // mailbox can't smuggle in a different ownerId.
-  const ownerPatch = req.user.role === "ADMIN" && ownerId !== undefined ? { ownerId } : {};
+  const ownerPatch = !req.channelPartner && req.user.role === "ADMIN" && ownerId !== undefined ? { ownerId } : {};
   const data = { ...rest, ...ownerPatch, ...(smtpPass ? { smtpPassEncrypted: encryptSecret(smtpPass) } : {}) };
 
   const account = await prisma.emailAccount.update({ where: { id: existing.id }, data });
@@ -131,7 +141,7 @@ emailAccountsRouter.post("/:id/deactivate", asyncHandler(async (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: "Email account not found" });
   }
-  if (!canAccess(req.user, existing)) {
+  if (!canAccess(req, existing)) {
     return res.status(403).json({ error: "You don't have access to this mailbox." });
   }
 
@@ -149,7 +159,7 @@ emailAccountsRouter.post("/:id/test", asyncHandler(async (req, res) => {
   if (!account) {
     return res.status(404).json({ error: "Email account not found" });
   }
-  if (!canAccess(req.user, account)) {
+  if (!canAccess(req, account)) {
     return res.status(403).json({ error: "You don't have access to this mailbox." });
   }
 
@@ -174,7 +184,7 @@ emailAccountsRouter.delete("/:id", asyncHandler(async (req, res) => {
   if (!existing) {
     return res.status(404).json({ error: "Email account not found" });
   }
-  if (!canAccess(req.user, existing)) {
+  if (!canAccess(req, existing)) {
     return res.status(403).json({ error: "You don't have access to this mailbox." });
   }
 
