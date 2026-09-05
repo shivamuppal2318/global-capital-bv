@@ -24,12 +24,30 @@ universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
 
   const distinct = (field) => [...new Set(leads.map((l) => l[field]).filter(Boolean))].sort();
 
+  // A real, signed-up Channel Partner (routes/channelPartners.js) should be
+  // pickable here even before any Lead has actually been tagged with their
+  // name -- otherwise this dropdown stays empty until someone manually types
+  // a partner's name onto a Lead, which defeats the point of it being a
+  // dropdown. Matched by name, same convention channelPartners.js's own
+  // withReferredLeads already uses. Only signed partners qualify (an
+  // unsigned/prospective one isn't a real referral source yet), and only for
+  // staff/admin -- a Channel Partner's own portal has no legitimate need to
+  // see the full roster of every other partner's name.
+  let channelPartners = distinct("channelPartner");
+  if (!req.channelPartner) {
+    const signedPartners = await prisma.channelPartner.findMany({
+      where: { agreementSignedAt: { not: null } },
+      select: { name: true }
+    });
+    channelPartners = [...new Set([...channelPartners, ...signedPartners.map((p) => p.name)])].sort();
+  }
+
   res.json({
     // Every lead, for the "Lead" filter card's dropdown -- id is the
     // filter value, name/company are what the frontend shows.
     leads: leads.map((l) => ({ id: l.id, name: l.name, company: l.company })),
     does: distinct("doe"),
-    channelPartners: distinct("channelPartner"),
+    channelPartners,
     industries: distinct("industry"),
     geographies: distinct("territory"),
     teamLeaders: distinct("teamLeader"),
