@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActionButton, Field } from "../ui.jsx";
 import { FunnelIcon, SendIcon, MegaphoneIcon, SearchIcon } from "../Icons.jsx";
+import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
 
 const campaignToneClass = {
   Sending: "bg-[#dff5e7] text-[#2b9b60]",
@@ -8,6 +9,38 @@ const campaignToneClass = {
   Completed: "bg-[#efe5ff] text-[#8853d0]",
   Draft: "bg-[#edf1f6] text-[#748096]"
 };
+
+// Mirrors server/src/lib/spamCheck.js's exact rules — duplicated client-side
+// (not imported: that module lives server-side) so a rep sees the same
+// warnings the real send will log, before clicking Send Now instead of
+// after digging through activity logs.
+const SPAM_PHRASES = [
+  "free money", "click here now", "act now", "100% free", "risk-free",
+  "no cost to you", "guaranteed", "buy now", "limited time offer"
+];
+
+function checkSpamSignalsClientSide(subject, body) {
+  const warnings = [];
+  const letters = (subject ?? "").replace(/[^A-Za-z]/g, "");
+  if (letters.length >= 6 && letters === letters.toUpperCase()) {
+    warnings.push("Subject is all caps");
+  }
+  const exclamationCount = ((subject ?? "").match(/!/g) ?? []).length;
+  if (exclamationCount >= 2) {
+    warnings.push("Subject has multiple exclamation marks");
+  }
+  const lowerBody = (body ?? "").toLowerCase();
+  const lowerSubject = (subject ?? "").toLowerCase();
+  for (const phrase of SPAM_PHRASES) {
+    if (lowerBody.includes(phrase) || lowerSubject.includes(phrase)) {
+      warnings.push(`Contains spam-trigger phrase: "${phrase}"`);
+    }
+  }
+  if (!/\{\{\s*unsubscribeUrl\s*\}\}/.test(body ?? "") && !lowerBody.includes("unsubscribe")) {
+    warnings.push("Body has no unsubscribe mention (HTML part still gets one automatically)");
+  }
+  return warnings;
+}
 
 export function CampaignsTab({ mailing }) {
   const {
@@ -59,6 +92,38 @@ export function CampaignsTab({ mailing }) {
   const [viewMode, setViewMode] = useState("list");
   const [searchText, setSearchText] = useState("");
   const [blastPreviewHtml, setBlastPreviewHtml] = useState(null);
+
+  // Live warnings as the rep types — same heuristics the real send logs,
+  // surfaced before Send Now instead of only discoverable afterward.
+  const spamWarnings = useMemo(
+    () => checkSpamSignalsClientSide(automationForm.subject, automationForm.bodyHtml),
+    [automationForm.subject, automationForm.bodyHtml]
+  );
+
+  // Real per-recipient status for this campaign's most recent blast sends —
+  // reloaded whenever a different campaign is opened, and again a few
+  // seconds after Send Now (enough time for a queued job to actually
+  // process and finalize its activity row; a real send isn't synchronous).
+  const [recentSends, setRecentSends] = useState([]);
+  const [recentSendsLoading, setRecentSendsLoading] = useState(false);
+  function loadRecentSends() {
+    if (!selectedCampaignId) return;
+    setRecentSendsLoading(true);
+    emailCampaignsApi
+      .recentSends(selectedCampaignId)
+      .then(setRecentSends)
+      .catch(() => setRecentSends([]))
+      .finally(() => setRecentSendsLoading(false));
+  }
+  useEffect(() => {
+    setRecentSends([]);
+    loadRecentSends();
+  }, [selectedCampaignId]);
+
+  async function handleSendNowAndRefresh() {
+    await handleSendNow();
+    setTimeout(loadRecentSends, 3000);
+  }
 
   // Read-only preview convenience — same {{fieldName}} substitution as the
   // backend's fillMergeFields (renderTemplate.js), duplicated here (not
@@ -188,6 +253,19 @@ export function CampaignsTab({ mailing }) {
                   time campaign send below — reply-triggered follow-ups still come from the Templates tab, unchanged.
                 </p>
               </Field>
+
+              {spamWarnings.length && (automationForm.subject?.trim() || automationForm.bodyHtml?.trim()) ? (
+                <div className="rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-4 py-3">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-[#a56a1a]">
+                    Deliverability warnings — the real send logs these too
+                  </p>
+                  <ul className="mt-1.5 list-disc pl-4 text-[12px] leading-5 text-[#8a5a15]">
+                    {spamWarnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               <div className="flex flex-wrap gap-3">
                 <button
@@ -405,7 +483,7 @@ export function CampaignsTab({ mailing }) {
                 {selectedCampaign ? (
                   <button
                     type="button"
-                    onClick={handleSendNow}
+                    onClick={handleSendNowAndRefresh}
                     disabled={!automationForm.subject?.trim() || !automationForm.bodyHtml?.trim()}
                     className="w-full rounded-[14px] bg-[#1b295f] px-4 py-3 text-[15px] font-semibold text-white shadow-[0_8px_18px_rgba(27,41,95,0.22)] disabled:cursor-not-allowed disabled:opacity-40"
                   >
@@ -418,6 +496,58 @@ export function CampaignsTab({ mailing }) {
             </div>
           </div>
         </div>
+
+        {selectedCampaign ? (
+          <div className="rounded-[24px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[15px] font-semibold text-[#102246]">Recent sends</p>
+                <p className="mt-1 text-[13px] text-[#6a7790]">
+                  Real per-recipient status for this campaign's last Send Now — no need to open each lead's own
+                  activity timeline to check.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={loadRecentSends}
+                disabled={recentSendsLoading}
+                className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#3046b2] disabled:opacity-50"
+              >
+                {recentSendsLoading ? "Refreshing…" : "Refresh"}
+              </button>
+            </div>
+
+            {recentSends.length ? (
+              <div className="mt-4 space-y-2">
+                {recentSends.map((row) => (
+                  <div key={row.id} className="flex items-center justify-between gap-4 rounded-[12px] border border-[#e7edf5] px-4 py-2.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13.5px] font-semibold text-[#102246]">
+                        {row.leadName} <span className="font-normal text-[#8592ab]">— {row.leadEmail}</span>
+                      </p>
+                      <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">{row.detail}</p>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                        row.status === "sent"
+                          ? "bg-[#dff5e7] text-[#2b9b60]"
+                          : row.status === "failed"
+                            ? "bg-[#ffe4ee] text-[#ef5b8f]"
+                            : "bg-[#fff4de] text-[#c47f1a]"
+                      }`}
+                    >
+                      {row.status === "sent" ? "Sent" : row.status === "failed" ? "Failed" : "Sending…"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-[13px] text-[#9aa6ba]">
+                {recentSendsLoading ? "Loading…" : "No blast sends yet for this campaign."}
+              </p>
+            )}
+          </div>
+        ) : null}
       </section>
     );
   }

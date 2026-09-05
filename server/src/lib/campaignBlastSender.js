@@ -6,6 +6,7 @@ import { isAccountUnderDailyCap } from "./accountSendCap.js";
 import { resolveEmailAccount } from "./accountRouting.js";
 import { unsubscribeUrlFor, appendInterestButton } from "./leadSender.js";
 import { injectTrackingPixel, wrapLinksForClickTracking } from "./emailTracking.js";
+import { checkSpamSignals } from "./spamCheck.js";
 
 // The one real "send this campaign's own composed content to this lead"
 // function — called both by POST /:id/send-now's synchronous no-queue
@@ -62,6 +63,7 @@ export async function sendCampaignBlastEmail(leadId, campaignId) {
   const mergeFields = { leadName: lead.name, company: lead.company, email: lead.email, unsubscribeUrl };
   const subject = fillMergeFields(campaign.subject, mergeFields);
   const bodyHtml = fillMergeFields(campaign.bodyHtml, mergeFields);
+  const warnings = checkSpamSignals({ subject, body: bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() });
 
   // The activity row has to exist before sending — open/click tracking
   // embeds this row's own id (same reason as leadSender.js/cadenceQueue.js).
@@ -78,20 +80,38 @@ export async function sendCampaignBlastEmail(leadId, campaignId) {
     pendingActivity.id
   );
 
-  const emailProvider = getEmailProvider(resolvedAccount);
-  const { providerMessageId } = await emailProvider.send({
-    to: lead.email,
-    subject,
-    body: bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
-    html: trackedHtml,
-    unsubscribeUrl,
-    replyTo: campaign.replyTo
-  });
+  // If the actual send throws past this point, the pending row would
+  // otherwise stay stuck at "Sending…" forever — the caller's retry/count
+  // logic sees the failure, but nothing in EmailActivityLog ever reflects
+  // it. Finalize it as failed before re-throwing, same "always resolve the
+  // pending row" discipline as leadSender.js's send paths.
+  let providerMessageId;
+  let emailProvider;
+  try {
+    emailProvider = getEmailProvider(resolvedAccount);
+    ({ providerMessageId } = await emailProvider.send({
+      to: lead.email,
+      subject,
+      body: bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+      html: trackedHtml,
+      unsubscribeUrl,
+      replyTo: campaign.replyTo
+    }));
+  } catch (err) {
+    await prisma.emailActivityLog.update({
+      where: { id: pendingActivity.id },
+      data: { detail: `Failed to send: ${err.message}` }
+    });
+    throw err;
+  }
 
+  const fullDetail = warnings.length
+    ? `Sent via ${emailProvider.name} provider (message id ${providerMessageId}).\n\nDeliverability warnings:\n- ${warnings.join("\n- ")}`
+    : `Sent via ${emailProvider.name} provider (message id ${providerMessageId}).`;
   const activity = await prisma.emailActivityLog.update({
     where: { id: pendingActivity.id },
-    data: { detail: `Sent via ${emailProvider.name} provider (message id ${providerMessageId}).` }
+    data: { detail: fullDetail }
   });
 
-  return { activity };
+  return { activity, warnings };
 }
