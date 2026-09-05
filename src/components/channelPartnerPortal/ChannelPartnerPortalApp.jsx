@@ -41,7 +41,7 @@ function PartnerLoginView({ onForgot }) {
 
   return (
     <AuthShell>
-      <h1 className="text-[26px] font-semibold leading-tight text-[#102246]">Channel Partner Portal</h1>
+      <h1 className="text-[26px] font-semibold leading-tight text-[#102246]">Partner sign in</h1>
       <p className="mt-2 text-[14px] leading-6 text-[#5f6f89]">
         Run your own outreach — your campaigns and leads, kept separate from everyone else's.
       </p>
