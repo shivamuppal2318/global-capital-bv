@@ -281,9 +281,10 @@ export function backendCampaignStatusToLocal(status) {
 // (Campaigns tab + Leads tab) — shared between both tabs so they stay in
 // sync on the same campaigns/leads/automation-form data, same reasoning as
 // the rest of this app's per-module state hooks.
-export function useEmailOutreachState() {
-  const [campaigns, setCampaigns] = useState(() => normalizeCampaigns(SEED_CAMPAIGNS));
-  const [selectedCampaignId, setSelectedCampaignId] = useState(() => normalizeCampaigns(SEED_CAMPAIGNS)[0].id);
+export function useEmailOutreachState({ demoData = true } = {}) {
+  const initialCampaigns = demoData ? normalizeCampaigns(SEED_CAMPAIGNS) : [];
+  const [campaigns, setCampaigns] = useState(initialCampaigns);
+  const [selectedCampaignId, setSelectedCampaignId] = useState(initialCampaigns[0]?.id ?? null);
   // Starts empty — no fabricated demo leads. Populated for real by the
   // fetchLeads() effect below once the backend has actual replied leads
   // (from real inbound replies, or from clicking "Simulate reply" against
@@ -355,9 +356,6 @@ export function useEmailOutreachState() {
     emailCampaignsApi
       .list()
       .then((backendCampaigns) => {
-        if (!backendCampaigns.length) {
-          return;
-        }
         const mapped = backendCampaigns.map((campaign) => ({
           id: campaign.id,
           name: campaign.name,
@@ -397,11 +395,11 @@ export function useEmailOutreachState() {
           clickedCount: campaign.engagement?.clicked ?? 0
         }));
         setCampaigns(mapped);
-        setSelectedCampaignId(mapped[0].id);
+        setSelectedCampaignId(mapped[0]?.id ?? null);
       })
       .catch(() => {
-        // Backend unreachable or no DB migrated yet — keep the local seed
-        // campaigns table already set above.
+        // Backend unreachable or no DB migrated yet — keep the current
+        // state. Partner portal starts empty, so it never shows demo data.
       });
   }, []);
 
@@ -443,9 +441,6 @@ export function useEmailOutreachState() {
       .list()
       .then((backendLeads) => {
         const replied = backendLeads.filter((lead) => lead.replyType !== "NO_REPLY");
-        if (!replied.length) {
-          return;
-        }
         const mapped = replied.map((lead) => {
           const localReplyType = backendReplyTypeToLocal(lead.replyType);
           return {
@@ -475,7 +470,10 @@ export function useEmailOutreachState() {
           };
         });
         setRepliedLeads(mapped);
-        setSelectedLeadId(mapped[0].id);
+        setSelectedLeadId(mapped[0]?.id ?? null);
+        if (!mapped.length) {
+          return;
+        }
         // Without this, the "Next automated email" panel showed whatever
         // replyType/preferredPath the form happened to default to (always
         // "interested"/"nda-first") rather than the auto-selected lead's
@@ -496,6 +494,7 @@ export function useEmailOutreachState() {
 
   function loadAllLeadsForCampaign(campaignId) {
     if (!campaignId) {
+      setAllLeads([]);
       return;
     }
     emailLeadsApi
