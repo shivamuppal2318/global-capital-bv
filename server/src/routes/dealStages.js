@@ -74,7 +74,7 @@ dealStagesRouter.get("/summary", blockChannelPartner, asyncHandler(async (_req, 
 }));
 
 dealStagesRouter.get("/", asyncHandler(async (req, res) => {
-  const { stage, status, q } = req.query;
+  const { stage, status, q, leadId, owner } = req.query;
   if (stage && !DEAL_STAGE_IDS.includes(String(stage))) {
     return res.status(400).json({ error: `Unknown stage "${stage}".` });
   }
@@ -91,12 +91,17 @@ dealStagesRouter.get("/", asyncHandler(async (req, res) => {
       ...relatedLeadOwnerWhereClause(req),
       ...(stage ? { stage: String(stage) } : {}),
       ...(status && status !== "All" ? { status: String(status) } : {}),
+      ...(leadId ? { leadId: String(leadId) } : {}),
+      ...(owner ? { owner: String(owner) } : {}),
       ...(q
         ? {
             OR: [
               { lead: { name: { contains: String(q), mode: "insensitive" } } },
               { lead: { company: { contains: String(q), mode: "insensitive" } } },
               { counterparty: { contains: String(q), mode: "insensitive" } },
+              { location: { contains: String(q), mode: "insensitive" } },
+              { attendees: { contains: String(q), mode: "insensitive" } },
+              { owner: { contains: String(q), mode: "insensitive" } },
               { notes: { contains: String(q), mode: "insensitive" } }
             ]
           }

@@ -36,6 +36,11 @@ export function DealStageModule({ stage }) {
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState("All");
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchLeadId, setSearchLeadId] = useState("");
+  const [searchOwner, setSearchOwner] = useState("");
+  const [appliedLeadId, setAppliedLeadId] = useState("");
+  const [appliedOwner, setAppliedOwner] = useState("");
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -53,7 +58,7 @@ export function DealStageModule({ stage }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([dealStagesApi.list({ stage, status: statusFilter, q: query }), dealStagesApi.summary()])
+    Promise.all([dealStagesApi.list({ stage, status: statusFilter, q: query, leadId: appliedLeadId, owner: appliedOwner }), dealStagesApi.summary()])
       .then(([rows, sum]) => {
         setRecords(rows);
         setSummary(sum);
@@ -61,7 +66,7 @@ export function DealStageModule({ stage }) {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [stage, statusFilter, query]);
+  }, [stage, statusFilter, query, appliedLeadId, appliedOwner]);
 
   useEffect(() => {
     const t = setTimeout(load, query ? 300 : 0);
@@ -108,6 +113,25 @@ export function DealStageModule({ stage }) {
       notes: "",
       documentId: ""
     });
+  };
+
+  const openSearch = () => {
+    setEditing(null);
+    setSearchOpen((open) => !open);
+  };
+
+  const applySearch = (e) => {
+    e?.preventDefault();
+    setAppliedLeadId(searchLeadId);
+    setAppliedOwner(searchOwner);
+    setSearchOpen(false);
+  };
+
+  const clearSearch = () => {
+    setSearchLeadId("");
+    setSearchOwner("");
+    setAppliedLeadId("");
+    setAppliedOwner("");
   };
 
   const startEdit = (r) => {
@@ -257,10 +281,51 @@ export function DealStageModule({ stage }) {
           icon={CheckCircleIcon}
           iconClass="text-[#3046b2]"
           subtitle="One record per lead — saving the same lead again updates it rather than adding a duplicate."
-          action={<ActionButton label={editing ? "Cancel" : `Add ${config.label}`} icon={editing ? XIcon : PlusIcon} small onClick={() => (editing ? setEditing(null) : startNew())} />}
+          action={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <ActionButton label={searchOpen ? "Close Search" : `Search ${config.label}`} icon={searchOpen ? XIcon : SearchIcon} small onClick={openSearch} />
+              <ActionButton label={editing ? "Cancel" : `Add ${config.label}`} icon={editing ? XIcon : PlusIcon} small onClick={() => (editing ? setEditing(null) : startNew())} />
+            </div>
+          }
         >
           {config.label} records
         </SectionTitle>
+
+        {searchOpen ? (
+          <form onSubmit={applySearch} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className={labelClass}>Lead</label>
+                <select className={inputClass} value={searchLeadId} onChange={(e) => setSearchLeadId(e.target.value)}>
+                  <option value="">All leads</option>
+                  {leads.map((l) => (
+                    <option key={l.id} value={l.id}>{l.name} — {l.company}</option>
+                  ))}
+                </select>
+              </div>
+
+              {uses("owner") ? (
+                <div>
+                  <label className={labelClass}>Owner</label>
+                  <select className={inputClass} value={searchOwner} onChange={(e) => setSearchOwner(e.target.value)}>
+                    <option value="">All owners</option>
+                    {doeNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+            </div>
+
+            <p className="mt-3 text-[12px] text-[#8592ab]">
+              Looking for location, attendees or notes instead? Use the search box below the filters.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ActionButton label="Apply search" icon={SearchIcon} primary small onClick={applySearch} />
+              <ActionButton label="Clear" icon={XIcon} small onClick={clearSearch} />
+            </div>
+          </form>
+        ) : null}
 
         {editing ? (
           <form onSubmit={handleSave} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
@@ -391,6 +456,15 @@ export function DealStageModule({ stage }) {
           </div>
         </div>
 
+        {appliedLeadId || appliedOwner ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-[#5f6f89]">
+            <span className="font-semibold text-[#334463]">Search filters:</span>
+            {appliedLeadId ? <Badge tone="blue">{leads.find((l) => l.id === appliedLeadId)?.company ?? "Selected lead"}</Badge> : null}
+            {appliedOwner ? <Badge tone="green">{appliedOwner}</Badge> : null}
+            <button type="button" onClick={clearSearch} className="font-semibold text-[#3046b2] hover:underline">Clear</button>
+          </div>
+        ) : null}
+
         <div className="mt-3 flex flex-wrap gap-1.5">
           {["All", ...stageStatuses].map((s) => (
             <button
@@ -416,10 +490,10 @@ export function DealStageModule({ stage }) {
           ) : records.length === 0 ? (
             <div className="rounded-[14px] border border-dashed border-[#d6deea] px-5 py-10 text-center">
               <p className="text-[15px] font-medium text-[#102246]">
-                {query || statusFilter !== "All" ? "Nothing matches that filter." : `No ${config.label} records yet.`}
+                {query || statusFilter !== "All" || appliedLeadId || appliedOwner ? "Nothing matches that filter." : `No ${config.label} records yet.`}
               </p>
               <p className="mt-1 text-[13px] text-[#8592ab]">
-                {query || statusFilter !== "All" ? "Try a different search or status." : config.emptyHint}
+                {query || statusFilter !== "All" || appliedLeadId || appliedOwner ? "Try a different search or status." : config.emptyHint}
               </p>
             </div>
           ) : (
