@@ -148,7 +148,7 @@ function pageStyles() {
     .gc-doc-footer { margin-top: 24px; padding-top: 14px; border-top: 2px solid #21439b; text-align: center; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
     .gc-doc-footer p { text-align: center; font-size: 10.5px; color: #5c6b87; margin: 0 0 3px; }
     .gc-doc-footer .gc-doc-footer-company { font-weight: 700; color: #21439b; font-size: 11.5px; }
-    .gc-doc-input { font: inherit; font-size: 13px; color: #102246; border: none; border-bottom: 1.5px solid #3046b2; background: #eef1ff; padding: 1px 5px; outline: none; min-width: 120px; border-radius: 3px 3px 0 0; }
+    .gc-doc-input { font: inherit; font-size: 13px; color: #102246; border: none; border-bottom: 1.5px solid #3046b2; background: #eef1ff; padding: 1px 5px; outline: none; min-width: 120px; max-width: 100%; width: 300px; border-radius: 3px 3px 0 0; }
     .gc-doc-input:focus { background: #dfe5ff; }
     .gc-doc-input:invalid { border-bottom-color: #e0483f; }
     .gc-doc-mirror { font-weight: 600; color: #21439b; border-bottom: 1px dotted #b7c2dd; }
