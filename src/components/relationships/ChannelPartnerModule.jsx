@@ -578,6 +578,41 @@ export function ChannelPartnerModule() {
                             ? new Date(activityData.portalAccount.lastLoginAt).toLocaleString()
                             : "Never"}
                         </p>
+                        {activityData.campaigns?.length ? (
+                          <div className="!mt-3 rounded-[10px] border border-[#e7edf5] bg-white">
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-[#e7edf5] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8a8fe8]">
+                              <span>Campaign</span>
+                              <span>Status</span>
+                              <span>Leads</span>
+                            </div>
+                            {activityData.campaigns.map((campaign) => (
+                              <div key={campaign.id} className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-[#f0f3f9] px-3 py-2 last:border-b-0">
+                                <span className="min-w-0 truncate font-medium text-[#102246]">{campaign.name}</span>
+                                <span className="text-[#5f6f89]">{campaign.status}</span>
+                                <span className="text-[#5f6f89]">{campaign.leadCount}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="!mt-3 text-[12px] text-[#8593ac]">No partner campaigns created yet.</p>
+                        )}
+                        {activityData.recentActivity?.length ? (
+                          <div className="!mt-3 space-y-2">
+                            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Recent activity</p>
+                            {activityData.recentActivity.map((activity) => (
+                              <div key={activity.id} className="rounded-[10px] border border-[#e7edf5] bg-white px-3 py-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="font-medium text-[#102246]">{activity.title}</p>
+                                  <span className="text-[12px] text-[#8593ac]">{new Date(activity.createdAt).toLocaleString()}</span>
+                                </div>
+                                <p className="mt-1 text-[12px] text-[#5f6f89]">
+                                  {activity.leadName} · {activity.campaignName}
+                                </p>
+                                {activity.detail ? <p className="mt-1 text-[12px] text-[#8593ac]">{activity.detail}</p> : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
                         <div className="!mt-2.5 flex items-center gap-2">
                           <input
                             readOnly
@@ -593,6 +628,14 @@ export function ChannelPartnerModule() {
                             <CopyIcon className="size-3.5" />
                             {portalLinkCopied ? "Copied" : "Copy portal link"}
                           </button>
+                          <a
+                            href={`${window.location.origin}/partner`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[12px] font-medium text-[#3046b2] hover:bg-[#f4f7fb]"
+                          >
+                            Open portal
+                          </a>
                         </div>
                       </div>
                     )

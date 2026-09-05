@@ -157,7 +157,7 @@ channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "Channel partner not found" });
   }
 
-  const [campaignCount, leadCount, lastSent] = await Promise.all([
+  const [campaignCount, leadCount, lastSent, campaigns, recentActivity] = await Promise.all([
     prisma.emailCampaign.count({ where: { ownerChannelPartnerId: partner.id } }),
     prisma.emailLead.count({ where: { campaign: { ownerChannelPartnerId: partner.id } } }),
     prisma.emailActivityLog.findFirst({
@@ -167,6 +167,18 @@ channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
       },
       orderBy: { createdAt: "desc" },
       select: { createdAt: true }
+    }),
+    prisma.emailCampaign.findMany({
+      where: { ownerChannelPartnerId: partner.id },
+      orderBy: { updatedAt: "desc" },
+      take: 5,
+      include: { _count: { select: { leads: true } } }
+    }),
+    prisma.emailActivityLog.findMany({
+      where: { lead: { campaign: { ownerChannelPartnerId: partner.id } } },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } } }
     })
   ]);
 
@@ -175,7 +187,24 @@ channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
     portalAccount: partner.portalUser,
     campaignCount,
     leadCount,
-    lastSentAt: lastSent?.createdAt ?? null
+    lastSentAt: lastSent?.createdAt ?? null,
+    campaigns: campaigns.map((campaign) => ({
+      id: campaign.id,
+      name: campaign.name,
+      status: campaign.status,
+      leadCount: campaign._count.leads,
+      updatedAt: campaign.updatedAt
+    })),
+    recentActivity: recentActivity.map((activity) => ({
+      id: activity.id,
+      kind: activity.kind,
+      title: activity.title,
+      detail: activity.detail,
+      createdAt: activity.createdAt,
+      leadName: activity.lead.name,
+      leadEmail: activity.lead.email,
+      campaignName: activity.lead.campaign.name
+    }))
   });
 }));
 
