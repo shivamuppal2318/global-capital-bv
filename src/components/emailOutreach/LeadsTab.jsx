@@ -3,7 +3,7 @@ import { ActionButton, Field } from "../ui.jsx";
 import { SearchIcon } from "../Icons.jsx";
 
 function downloadSampleLeadsCsv() {
-  const csv = "email,first name,last name,country\njane@acme.com,Jane,Doe,IN";
+  const csv = "email,first name,last name,country,company\njane@acme.com,Jane,Doe,IN,Acme Inc";
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -419,6 +419,13 @@ function SubscribersView({
                 className={inputClass}
               />
             </Field>
+            <Field label="Company Name">
+              <input
+                value={newLeadForm.company}
+                onChange={(event) => setNewLeadForm((current) => ({ ...current, company: event.target.value }))}
+                className={inputClass}
+              />
+            </Field>
             <ActionButton label="Add Subscriber" primary onClick={handleAddLead} disabled={!selectedCampaignId} />
           </div>
 
@@ -426,7 +433,7 @@ function SubscribersView({
             <h3 className="text-[13px] font-semibold text-[#222347]">Import (CSV)</h3>
             <input type="file" accept=".csv,text/csv" onChange={handleCsvFileChange} className="mt-2 text-[13px] text-[#5d6286]" />
             <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
-              CSV columns: email, first name, last name, country (optional), owner (optional). A header row is required.
+              CSV columns: email, first name, last name, country (optional), company (optional), owner (optional). A header row is required.
             </p>
             <button type="button" onClick={downloadSampleLeadsCsv} className="mt-1 text-[12px] font-medium text-[#3046b2] hover:underline">
               Download sample CSV

@@ -563,7 +563,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
   function handleChangeSendTarget(campaignId) {
     setAutomationForm((current) => ({ ...current, targetCampaignId: campaignId, selectedLeadIds: [] }));
   }
-  const [newLeadForm, setNewLeadForm] = useState({ firstName: "", lastName: "", email: "", country: "" });
+  const [newLeadForm, setNewLeadForm] = useState({ firstName: "", lastName: "", email: "", country: "", company: "" });
   const [csvText, setCsvText] = useState("");
   const [csvPreview, setCsvPreview] = useState(null);
   const [csvImportBusy, setCsvImportBusy] = useState(false);
@@ -729,10 +729,10 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     try {
       const result = await emailLeadsApi.create({
         name,
-        // No company field on this form — "—" mirrors the same fallback
-        // the inbound lead webhook already uses when company isn't
-        // provided (server/src/routes/emailLeads.js's POST /inbound).
-        company: "—",
+        // "—" mirrors the same fallback the inbound lead webhook already
+        // uses when company isn't provided (server/src/routes/emailLeads.js's
+        // POST /inbound) — company itself is optional on this form.
+        company: newLeadForm.company.trim() || "—",
         email: newLeadForm.email,
         owner: "Rahul R",
         campaignId: selectedCampaign.id,
@@ -743,7 +743,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
           ? `${name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`
           : `${name} added to "${selectedCampaign.name}". No follow-up emails scheduled yet (this campaign has none set up, or the sending queue isn't running) — the lead was still saved.`
       );
-      setNewLeadForm({ firstName: "", lastName: "", email: "", country: "" });
+      setNewLeadForm({ firstName: "", lastName: "", email: "", country: "", company: "" });
       loadAllLeadsForCampaign(selectedCampaign.id);
     } catch (error) {
       // The backend 409s on a duplicate (same email already in this

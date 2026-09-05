@@ -99,8 +99,8 @@ export function parseLeadsCsv(text) {
 
     rows.push({
       name,
-      // No company column in this format — "—" mirrors the same fallback
-      // the inbound lead webhook already uses when company isn't provided
+      // Company is optional here — "—" mirrors the same fallback the
+      // inbound lead webhook already uses when company isn't provided
       // (server/src/routes/emailLeads.js's POST /inbound).
       company: record.company || "—",
       email: record.email,
