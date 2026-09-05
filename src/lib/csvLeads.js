@@ -26,6 +26,8 @@ function parseCsvLine(line) {
 
 const HEADER_ALIASES = {
   name: ["name", "full name", "fullname", "lead name", "contact name"],
+  firstName: ["first name", "firstname", "fname", "given name"],
+  lastName: ["last name", "lastname", "lname", "surname", "family name"],
   company: ["company", "company name", "companyname", "organization", "organisation"],
   email: ["email", "email address", "emailaddress", "contact email"],
   owner: ["owner", "assigned to", "assigned_to", "rep"],
@@ -58,12 +60,18 @@ export function parseLeadsCsv(text) {
   }
 
   const header = parseCsvLine(lines[0]).map(canonicalHeader);
-  const requiredFields = ["name", "company", "email"];
-  const missingFields = requiredFields.filter((field) => !header.includes(field));
-  if (missingFields.length > 0) {
+  // A name can come as a single "name" column or split "first name"/"last
+  // name" columns (the common export shape from newsletter/CRM tools) — at
+  // least one of those forms has to be present. Company is no longer
+  // required: it defaults to "—" per row below, matching the same
+  // already-established fallback the inbound lead webhook uses (see
+  // server/src/routes/emailLeads.js's POST /inbound).
+  const hasNameColumn = header.includes("name") || header.includes("firstName");
+  const missing = [!header.includes("email") ? "email" : null, !hasNameColumn ? "name (or first name)" : null].filter(Boolean);
+  if (missing.length > 0) {
     return {
       rows: [],
-      errors: [`CSV header is missing required column(s): ${missingFields.join(", ")}. Expected header: name,company,email,owner,country`]
+      errors: [`CSV header is missing required column(s): ${missing.join(", ")}. Expected header: email,first name,last name,country`]
     };
   }
 
@@ -79,8 +87,9 @@ export function parseLeadsCsv(text) {
       record[field] = cells[index] ?? "";
     });
 
-    if (!record.name || !record.company || !record.email) {
-      errors.push(`Line ${lineNumber}: missing required field(s) (need name, company, email).`);
+    const name = record.name || [record.firstName, record.lastName].filter(Boolean).join(" ").trim();
+    if (!name || !record.email) {
+      errors.push(`Line ${lineNumber}: missing required field(s) (need email, and a name or first/last name).`);
       continue;
     }
     if (!emailPattern.test(record.email)) {
@@ -89,8 +98,11 @@ export function parseLeadsCsv(text) {
     }
 
     rows.push({
-      name: record.name,
-      company: record.company,
+      name,
+      // No company column in this format — "—" mirrors the same fallback
+      // the inbound lead webhook already uses when company isn't provided
+      // (server/src/routes/emailLeads.js's POST /inbound).
+      company: record.company || "—",
       email: record.email,
       owner: record.owner || "Rahul R",
       // Optional — drives automatic sending-mailbox routing by country (see

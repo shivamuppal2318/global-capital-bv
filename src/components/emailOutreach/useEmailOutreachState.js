@@ -563,7 +563,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
   function handleChangeSendTarget(campaignId) {
     setAutomationForm((current) => ({ ...current, targetCampaignId: campaignId, selectedLeadIds: [] }));
   }
-  const [newLeadForm, setNewLeadForm] = useState({ name: "", company: "", email: "", country: "" });
+  const [newLeadForm, setNewLeadForm] = useState({ firstName: "", lastName: "", email: "", country: "" });
   const [csvText, setCsvText] = useState("");
   const [csvPreview, setCsvPreview] = useState(null);
   const [csvImportBusy, setCsvImportBusy] = useState(false);
@@ -709,8 +709,9 @@ export function useEmailOutreachState({ demoData = true } = {}) {
   }
 
   async function handleAddLead() {
-    if (!newLeadForm.name || !newLeadForm.company || !newLeadForm.email) {
-      setAutomationNotice("Fill in name, company, and email before adding a lead.");
+    const name = `${newLeadForm.firstName} ${newLeadForm.lastName}`.trim();
+    if (!newLeadForm.firstName || !newLeadForm.email) {
+      setAutomationNotice("Fill in first name and email before adding a lead.");
       return;
     }
     // Same pattern as the CSV path (csvLeads.js) — catches a typo'd email
@@ -727,8 +728,11 @@ export function useEmailOutreachState({ demoData = true } = {}) {
 
     try {
       const result = await emailLeadsApi.create({
-        name: newLeadForm.name,
-        company: newLeadForm.company,
+        name,
+        // No company field on this form — "—" mirrors the same fallback
+        // the inbound lead webhook already uses when company isn't
+        // provided (server/src/routes/emailLeads.js's POST /inbound).
+        company: "—",
         email: newLeadForm.email,
         owner: "Rahul R",
         campaignId: selectedCampaign.id,
@@ -736,10 +740,10 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       });
       setAutomationNotice(
         result.cadenceScheduled > 0
-          ? `${newLeadForm.name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`
-          : `${newLeadForm.name} added to "${selectedCampaign.name}". No follow-up emails scheduled yet (this campaign has none set up, or the sending queue isn't running) — the lead was still saved.`
+          ? `${name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`
+          : `${name} added to "${selectedCampaign.name}". No follow-up emails scheduled yet (this campaign has none set up, or the sending queue isn't running) — the lead was still saved.`
       );
-      setNewLeadForm({ name: "", company: "", email: "", country: "" });
+      setNewLeadForm({ firstName: "", lastName: "", email: "", country: "" });
       loadAllLeadsForCampaign(selectedCampaign.id);
     } catch (error) {
       // The backend 409s on a duplicate (same email already in this
