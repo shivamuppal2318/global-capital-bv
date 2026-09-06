@@ -566,18 +566,36 @@ export function CampaignsTab({ mailing }) {
               <Field label={`Or pick specific leads (${(automationForm.selectedLeadIds ?? []).length} of ${specificLeadsSource.length} selected)`}>
                 <div className="max-h-[220px] overflow-y-auto rounded-[12px] border border-[#dfe5f1] bg-white">
                   {specificLeadsSource.length ? (
-                    specificLeadsSource.map((lead) => (
-                      <label key={lead.id} className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0">
-                        <input
-                          type="checkbox"
-                          checked={(automationForm.selectedLeadIds ?? []).includes(lead.id)}
-                          onChange={() => toggleLeadSelection(lead.id)}
-                          className="h-4 w-4 rounded border-[#b9c4d8]"
-                        />
-                        <span className="min-w-0 flex-1 truncate">{lead.name} — {lead.company}</span>
-                        <span className="shrink-0 truncate text-[12px] text-[#8593ac]">{lead.email}</span>
-                      </label>
-                    ))
+                    specificLeadsSource.map((lead) => {
+                      // A send-now would silently drop this lead regardless
+                      // of the checkbox — the backend hard-suppresses
+                      // unsubscribed/bounced addresses before it ever looks
+                      // at which ones were checked (protects sender
+                      // reputation) — so it's disabled here with the real
+                      // reason shown, instead of letting it get checked and
+                      // then reporting a generic "nothing was sent".
+                      const suppressed = lead.unsubscribed || lead.bounced;
+                      const reason = lead.unsubscribed ? "unsubscribed" : lead.bounced ? "bounced" : null;
+                      return (
+                        <label
+                          key={lead.id}
+                          className={`flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] last:border-b-0 ${suppressed ? "text-[#b9c0cf]" : "text-[#435471]"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={(automationForm.selectedLeadIds ?? []).includes(lead.id)}
+                            disabled={suppressed}
+                            onChange={() => toggleLeadSelection(lead.id)}
+                            className="h-4 w-4 rounded border-[#b9c4d8] disabled:cursor-not-allowed"
+                          />
+                          <span className="min-w-0 flex-1 truncate">
+                            {lead.name} — {lead.company}
+                            {reason ? <span className="ml-1.5 text-[11px] font-semibold">({reason})</span> : null}
+                          </span>
+                          <span className="shrink-0 truncate text-[12px] text-[#8593ac]">{lead.email}</span>
+                        </label>
+                      );
+                    })
                   ) : (
                     <p className="px-3 py-3 text-[12px] text-[#9aa6ba]">
                       {targetListName

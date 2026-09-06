@@ -488,13 +488,14 @@ emailCampaignsRouter.post("/:id/send-now", asyncHandler(async (req, res) => {
     leadsCampaignId = targetCampaign.id;
   }
 
-  let leads = await prisma.emailLead.findMany({
+  const sendableLeads = await prisma.emailLead.findMany({
     where: { campaignId: leadsCampaignId, unsubscribed: false, bounced: false }
   });
+  let leads = sendableLeads;
 
   if (parsed.data.leadIds?.length) {
     const idSet = new Set(parsed.data.leadIds);
-    leads = leads.filter((lead) => idSet.has(lead.id));
+    leads = sendableLeads.filter((lead) => idSet.has(lead.id));
   } else if (parsed.data.segmentId) {
     const segment = await prisma.emailSegment.findFirst({
       where: {
@@ -505,11 +506,26 @@ emailCampaignsRouter.post("/:id/send-now", asyncHandler(async (req, res) => {
     if (!segment) {
       return res.status(404).json({ error: "Segment not found" });
     }
-    leads = filterMatchingLeads(leads, segment);
+    leads = filterMatchingLeads(sendableLeads, segment);
   }
 
   if (leads.length === 0) {
-    return res.json({ queued: 0, sentImmediately: 0, failed: 0, message: "No matching leads to send to — nothing was sent." });
+    // A specifically-checked lead can still resolve to zero here even
+    // though it visibly exists in this campaign — sendableLeads already
+    // excludes anyone unsubscribed/bounced before the leadIds filter runs,
+    // so picking only a suppressed lead lands here too. Said explicitly
+    // instead of a generic "no matching leads", which read as if the
+    // picked lead had vanished rather than being correctly held back.
+    const pickedSuppressed = parsed.data.leadIds?.length
+      ? await prisma.emailLead.findMany({
+          where: { id: { in: parsed.data.leadIds }, campaignId: leadsCampaignId, OR: [{ unsubscribed: true }, { bounced: true }] },
+          select: { unsubscribed: true, bounced: true }
+        })
+      : [];
+    const message = pickedSuppressed.length
+      ? `${pickedSuppressed.length} of the picked lead(s) can't be sent to (${pickedSuppressed.some((l) => l.unsubscribed) ? "unsubscribed" : "bounced"}) — nothing was sent.`
+      : "No matching leads to send to — nothing was sent.";
+    return res.json({ queued: 0, sentImmediately: 0, failed: 0, message });
   }
 
   const delayBetweenMs = (parsed.data.delayBetweenMinutes || 0) * 60_000;
