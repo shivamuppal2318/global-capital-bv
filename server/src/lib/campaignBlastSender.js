@@ -4,7 +4,7 @@ import { fillMergeFields, firstNameOf } from "./renderTemplate.js";
 import { isUnderDailyCap } from "./sendCap.js";
 import { isAccountUnderDailyCap } from "./accountSendCap.js";
 import { resolveEmailAccount } from "./accountRouting.js";
-import { unsubscribeUrlFor, appendInterestButton } from "./leadSender.js";
+import { unsubscribeUrlFor, ndaSignUrlFor, appendInterestButton } from "./leadSender.js";
 import { injectTrackingPixel, wrapLinksForClickTracking } from "./emailTracking.js";
 import { checkSpamSignals } from "./spamCheck.js";
 
@@ -60,7 +60,19 @@ export async function sendCampaignBlastEmail(leadId, campaignId) {
   }
 
   const unsubscribeUrl = unsubscribeUrlFor(lead.id);
-  const mergeFields = { leadName: lead.name, firstName: firstNameOf(lead.name), company: lead.company, email: lead.email, unsubscribeUrl };
+  // ndaSignUrl included so a template copied in via the composer's Select
+  // Template feature (see CampaignsTab.jsx) that uses {{ndaSignUrl}} — every
+  // built-in template does — actually gets a real link here too, not the
+  // literal unsubstituted "{{ndaSignUrl}}" text (fillMergeFields leaves any
+  // key it doesn't recognize as-is, by design — see renderTemplate.js).
+  const mergeFields = {
+    leadName: lead.name,
+    firstName: firstNameOf(lead.name),
+    company: lead.company,
+    email: lead.email,
+    unsubscribeUrl,
+    ndaSignUrl: ndaSignUrlFor(lead.id)
+  };
   const subject = fillMergeFields(campaign.subject, mergeFields);
   let bodyHtml = fillMergeFields(campaign.bodyHtml, mergeFields);
   // A campaign's raw composed HTML has no branded wrapper/footer the way a

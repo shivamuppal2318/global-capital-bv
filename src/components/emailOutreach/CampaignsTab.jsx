@@ -298,7 +298,17 @@ export function CampaignsTab({ mailing }) {
   // previewed instantly with sample data, without a save-then-fetch round
   // trip. The actual send always merges real lead data server-side.
   function fillSampleMergeFields(text) {
-    const sample = { leadName: "Sample Lead", firstName: "Sample", company: "Sample Company Ltd", email: "sample@example.com", unsubscribeUrl: "#unsubscribe" };
+    const sample = {
+      leadName: "Sample Lead",
+      firstName: "Sample",
+      company: "Sample Company Ltd",
+      email: "sample@example.com",
+      // Fake stand-ins for preview only — the real send fills these with a
+      // genuine, unique, working per-lead URL (see unsubscribeUrlFor and
+      // ndaSignUrlFor in leadSender.js), never a bare "#" fragment.
+      unsubscribeUrl: "#unsubscribe",
+      ndaSignUrl: "#nda-sign"
+    };
     return (text ?? "").replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => (key in sample ? sample[key] : match));
   }
 
@@ -437,8 +447,9 @@ export function CampaignsTab({ mailing }) {
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{firstName}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{company}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{email}}"}</code>{" "}
-                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{unsubscribeUrl}}"}</code>. This is the one-
-                  time campaign send below — reply-triggered follow-ups still come from the Templates tab, unchanged.
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{unsubscribeUrl}}"}</code>{" "}
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{ndaSignUrl}}"}</code>. This is the one-time
+                  campaign send below — reply-triggered follow-ups still come from the Templates tab, unchanged.
                 </p>
               </Field>
 
