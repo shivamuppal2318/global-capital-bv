@@ -18,7 +18,7 @@ export const universalFiltersRouter = Router();
 universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
   const leads = await prisma.lead.findMany({
     where: { ...leadOwnerWhereClause(req) },
-    select: { id: true, name: true, company: true, doe: true, channelPartner: true, industry: true, territory: true, teamLeader: true, manager: true, leadSource: true },
+    select: { id: true, name: true, company: true, doe: true, channelPartner: true, industry: true, territory: true, teamLeader: true, manager: true, leadSource: true, owner: true },
     orderBy: { name: "asc" }
   });
 
@@ -42,6 +42,17 @@ universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
     channelPartners = [...new Set([...channelPartners, ...signedPartners.map((p) => p.name)])].sort();
   }
 
+  // Same reasoning as channelPartners above -- a real employee (Admin Panel
+  // -> Employees) should be pickable here even before any Lead has actually
+  // been assigned to them, not just whatever names happen to already be on
+  // existing leads. Staff/admin only: a Channel Partner's own portal has no
+  // legitimate need to see the full company roster.
+  let owners = distinct("owner");
+  if (!req.channelPartner) {
+    const employees = await prisma.user.findMany({ select: { name: true } });
+    owners = [...new Set([...owners, ...employees.map((e) => e.name)])].sort();
+  }
+
   res.json({
     // Every lead, for the "Lead" filter card's dropdown -- id is the
     // filter value, name/company are what the frontend shows.
@@ -52,7 +63,8 @@ universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
     geographies: distinct("territory"),
     teamLeaders: distinct("teamLeader"),
     managers: distinct("manager"),
-    leadSources: distinct("leadSource")
+    leadSources: distinct("leadSource"),
+    owners
   });
 }));
 

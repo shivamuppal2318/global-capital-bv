@@ -103,6 +103,7 @@ const baseRow = {
   ticketSizeBand: "1m_5m",
   dueWindow: "due_7d",
   doe: "Rahul R",
+  owner: "Meera S",
   createdAt: new Date("2026-01-01")
 };
 
@@ -129,6 +130,16 @@ test("matchesFilters: DOE filters by exact rep name", () => {
 test("matchesFilters: a lead with no DOE set fails a DOE filter rather than passing by default", () => {
   const noDoe = { ...baseRow, doe: null };
   assert.equal(matchesFilters(noDoe, { doe: "Rahul R" }), false);
+});
+
+test("matchesFilters: Owner filters by exact employee name", () => {
+  assert.equal(matchesFilters(baseRow, { owner: "Meera S" }), true);
+  assert.equal(matchesFilters(baseRow, { owner: "Rahul R" }), false);
+});
+
+test("matchesFilters: a lead with no owner set fails an Owner filter rather than passing by default", () => {
+  const noOwner = { ...baseRow, owner: null };
+  assert.equal(matchesFilters(noOwner, { owner: "Meera S" }), false);
 });
 
 test("matchesFilters: time window filters on createdAt inclusively", () => {
