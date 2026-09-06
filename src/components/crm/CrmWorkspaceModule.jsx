@@ -571,8 +571,14 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // silent Lead creation from a search result.
   const [zoomInfoPanelOpen, setZoomInfoPanelOpen] = useState(false);
   const [zoomInfoMode, setZoomInfoMode] = useState("companies");
-  const [zoomInfoCompanyFilters, setZoomInfoCompanyFilters] = useState({ companyName: "", industryKeywords: "", employeeRangeMin: "", employeeRangeMax: "" });
-  const [zoomInfoContactFilters, setZoomInfoContactFilters] = useState({ jobTitle: "", industryKeywords: "", managementLevel: [] });
+  const [zoomInfoCompanyFilters, setZoomInfoCompanyFilters] = useState({
+    companyName: "", industryKeywords: "", employeeRangeMin: "", employeeRangeMax: "",
+    revenueMin: "", revenueMax: "", state: "", country: ""
+  });
+  const [zoomInfoContactFilters, setZoomInfoContactFilters] = useState({
+    jobTitle: "", industryKeywords: "", managementLevel: [],
+    companyName: "", firstName: "", lastName: "", state: "", country: ""
+  });
   const [zoomInfoSearching, setZoomInfoSearching] = useState(false);
   const [zoomInfoError, setZoomInfoError] = useState(null);
   const [zoomInfoResults, setZoomInfoResults] = useState([]);
@@ -668,23 +674,37 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // narrow the search to "" instead of "not set").
   function buildZoomInfoFilters() {
     if (zoomInfoMode === "companies") {
-      const { companyName, industryKeywords, employeeRangeMin, employeeRangeMax } = zoomInfoCompanyFilters;
+      const { companyName, industryKeywords, employeeRangeMin, employeeRangeMax, revenueMin, revenueMax, state, country } = zoomInfoCompanyFilters;
       return {
         ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
         ...(industryKeywords.trim() ? { industryKeywords: industryKeywords.trim() } : {}),
         // ZoomInfo's own API requires these as numeric STRINGS, not numbers
         // — confirmed live (a real number 400s with "Invalid field type").
         ...(employeeRangeMin.trim() ? { employeeRangeMin: employeeRangeMin.trim() } : {}),
-        ...(employeeRangeMax.trim() ? { employeeRangeMax: employeeRangeMax.trim() } : {})
+        ...(employeeRangeMax.trim() ? { employeeRangeMax: employeeRangeMax.trim() } : {}),
+        ...(revenueMin.trim() ? { revenueMin: revenueMin.trim() } : {}),
+        ...(revenueMax.trim() ? { revenueMax: revenueMax.trim() } : {}),
+        ...(state.trim() ? { state: state.trim() } : {}),
+        ...(country.trim() ? { country: country.trim() } : {})
       };
     }
-    const { jobTitle, industryKeywords, managementLevel } = zoomInfoContactFilters;
+    const { jobTitle, industryKeywords, managementLevel, companyName, firstName, lastName, state, country } = zoomInfoContactFilters;
     return {
       ...(jobTitle.trim() ? { jobTitle: jobTitle.trim() } : {}),
       ...(industryKeywords.trim() ? { industryKeywords: industryKeywords.trim() } : {}),
       // Comma-delimited from ZoomInfo's own controlled vocabulary — see
       // MANAGEMENT_LEVEL_OPTIONS below.
-      ...(managementLevel.length ? { managementLevel: managementLevel.join(",") } : {})
+      ...(managementLevel.length ? { managementLevel: managementLevel.join(",") } : {}),
+      // All four confirmed live against the real API before wiring in
+      // (same discipline as every other ZoomInfo filter in this file) —
+      // companyName narrows a contact search to people at one specific
+      // company instead of anywhere; firstName/lastName finds a specific
+      // named person.
+      ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
+      ...(firstName.trim() ? { firstName: firstName.trim() } : {}),
+      ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
+      ...(state.trim() ? { state: state.trim() } : {}),
+      ...(country.trim() ? { country: country.trim() } : {})
     };
   }
 
@@ -1554,12 +1574,21 @@ function ZoomInfoSearchPanel({
           <EditField label="Industry" value={companyFilters.industryKeywords} onChange={(v) => setCompanyFilters((c) => ({ ...c, industryKeywords: v }))} placeholder="e.g. Software" />
           <EditField label="Employees min" value={companyFilters.employeeRangeMin} onChange={(v) => setCompanyFilters((c) => ({ ...c, employeeRangeMin: v }))} placeholder="e.g. 50" />
           <EditField label="Employees max" value={companyFilters.employeeRangeMax} onChange={(v) => setCompanyFilters((c) => ({ ...c, employeeRangeMax: v }))} placeholder="e.g. 500" />
+          <EditField label="Revenue min (USD)" value={companyFilters.revenueMin} onChange={(v) => setCompanyFilters((c) => ({ ...c, revenueMin: v }))} placeholder="e.g. 1000000" />
+          <EditField label="Revenue max (USD)" value={companyFilters.revenueMax} onChange={(v) => setCompanyFilters((c) => ({ ...c, revenueMax: v }))} placeholder="e.g. 50000000" />
+          <EditField label="State" value={companyFilters.state} onChange={(v) => setCompanyFilters((c) => ({ ...c, state: v }))} placeholder="e.g. CA" />
+          <EditField label="Country" value={companyFilters.country} onChange={(v) => setCompanyFilters((c) => ({ ...c, country: v }))} placeholder="e.g. United States" />
         </div>
       ) : (
         <div className="mt-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <EditField label="Job Title" value={contactFilters.jobTitle} onChange={(v) => setContactFilters((c) => ({ ...c, jobTitle: v }))} placeholder="e.g. Chief Executive Officer" />
             <EditField label="Industry" value={contactFilters.industryKeywords} onChange={(v) => setContactFilters((c) => ({ ...c, industryKeywords: v }))} placeholder="e.g. Software" />
+            <EditField label="Company Name" value={contactFilters.companyName} onChange={(v) => setContactFilters((c) => ({ ...c, companyName: v }))} placeholder="e.g. Salesforce" />
+            <EditField label="First Name" value={contactFilters.firstName} onChange={(v) => setContactFilters((c) => ({ ...c, firstName: v }))} placeholder="e.g. Marc" />
+            <EditField label="Last Name" value={contactFilters.lastName} onChange={(v) => setContactFilters((c) => ({ ...c, lastName: v }))} placeholder="e.g. Benioff" />
+            <EditField label="State" value={contactFilters.state} onChange={(v) => setContactFilters((c) => ({ ...c, state: v }))} placeholder="e.g. CA" />
+            <EditField label="Country" value={contactFilters.country} onChange={(v) => setContactFilters((c) => ({ ...c, country: v }))} placeholder="e.g. United States" />
           </div>
           <div>
             <p className="mb-1.5 text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Management Level</p>
