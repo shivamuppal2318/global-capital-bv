@@ -163,7 +163,10 @@ export function MailboxTab({ mailing, onNavigateTab }) {
         </p>
         <div className="mt-3 space-y-1 text-[13px]">
           {emailAccounts.length ? (
-            emailAccounts.slice(0, 3).map((account) => (
+            // Respects the Choose Account filter below — picking "Vimal"
+            // there shouldn't leave every other mailbox still listed here
+            // as if all of them were still in view.
+            (selectedAccountId ? emailAccounts.filter((account) => account.id === selectedAccountId) : emailAccounts).map((account) => (
               <p key={account.id} className={account.isActive ? "text-[#3867e8]" : "text-[#ff5d5d]"}>
                 {account.label}: {account.isActive ? "ready for fetch" : "inactive - skipped"}
               </p>
