@@ -17,13 +17,17 @@ import { autoRespondToReply } from "./autoRespond.js";
 // (NDA / Calendly / info pack) — this is what makes the whole thing
 // "reply arrives -> lead gets the right email back" without a human
 // clicking Send in between.
-export async function recordReply(lead, textBody) {
+//
+// emailAccountId is only known by the IMAP poller (it polls one specific
+// mailbox at a time) — the webhook and simulate-reply callers leave it
+// null, since neither is tied to a particular mailbox's inbox.
+export async function recordReply(lead, textBody, emailAccountId = null) {
   const matchedRule = matchReplyRule(textBody);
   const replyType = classifyReply(textBody);
 
   await prisma.$transaction([
     prisma.replyEvent.create({
-      data: { leadId: lead.id, rawBody: textBody, matchedRule: matchedRule?.id ?? null, replyType }
+      data: { leadId: lead.id, rawBody: textBody, matchedRule: matchedRule?.id ?? null, replyType, emailAccountId }
     }),
     prisma.emailActivityLog.create({
       data: {

@@ -454,6 +454,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
             replyPreview: "Reply received — see activity timeline for the full message.",
             lastReplyAt: new Date(lead.updatedAt).toLocaleString(),
             owner: lead.owner,
+            emailAccountId: lead.lastReplyEmailAccountId,
             movedToWorkflow: true,
             stage: lead.stage,
             bounced: lead.bounced,

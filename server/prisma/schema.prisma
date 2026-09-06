@@ -1203,6 +1203,7 @@ model EmailAccount {
 
   campaigns EmailCampaign[]
   sentActivity EmailActivityLog[]
+  replyEvents  ReplyEvent[]
 
   @@index([ownerId])
   @@index([ownerChannelPartnerId])
@@ -1285,6 +1286,17 @@ model ReplyEvent {
   matchedRule String?
   replyType   ReplyType
   receivedAt  DateTime  @default(now())
+
+  // Which mailbox's real inbox this reply was actually fetched from (see
+  // imapPoller.js's pollAccount) — null for a reply recorded via the
+  // inbound webhook or "Simulate reply" test action, neither of which polls
+  // a specific mailbox. Backs the Mailbox tab's per-account inbox filter:
+  // without this, there was no way to know which of several configured
+  // mailboxes a given real reply belonged to.
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  emailAccountId String?
+
+  @@index([emailAccountId])
 }
 
 model EmailActivityLog {

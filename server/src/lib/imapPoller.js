@@ -278,7 +278,11 @@ async function pollAccount(account) {
         if (fromEmail && textBody) {
           const lead = await prisma.emailLead.findFirst({ where: { email: fromEmail } });
           if (lead) {
-            await recordReply(lead, textBody);
+            // account.id is the synthetic string "env" for an env-var-configured
+            // mailbox (see resolveWatchedAccounts) rather than a real
+            // EmailAccount row — nothing to point the foreign key at in that
+            // case, so it's recorded as null instead.
+            await recordReply(lead, textBody, account.id === "env" ? null : account.id);
             processedCount += 1;
             console.log(`[imap-poller] processed reply from ${fromEmail} for lead ${lead.id} (${account.label})`);
           }

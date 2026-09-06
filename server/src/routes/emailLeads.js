@@ -24,11 +24,16 @@ function deriveCallStatus(lead) {
 // scalar fields — same signals a human would look at, just counted instead
 // of read one by one. activityLog itself is left off the response; only the
 // derived score/qualification are returned, so payload size doesn't grow
-// with a lead's history.
+// with a lead's history. Also collapses replyEvents (loaded just for its
+// latest emailAccountId, see the include below) down to a single
+// lastReplyEmailAccountId — which real mailbox's inbox this lead's most
+// recent reply was actually fetched from, null if it arrived via the
+// inbound webhook/simulate-reply instead of a real IMAP poll. Backs the
+// Mailbox tab's per-account inbox filter.
 function attachScore(lead) {
   const openCount = lead.activityLog.filter((entry) => entry.kind === "EMAIL_OPENED").length;
   const clickCount = lead.activityLog.filter((entry) => entry.kind === "LINK_CLICKED").length;
-  const { activityLog, ...rest } = lead;
+  const { activityLog, replyEvents, ...rest } = lead;
   const { score, band, reasons } = calculateLeadScore({
     replyType: lead.replyType,
     bounced: lead.bounced,
@@ -39,7 +44,14 @@ function attachScore(lead) {
     openCount,
     clickCount
   });
-  return { ...rest, leadScore: score, leadScoreBand: band, leadScoreReasons: reasons, qualification: deriveQualification(band) };
+  return {
+    ...rest,
+    leadScore: score,
+    leadScoreBand: band,
+    leadScoreReasons: reasons,
+    qualification: deriveQualification(band),
+    lastReplyEmailAccountId: replyEvents?.[0]?.emailAccountId ?? null
+  };
 }
 
 // List endpoint the frontend needs before it can stop hardcoding
@@ -56,7 +68,8 @@ emailLeadsRouter.get("/", asyncHandler(async (req, res) => {
     orderBy: { updatedAt: "desc" },
     include: {
       campaign: { select: { name: true } },
-      activityLog: { select: { kind: true } }
+      activityLog: { select: { kind: true } },
+      replyEvents: { orderBy: { receivedAt: "desc" }, take: 1, select: { emailAccountId: true } }
     }
   });
   res.json(leads.map(attachScore));

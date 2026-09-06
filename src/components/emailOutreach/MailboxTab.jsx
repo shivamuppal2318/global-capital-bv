@@ -8,6 +8,12 @@ export function MailboxTab({ mailing, onNavigateTab }) {
   const { emailAccounts, repliedLeads, handleAddEmailAccount, newAccountForm, setNewAccountForm } = mailing;
   const [activeMailboxTab, setActiveMailboxTab] = useState("inbox");
   const [searchText, setSearchText] = useState("");
+  // Which mailbox's inbox to show — "" means all of them combined. Matched
+  // against each lead's lastReplyEmailAccountId (see emailLeads.js's
+  // attachScore), which is only set for a reply the IMAP poller actually
+  // fetched from a specific mailbox (null for a webhook/simulated reply, so
+  // those only show up under "All mailboxes").
+  const [selectedAccountId, setSelectedAccountId] = useState("");
   // Real IMAP poller status — replaces a client-side-only fake timestamp.
   // Both "Fetch Now" and "Fetch Diagnostics" below are driven by this.
   const [imapStatus, setImapStatus] = useState(null);
@@ -49,12 +55,17 @@ export function MailboxTab({ mailing, onNavigateTab }) {
         from: lead.name || lead.email || "Unknown sender",
         subject: lead.replySummary || `Reply from ${lead.company || lead.email || "lead"}`,
         received: lead.lastReplyAt || "Just now",
-        bounced: Boolean(lead.bounced)
+        bounced: Boolean(lead.bounced),
+        emailAccountId: lead.emailAccountId ?? null
       })),
     [repliedLeads]
   );
 
-  const visibleRows = inboxRows.filter((row) => {
+  const accountFilteredRows = selectedAccountId
+    ? inboxRows.filter((row) => row.emailAccountId === selectedAccountId)
+    : inboxRows;
+
+  const visibleRows = accountFilteredRows.filter((row) => {
     const haystack = `${row.from} ${row.subject} ${row.received}`.toLowerCase();
     return haystack.includes(searchText.trim().toLowerCase());
   });
@@ -178,17 +189,29 @@ export function MailboxTab({ mailing, onNavigateTab }) {
 
       <div className="rounded-[24px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[15px] text-[#6a7790]">
-            Mailbox Accounts:{" "}
-            <button type="button" onClick={() => onNavigateTab?.("settings")} className="font-medium text-[#5c6cff]">
-              {emailAccounts.filter((account) => account.isActive).length
-                ? emailAccounts
-                    .filter((account) => account.isActive)
-                    .map((account) => account.label)
-                    .join(", ")
-                : "New Account"}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="text-[13px] font-medium text-[#6a7790]">Mailbox Accounts</span>
+            <select
+              value={selectedAccountId}
+              onChange={(event) => setSelectedAccountId(event.target.value)}
+              className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-medium text-[#102246] outline-none"
+            >
+              <option value="">All mailboxes</option>
+              {emailAccounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.label}
+                  {account.isActive ? "" : " (inactive)"}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => onNavigateTab?.("settings")}
+              className="text-[12px] font-semibold text-[#5c6cff] hover:underline"
+            >
+              Manage
             </button>
-          </p>
+          </div>
           <div className="flex items-center gap-2 rounded-[12px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] text-[#5f6f89]">
             <SearchIcon className="size-4" />
             <input
