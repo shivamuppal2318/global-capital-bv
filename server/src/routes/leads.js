@@ -9,7 +9,7 @@ import { plainTextToHtml } from "../lib/leadSender.js";
 import { computeLeadPipeline, computePipelineSummary, computeDealBoard, computeLeadTimeline } from "../lib/leadPipeline.js";
 import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
-import { getAccessToken, searchCompanies, searchContacts } from "../lib/zoominfoClient.js";
+import { getAccessToken, searchCompanies, searchContacts, enrichContactByName } from "../lib/zoominfoClient.js";
 import {
   lookupLeadInZoomInfo,
   hasAnyZoomInfoMatch,
@@ -120,6 +120,34 @@ router.post("/zoominfo-search", blockChannelPartner, async (req, res, next) => {
     const search = mode === "companies" ? searchCompanies : searchContacts;
     const result = await search({ token, filters, page: page || 1, pageSize: 25 });
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// A Contact search result only ever carries hasEmail/hasDirectPhone-style
+// booleans, never the real address (see zoominfoClient.js's comment on
+// runZoomInfoSearch) — this is the real lookup that fetches it, called when
+// a rep picks a search result to add as a lead rather than up front for
+// every row in the list (that would burn Enrich credits on results nobody
+// ends up using). Same firstName+lastName+companyName match as the
+// existing per-lead Enrich route below, just not tied to an existing Lead
+// row yet.
+router.post("/zoominfo-search/reveal-contact", blockChannelPartner, async (req, res, next) => {
+  try {
+    const { firstName, lastName, companyName } = req.body ?? {};
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: "firstName and lastName are required." });
+    }
+
+    const credentials = await getZoomInfoCredentials();
+    if (!credentials) {
+      return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
+    }
+
+    const token = await getAccessToken(credentials);
+    const attributes = await enrichContactByName({ token, fullName: `${firstName} ${lastName}`, companyName });
+    res.json({ email: attributes?.email ?? null, mobilePhone: attributes?.mobilePhone ?? null });
   } catch (err) {
     next(err);
   }

@@ -82,13 +82,17 @@ export async function enrichCompanyByName({ token, companyName }) {
   return match.attributes;
 }
 
-const CONTACT_ENRICH_OUTPUT_FIELDS = ["firstName", "lastName", "jobTitle", "managementLevel", "mobilePhone", "directPhoneAlt"];
+const CONTACT_ENRICH_OUTPUT_FIELDS = ["firstName", "lastName", "email", "jobTitle", "managementLevel", "mobilePhone", "directPhoneAlt"];
 
 // ZoomInfo's contact match only accepts firstName+lastName+companyName (or
 // personId) — confirmed live: an email-based matchPersonInput is rejected
-// with a 400, even though email is a valid *output* field. So a lead's full
-// name has to be split; a single-word name (can't tell first from last)
-// isn't enough to match on and returns null rather than guessing.
+// with a 400, even though email is a valid *output* field (and, confirmed
+// live, actually comes back as a real address like "name@company.com" when
+// requested this way — unlike the Search endpoint, see searchContacts,
+// which only ever returns a hasEmail true/false flag, never the address
+// itself). So a lead's full name has to be split; a single-word name
+// (can't tell first from last) isn't enough to match on and returns null
+// rather than guessing.
 export async function enrichContactByName({ token, fullName, companyName }) {
   const parts = fullName?.trim().split(/\s+/) ?? [];
   if (parts.length < 2) return null;
@@ -172,6 +176,16 @@ export async function searchScoopsByCompany({ token, companyName }) {
 // not numbers; managementLevel must be a comma-delimited string built
 // from exactly: "Board Member", "C Level Exec", "VP Level Exec",
 // "Director", "Manager", "Non Manager").
+//
+// Confirmed live: unlike Enrich, this endpoint rejects an explicit
+// outputFields list (400 "Invalid field requested") and always returns its
+// own fixed default field set regardless — for a contact result, that's
+// hasEmail/hasDirectPhone/hasMobilePhone/hasSupplementalEmail booleans, not
+// the actual address/number. Getting a real email for a specific person
+// found this way means a follow-up Enrich call by name (see
+// enrichContactByName below) — see routes/leads.js's
+// POST /zoominfo-search/reveal-contact, which does exactly that when a rep
+// picks a search result to add as a lead.
 async function runZoomInfoSearch({ token, url, type, filters, page, pageSize }) {
   const query = new URLSearchParams({ "page[number]": String(page ?? 1), "page[size]": String(pageSize ?? 25) });
   const response = await fetch(`${url}?${query.toString()}`, {

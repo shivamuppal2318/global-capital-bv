@@ -400,6 +400,7 @@ function LeadDetailModal({
                     <p className="text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Contact Info (ZoomInfo)</p>
                     <div className="mt-3 grid gap-x-6 gap-y-2 text-[13px] text-[#334463] sm:grid-cols-2">
                       {lead.zoomInfoContactData.jobTitle ? <p><span className="text-[#8592ab]">Title</span> — {lead.zoomInfoContactData.jobTitle}</p> : null}
+                      {lead.zoomInfoContactData.email ? <p><span className="text-[#8592ab]">Email</span> — {lead.zoomInfoContactData.email}</p> : null}
                       {lead.zoomInfoContactData.managementLevel?.length ? (
                         <p><span className="text-[#8592ab]">Level</span> — {lead.zoomInfoContactData.managementLevel.join(", ")}</p>
                       ) : null}
@@ -578,6 +579,10 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   const [zoomInfoTotalResults, setZoomInfoTotalResults] = useState(0);
   const [zoomInfoPage, setZoomInfoPage] = useState(1);
   const [zoomInfoHasSearched, setZoomInfoHasSearched] = useState(false);
+  // A Contact search result never carries the real email (ZoomInfo's Search
+  // API only returns a hasEmail true/false flag) — this tracks the
+  // real Enrich lookup fired when a rep picks a result to add as a lead.
+  const [revealingContactEmail, setRevealingContactEmail] = useState(false);
 
   // "Add to List" — sends the currently-selected (already status-filtered)
   // leads into a real Email Automation List (an EmailCampaign) as real
@@ -709,12 +714,38 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     if (zoomInfoMode === "companies") {
       const territory = [result.city, result.state, result.country].filter(Boolean).join(", ");
       setAddForm({ name: "", company: result.name ?? "", email: "", mobile: "", capitalAsk: "", owner: "", territory });
-    } else {
-      const name = [result.firstName, result.lastName].filter(Boolean).join(" ");
-      setAddForm({ name, company: result.company?.name ?? "", email: "", mobile: "", capitalAsk: "", owner: "", territory: "" });
+      setZoomInfoPanelOpen(false);
+      setAddModalOpen(true);
+      return;
     }
+
+    const name = [result.firstName, result.lastName].filter(Boolean).join(" ");
+    const company = result.company?.name ?? "";
+    setAddForm({ name, company, email: "", mobile: "", capitalAsk: "", owner: "", territory: "" });
     setZoomInfoPanelOpen(false);
     setAddModalOpen(true);
+
+    // The search result only ever indicated hasEmail — this fetches the
+    // real address via a real Enrich lookup, spent only for the specific
+    // contact just picked (not every row in the results list), and only
+    // worth trying if ZoomInfo indicated one exists on file.
+    if (result.hasEmail && result.firstName && result.lastName) {
+      setRevealingContactEmail(true);
+      leadsApi
+        .zoomInfoRevealContact({ firstName: result.firstName, lastName: result.lastName, companyName: company })
+        .then(({ email, mobilePhone }) => {
+          setAddForm((current) => ({
+            ...current,
+            email: email ?? current.email,
+            mobile: mobilePhone ?? current.mobile
+          }));
+        })
+        .catch(() => {
+          // Non-fatal — the form already opened with name/company filled
+          // in; the rep can type the email by hand if this lookup fails.
+        })
+        .finally(() => setRevealingContactEmail(false));
+    }
   }
 
   async function handleImportLeads() {
@@ -1454,6 +1485,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
           setForm={setAddForm}
           saving={addSaving}
           error={addError}
+          revealingContactEmail={revealingContactEmail}
           onClose={() => {
             setAddModalOpen(false);
             setAddError(null);
@@ -1587,6 +1619,13 @@ function ZoomInfoSearchPanel({
                     {result.jobTitle ? `${result.jobTitle} — ` : ""}
                     {result.company?.name ?? "Company unknown"}
                   </p>
+                  <p className="mt-1 text-[11px] text-[#9aa6ba]">
+                    {/* Search never returns the real address/number, only
+                        whether ZoomInfo has one on file — "Add as Lead"
+                        fetches the real email via a separate lookup. */}
+                    {result.hasEmail ? "✉ Email on file" : "No email on file"}
+                    {result.hasDirectPhone || result.hasMobilePhone ? " · ☎ Phone on file" : ""}
+                  </p>
                 </div>
                 <ActionButton label="Add as Lead" small onClick={() => onAddAsLead(result)} />
               </div>
@@ -1700,7 +1739,7 @@ function Header({ stats, onNewRecord, onImport, viewsOpen, setViewsOpen, statusF
   );
 }
 
-function AddLeadModal({ form, setForm, saving, error, onClose, onSave }) {
+function AddLeadModal({ form, setForm, saving, error, revealingContactEmail, onClose, onSave }) {
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === "Escape") onClose();
@@ -1731,6 +1770,9 @@ function AddLeadModal({ form, setForm, saving, error, onClose, onSave }) {
           <EditField label="Name" value={form.name} onChange={(v) => setForm((c) => ({ ...c, name: v }))} placeholder="Full name" />
           <EditField label="Company" value={form.company} onChange={(v) => setForm((c) => ({ ...c, company: v }))} />
           <EditField label="Email" value={form.email} onChange={(v) => setForm((c) => ({ ...c, email: v }))} placeholder="name@company.com" />
+          {revealingContactEmail ? (
+            <p className="text-[12px] text-[#8592ab]">Fetching this contact's real email from ZoomInfo…</p>
+          ) : null}
           <EditField label="Mobile" value={form.mobile} onChange={(v) => setForm((c) => ({ ...c, mobile: v }))} />
           <EditField label="Capital Ask" value={form.capitalAsk} onChange={(v) => setForm((c) => ({ ...c, capitalAsk: v }))} placeholder="EUR 3M" />
           <EditField label="Owner" value={form.owner} onChange={(v) => setForm((c) => ({ ...c, owner: v }))} />

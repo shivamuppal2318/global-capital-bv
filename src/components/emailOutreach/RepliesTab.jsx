@@ -194,14 +194,25 @@ function LeadDetailModal({ lead, timeline, onClose, converting, convertResult, o
 // reply-handling workflow — detection, draft, timeline, next-step
 // visualization — has its own focused screen instead of stacking under the
 // leads table.
-export function RepliesTab({ mailing, onNavigateTab }) {
+export function RepliesTab({ mailing, onNavigateTab, selectedAccountId }) {
   const {
-    repliedLeads, selectedLeadId, selectedLead, selectedLeadTimeline, loadLeadIntoWorkflow, handleDeleteLead,
+    repliedLeads: allRepliedLeads, selectedLeadId, selectedLead, selectedLeadTimeline, loadLeadIntoWorkflow, handleDeleteLead,
     automationForm, activeReplyRule, handleApplyRule, replyAction,
     handleSendNextEmail, handlePreviewTemplate, previewHtml, setPreviewHtml,
     simulateIncomingReply, workflowSteps,
     convertingLeadId, convertResults, handleConvertToLead
   } = mailing;
+
+  // Same "Choose Account" filter the Inbox table above already respects —
+  // without this, picking a specific mailbox there left this section still
+  // showing every replied lead regardless, which looked like the filter
+  // hadn't actually applied to anything. A reply with no recorded
+  // emailAccountId (from before that tracking existed, or from the inbound
+  // webhook/simulate-reply paths, neither tied to a specific mailbox) only
+  // shows under "All mailboxes", same convention as the Inbox table.
+  const repliedLeads = selectedAccountId
+    ? allRepliedLeads.filter((lead) => lead.emailAccountId === selectedAccountId)
+    : allRepliedLeads;
 
   // Just a "which row is the popup open for" flag — the popup's actual
   // content always reads from `selectedLead`/`selectedLeadTimeline` above,

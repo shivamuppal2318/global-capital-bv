@@ -256,7 +256,7 @@ export function MailboxTab({ mailing, onNavigateTab }) {
         </div>
       </div>
 
-      <RepliesTab mailing={mailing} onNavigateTab={onNavigateTab} />
+      <RepliesTab mailing={mailing} onNavigateTab={onNavigateTab} selectedAccountId={selectedAccountId} />
 
       {!emailAccounts.length ? (
         <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
