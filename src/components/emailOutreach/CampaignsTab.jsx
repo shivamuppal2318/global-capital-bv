@@ -3,6 +3,27 @@ import { ActionButton, Field } from "../ui.jsx";
 import { FunnelIcon, SendIcon, MegaphoneIcon, SearchIcon, EyeIcon, XIcon } from "../Icons.jsx";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
 import { emailTemplatesApi } from "../../lib/emailTemplatesApi.js";
+import { RichTextEditor } from "../emailTemplates/RichTextEditor.jsx";
+
+function escapeHtmlForBody(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// A saved Template's plain-text body (most of the built-in templates have
+// no `html` at all — see emailTemplates.js) has real blank lines between
+// paragraphs, but nothing that means anything once it's dumped straight
+// into an HTML field: browsers collapse consecutive whitespace, so bare
+// "\n\n" renders as a single run-on paragraph, not the separated one shown
+// while typing it in a plain textarea. Converts it into real <p>/<br> tags
+// first — same conversion server-side renderTemplate.js/leadSender.js each
+// do their own version of for the same reason.
+function plainTextBodyToHtml(text) {
+  return text
+    .split(/\n{2,}/)
+    .filter((paragraph) => paragraph.trim())
+    .map((paragraph) => `<p>${paragraph.split("\n").map(escapeHtmlForBody).join("<br>")}</p>`)
+    .join("");
+}
 
 const campaignToneClass = {
   Sending: "bg-[#dff5e7] text-[#2b9b60]",
@@ -113,7 +134,7 @@ export function CampaignsTab({ mailing }) {
     const template = templates.find((t) => t.key === key);
     if (!template) return;
     handleFormChange("subject", template.subject);
-    handleFormChange("bodyHtml", template.html || template.body);
+    handleFormChange("bodyHtml", template.html || plainTextBodyToHtml(template.body));
   }
 
   // Live warnings as the rep types — same heuristics the real send logs,
@@ -403,15 +424,16 @@ export function CampaignsTab({ mailing }) {
               </Field>
 
               <Field label="Email Content">
-                <textarea
-                  rows={9}
+                <RichTextEditor
                   value={automationForm.bodyHtml}
-                  onChange={(event) => handleFormChange("bodyHtml", event.target.value)}
-                  placeholder="<p>Hi {{leadName}},</p><p>...</p>"
-                  className="w-full resize-none rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[13px] font-mono leading-5 text-[#435471] outline-none"
+                  onChange={(html) => handleFormChange("bodyHtml", html)}
+                  placeholder="Hi {{leadName}}, ..."
                 />
                 <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
-                  Raw HTML. Merge tags: <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{leadName}}"}</code>{" "}
+                  Format with the toolbar, or click the HTML button to edit raw HTML. Select text and use the link
+                  button to turn it into a real clickable link (e.g. for {"{{unsubscribeUrl}}"} — pasting the merge
+                  tag as plain text sends a bare URL, not a link). Merge tags:{" "}
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{leadName}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{firstName}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{company}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{email}}"}</code>{" "}

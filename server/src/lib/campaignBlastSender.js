@@ -62,7 +62,17 @@ export async function sendCampaignBlastEmail(leadId, campaignId) {
   const unsubscribeUrl = unsubscribeUrlFor(lead.id);
   const mergeFields = { leadName: lead.name, firstName: firstNameOf(lead.name), company: lead.company, email: lead.email, unsubscribeUrl };
   const subject = fillMergeFields(campaign.subject, mergeFields);
-  const bodyHtml = fillMergeFields(campaign.bodyHtml, mergeFields);
+  let bodyHtml = fillMergeFields(campaign.bodyHtml, mergeFields);
+  // A campaign's raw composed HTML has no branded wrapper/footer the way a
+  // Template-based send does (see renderTemplate.js's wrapPlainTextAsHtml)
+  // — so a real clickable unsubscribe link only ever existed if the person
+  // composing it happened to wrap {{unsubscribeUrl}} in a real link
+  // themselves. Guaranteed here instead, matching what the deliverability
+  // warning below already claims ("HTML part still gets one automatically",
+  // see spamCheck.js) rather than only being true for template sends.
+  if (!bodyHtml.includes(`href="${unsubscribeUrl}"`)) {
+    bodyHtml += `<p style="margin:24px 0 0;font-size:12px;color:#9aa6ba;">Unsubscribe: <a href="${unsubscribeUrl}" style="color:#9aa6ba;">click here</a></p>`;
+  }
   const warnings = checkSpamSignals({ subject, body: bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() });
 
   // The activity row has to exist before sending — open/click tracking
