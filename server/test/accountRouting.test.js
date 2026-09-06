@@ -64,3 +64,27 @@ test("matches country case-insensitively via the query filter", async () => {
   assert.equal(getCapturedArgs().where.country.mode, "insensitive");
   assert.equal(getCapturedArgs().where.isActive, true);
 });
+
+// Without this scoping, a Channel Partner's campaign could route through a
+// completely different partner's (or a staff member's own) connected
+// mailbox just because it happened to share a country tag — a real
+// cross-tenant leak, not just a wrong "from" address.
+test("scopes the country match to the campaign's own channel partner for a partner-owned campaign", async () => {
+  const { client, getCapturedArgs } = fakeClient({ id: "acct-in", country: "IN", ownerChannelPartnerId: "partner-1" });
+  const lead = { country: "IN" };
+  const campaign = { ownerChannelPartnerId: "partner-1", emailAccount: null };
+
+  await resolveEmailAccount(lead, campaign, client);
+
+  assert.equal(getCapturedArgs().where.ownerChannelPartnerId, "partner-1");
+});
+
+test("scopes the country match to non-partner mailboxes for a staff/admin-owned campaign", async () => {
+  const { client, getCapturedArgs } = fakeClient({ id: "acct-in", country: "IN" });
+  const lead = { country: "IN" };
+  const campaign = { emailAccount: null }; // no ownerChannelPartnerId -- staff/admin-owned
+
+  await resolveEmailAccount(lead, campaign, client);
+
+  assert.equal(getCapturedArgs().where.ownerChannelPartnerId, null);
+});

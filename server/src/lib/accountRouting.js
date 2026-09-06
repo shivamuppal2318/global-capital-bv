@@ -16,8 +16,21 @@ import { prisma } from "./prisma.js";
 // model delegates.
 export async function resolveEmailAccount(lead, campaign, client = prisma) {
   if (lead.country) {
+    // Scoped to the campaign's own owner boundary — without this, the
+    // country match searched every mailbox in the system regardless of who
+    // configured it. A Channel Partner's campaign could end up sending
+    // through a completely different partner's (or a staff member's own)
+    // connected mailbox just because it happened to share a country tag,
+    // and a staff/admin campaign could just as easily route through a
+    // partner's mailbox instead. Each side only ever matches within its own
+    // boundary: a partner's campaign only matches that same partner's own
+    // mailboxes; a staff/admin campaign only matches non-partner mailboxes
+    // (the shared company one, or any employee's own).
+    const ownerFilter = campaign?.ownerChannelPartnerId
+      ? { ownerChannelPartnerId: campaign.ownerChannelPartnerId }
+      : { ownerChannelPartnerId: null };
     const match = await client.emailAccount.findFirst({
-      where: { isActive: true, country: { equals: lead.country, mode: "insensitive" } },
+      where: { isActive: true, country: { equals: lead.country, mode: "insensitive" }, ...ownerFilter },
       orderBy: { updatedAt: "desc" }
     });
     if (match) {
