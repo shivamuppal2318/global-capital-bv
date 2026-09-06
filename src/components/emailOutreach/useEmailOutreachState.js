@@ -1141,16 +1141,6 @@ export function useEmailOutreachState({ demoData = true } = {}) {
         ...(current[selectedLead.id] ?? [])
       ]
     }));
-    setCampaigns((current) =>
-      current.map((campaign) =>
-        campaign.name === selectedLead.campaign
-          ? {
-              ...campaign,
-              reply: `${Math.min(15, Number.parseInt(campaign.reply, 10) + 1)}%`
-            }
-          : campaign
-      )
-    );
   }
 
   async function handlePreviewTemplate() {

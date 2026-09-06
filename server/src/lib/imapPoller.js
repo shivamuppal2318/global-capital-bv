@@ -143,15 +143,33 @@ export async function getImapStatus() {
   };
 }
 
+// Shared by every caller currently in flight — the automatic interval tick
+// and a manual "Fetch Now" click can genuinely overlap (a slow IMAP
+// round-trip still running when the next tick or another click fires), and
+// without this both would fetch the exact same not-yet-bookmarked message
+// range (the UID bookmark only advances at the very end of pollOnce) and
+// both would call recordReply for it, sending the same real auto-response
+// email to a lead twice. A concurrent call just awaits the same run instead
+// of starting a second one.
+let pollInFlight = null;
+
 async function pollAndRecord() {
-  try {
-    const { processedCount, perAccount } = await pollOnce();
-    lastPollResult = { at: new Date().toISOString(), processedCount, error: null, perAccount };
-    return { processedCount, perAccount };
-  } catch (err) {
-    lastPollResult = { at: new Date().toISOString(), processedCount: 0, error: err.message, perAccount: [] };
-    throw err;
+  if (pollInFlight) {
+    return pollInFlight;
   }
+  pollInFlight = (async () => {
+    try {
+      const { processedCount, perAccount } = await pollOnce();
+      lastPollResult = { at: new Date().toISOString(), processedCount, error: null, perAccount };
+      return { processedCount, perAccount };
+    } catch (err) {
+      lastPollResult = { at: new Date().toISOString(), processedCount: 0, error: err.message, perAccount: [] };
+      throw err;
+    } finally {
+      pollInFlight = null;
+    }
+  })();
+  return pollInFlight;
 }
 
 // The real action behind the Mailbox tab's "Fetch Now" button — previously
