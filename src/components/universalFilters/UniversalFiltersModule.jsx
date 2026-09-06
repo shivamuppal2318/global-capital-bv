@@ -76,7 +76,6 @@ const EMPTY_FILTERS = {
   leadId: "",
   channelPartner: "",
   doe: "",
-  owner: "",
   timeFrom: "",
   timeTo: "",
   lifecyclePhase: "",
@@ -172,7 +171,6 @@ export function UniversalFiltersModule() {
     [facets]
   );
   const doeOptions = useMemo(() => asOptions(facets?.does ?? []), [facets]);
-  const ownerOptions = useMemo(() => asOptions(facets?.owners ?? []), [facets]);
   const channelPartnerOptions = useMemo(() => asOptions(facets?.channelPartners ?? []), [facets]);
   const industryOptions = useMemo(() => asOptions(facets?.industries ?? []), [facets]);
   const geographyOptions = useMemo(() => asOptions(facets?.geographies ?? []), [facets]);
@@ -212,10 +210,6 @@ export function UniversalFiltersModule() {
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <FilterCard icon={UserCheckIcon} label="DOE (Deal Originator Executive)">
             <Select label="" value={filters.doe} onChange={set("doe")} options={doeOptions} />
-          </FilterCard>
-
-          <FilterCard icon={UserCheckIcon} label="Owner (Employee)">
-            <Select label="" value={filters.owner} onChange={set("owner")} options={ownerOptions} />
           </FilterCard>
 
           <FilterCard icon={UsersIcon} label="Lead">

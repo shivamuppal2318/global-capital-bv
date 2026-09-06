@@ -127,7 +127,6 @@ export function matchesFilters(row, filters = {}) {
   if (f.dueWindow && row.dueWindow !== f.dueWindow) return false;
 
   if (f.doe && row.doe !== f.doe) return false;
-  if (f.owner && row.owner !== f.owner) return false;
   if (f.timeFrom && row.createdAt < new Date(f.timeFrom)) return false;
   if (f.timeTo && row.createdAt > new Date(f.timeTo)) return false;
 
