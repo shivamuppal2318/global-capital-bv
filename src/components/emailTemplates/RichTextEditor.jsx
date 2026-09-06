@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BoldIcon, ItalicIcon, UnderlineIcon, ListIcon, LinkIcon, ImageIcon } from "../Icons.jsx";
+import { BoldIcon, ItalicIcon, UnderlineIcon, ListIcon, LinkIcon, ImageIcon, LogOutIcon } from "../Icons.jsx";
 
 const toolbarButtons = [
   { command: "bold", icon: BoldIcon, label: "Bold" },
@@ -16,7 +16,7 @@ const toolbarButtons = [
 // which template is loaded), never on every keystroke — a fully-controlled
 // contentEditable re-renders on each input and resets the cursor to the
 // start, which makes typing unusable.
-export function RichTextEditor({ value, onChange, placeholder }) {
+export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTag }) {
   const editorRef = useRef(null);
   // Seeded to a value no real `value` prop can equal (not "") so the very
   // first effect run always writes into the DOM — a freshly mounted
@@ -49,6 +49,28 @@ export function RichTextEditor({ value, onChange, placeholder }) {
     if (url) {
       runCommand("createLink", url);
     }
+  }
+
+  // One click, no typing — the exact mistake this replaces really happened
+  // in production: someone selected the word "unsubscribe" and used the
+  // regular Insert Link button, but typed the visible word itself into the
+  // URL prompt instead of the merge tag, producing a dead <a href="unsubscribe">
+  // link (the real unsubscribe still worked because the backend appends a
+  // fallback footer link when it can't find a real one — but a dead link
+  // sitting right next to a working one looks broken to a recipient).
+  // Wraps the current selection if there is one; otherwise inserts fresh
+  // linked text at the cursor.
+  function handleInsertUnsubscribeLink() {
+    if (!unsubscribeLinkTag) return;
+    editorRef.current?.focus();
+    const selection = window.getSelection();
+    const hasSelection = selection && !selection.isCollapsed && editorRef.current?.contains(selection.anchorNode);
+    if (hasSelection) {
+      document.execCommand("createLink", false, unsubscribeLinkTag);
+    } else {
+      document.execCommand("insertHTML", false, `<a href="${unsubscribeLinkTag}">Unsubscribe</a>`);
+    }
+    emitChange();
   }
 
   function handleInsertImage() {
@@ -92,6 +114,18 @@ export function RichTextEditor({ value, onChange, placeholder }) {
         >
           <LinkIcon className="size-4" />
         </button>
+        {unsubscribeLinkTag ? (
+          <button
+            type="button"
+            title="Insert unsubscribe link (select text first, or inserts fresh)"
+            aria-label="Insert unsubscribe link"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={handleInsertUnsubscribeLink}
+            className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2]"
+          >
+            <LogOutIcon className="size-4" />
+          </button>
+        ) : null}
         <button
           type="button"
           title="Insert image"

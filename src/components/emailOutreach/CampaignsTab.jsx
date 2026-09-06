@@ -438,11 +438,13 @@ export function CampaignsTab({ mailing }) {
                   value={automationForm.bodyHtml}
                   onChange={(html) => handleFormChange("bodyHtml", html)}
                   placeholder="Hi {{leadName}}, ..."
+                  unsubscribeLinkTag="{{unsubscribeUrl}}"
                 />
                 <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
-                  Format with the toolbar, or click the HTML button to edit raw HTML. Select text and use the link
-                  button to turn it into a real clickable link (e.g. for {"{{unsubscribeUrl}}"} — pasting the merge
-                  tag as plain text sends a bare URL, not a link). Merge tags:{" "}
+                  Format with the toolbar, or click the HTML button to edit raw HTML. Use the sign-out-shaped button
+                  to insert a working Unsubscribe link in one click (select text first to relink it, e.g. the word
+                  "unsubscribe") — typing the merge tag itself into the regular link button's prompt makes a dead
+                  link, not a working one. Merge tags:{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{leadName}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{firstName}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{company}}"}</code>{" "}

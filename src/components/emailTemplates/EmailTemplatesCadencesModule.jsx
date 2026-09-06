@@ -152,9 +152,12 @@ export function EmailTemplatesCadencesModule() {
                 value={form.html}
                 onChange={(html) => handleFormChange("html", html)}
                 placeholder="Compose the template body here. Merge fields like {{leadName}}, {{company}}, and {{unsubscribeUrl}} can be used."
+                unsubscribeLinkTag="{{unsubscribeUrl}}"
               />
               <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
-                Format with the toolbar, or click the HTML button to edit raw HTML. Merge tags: {"{{leadName}}"},
+                Format with the toolbar, or click the HTML button to edit raw HTML. Use the sign-out-shaped button to
+                insert a working Unsubscribe link in one click — typing the merge tag into the regular link button's
+                prompt makes a dead link, not a working one. Merge tags: {"{{leadName}}"},
                 {"{{firstName}}"}, {"{{company}}"}, {"{{unsubscribeUrl}}"}, {"{{ndaSignUrl}}"}
               </p>
             </label>
