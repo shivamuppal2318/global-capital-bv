@@ -35,8 +35,17 @@ const TARGETS = {
 
 outreachDoeRouter.get("/facets", blockChannelPartner, asyncHandler(async (_req, res) => {
   const leads = await prisma.emailLead.findMany({ select: { owner: true, country: true } });
+
+  // A real employee (Admin Panel -> Employees) should be pickable here even
+  // before they've been set as the owner on any EmailLead -- same reasoning
+  // and pattern as Universal Filters' own DOE facet (routes/universalFilters.js).
+  // blockChannelPartner above already refuses this whole route for a
+  // Channel Partner, so no extra guard is needed here.
+  const employees = await prisma.user.findMany({ select: { name: true } });
+  const does = [...new Set([...leads.map((l) => l.owner).filter(Boolean), ...employees.map((e) => e.name)])].sort();
+
   res.json({
-    does: [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort(),
+    does,
     geographies: [...new Set(leads.map((l) => l.country).filter(Boolean))].sort(),
     // Real CRM Lead attributes (see the "/" handler's convertedLeadById
     // note), same fixed option lists Universal Filters already uses —
