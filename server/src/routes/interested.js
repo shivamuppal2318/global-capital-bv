@@ -81,6 +81,25 @@ interestedRouter.get("/:leadId/:token", requireValidToken, asyncHandler(async (r
     })));
   }
 
+  // Idempotent — this link can genuinely get loaded more than once (a real
+  // double-click, a page refresh, or an email client's own link-safety
+  // prescanner silently fetching it before a person ever sees it), and none
+  // of those should trigger a second real "zoom-request" send to the same
+  // lead. Without this, every extra load resent the same email — confirmed
+  // happening in production (two real sends 7 seconds apart to one lead).
+  const alreadyClicked = await prisma.emailActivityLog.findFirst({
+    where: { leadId: lead.id, kind: "LINK_CLICKED", title: "Clicked \"I'm Interested\"" }
+  });
+  if (alreadyClicked) {
+    return res.send(pageShell(noticeCard({
+      icon: "✓",
+      iconBg: "#dff5e7",
+      iconColor: "#2b9b60",
+      title: "Already noted",
+      body: "We already have your interest on file — no need to click again. Check your inbox for the scheduling email we sent."
+    })));
+  }
+
   await prisma.emailActivityLog.create({
     data: { leadId: lead.id, kind: "LINK_CLICKED", title: "Clicked \"I'm Interested\"", detail: "Marked as interested via the one-click button." }
   });
