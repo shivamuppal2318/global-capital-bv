@@ -9,7 +9,7 @@ import { plainTextToHtml } from "../lib/leadSender.js";
 import { computeLeadPipeline, computePipelineSummary, computeDealBoard, computeLeadTimeline } from "../lib/leadPipeline.js";
 import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
-import { getAccessToken, searchCompanies, searchContacts, enrichContactByName } from "../lib/zoominfoClient.js";
+import { getAccessToken, searchCompanies, searchContacts, enrichContactByName, getZoomInfoCountries, getZoomInfoStates } from "../lib/zoominfoClient.js";
 import {
   lookupLeadInZoomInfo,
   hasAnyZoomInfoMatch,
@@ -148,6 +148,30 @@ router.post("/zoominfo-search/reveal-contact", blockChannelPartner, async (req, 
     const token = await getAccessToken(credentials);
     const attributes = await enrichContactByName({ token, fullName: `${firstName} ${lastName}`, companyName });
     res.json({ email: attributes?.email ?? null, mobilePhone: attributes?.mobilePhone ?? null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// The country/state search filters above only accept exact values from
+// ZoomInfo's own controlled vocabulary — confirmed live: free-text like
+// "africa" 400s naming this exact endpoint as the source of truth. Backs a
+// real dropdown instead of a free-text field that can 400 on anything not
+// spelled exactly as ZoomInfo expects.
+router.get("/zoominfo-search/lookup/:field", blockChannelPartner, async (req, res, next) => {
+  try {
+    if (req.params.field !== "countries" && req.params.field !== "states") {
+      return res.status(400).json({ error: 'field must be "countries" or "states".' });
+    }
+
+    const credentials = await getZoomInfoCredentials();
+    if (!credentials) {
+      return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
+    }
+
+    const token = await getAccessToken(credentials);
+    const values = await (req.params.field === "countries" ? getZoomInfoCountries({ token }) : getZoomInfoStates({ token }));
+    res.json({ values });
   } catch (err) {
     next(err);
   }

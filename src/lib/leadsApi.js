@@ -54,5 +54,9 @@ export const leadsApi = {
   // the real address — this fetches it via a real Enrich lookup, spent only
   // for a result the rep actually picked ("Add as Lead"), not every row.
   zoomInfoRevealContact: ({ firstName, lastName, companyName }) =>
-    request("/zoominfo-search/reveal-contact", { method: "POST", body: { firstName, lastName, companyName } })
+    request("/zoominfo-search/reveal-contact", { method: "POST", body: { firstName, lastName, companyName } }),
+  // Country/state search filters only accept exact values from ZoomInfo's
+  // own controlled vocabulary (confirmed live) — this backs a real dropdown
+  // instead of a free-text field. field: "countries" | "states".
+  zoomInfoLookup: (field) => request(`/zoominfo-search/lookup/${field}`)
 };

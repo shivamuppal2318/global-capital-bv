@@ -208,6 +208,44 @@ async function runZoomInfoSearch({ token, url, type, filters, page, pageSize }) 
   };
 }
 
+// The country/state search filters (see runZoomInfoSearch above) reject
+// anything not drawn from ZoomInfo's own controlled vocabulary — confirmed
+// live: typing "africa" (a continent, not a country) into the country
+// filter 400s with "it must be a comma delimited string of Countries listed
+// in the endpoint: /lookup/countries" — this is exactly that endpoint.
+// Cached in memory (both lists are small — 216 countries, 69 states/
+// provinces — and effectively static) so picking a country/state doesn't
+// cost a real API call and a network round-trip on every panel open.
+const LOOKUP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const lookupCache = new Map();
+
+async function fetchZoomInfoLookup({ token, kind }) {
+  const cached = lookupCache.get(kind);
+  if (cached && Date.now() - cached.at < LOOKUP_CACHE_TTL_MS) {
+    return cached.values;
+  }
+
+  const response = await fetch(`https://api.zoominfo.com/gtm/data/v1/lookup/${kind}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.errors?.[0]?.detail ?? body?.detail ?? `ZoomInfo rejected the ${kind} lookup.`);
+  }
+
+  const values = (body?.data ?? []).map((item) => item.attributes?.name).filter(Boolean);
+  lookupCache.set(kind, { values, at: Date.now() });
+  return values;
+}
+
+export function getZoomInfoCountries({ token }) {
+  return fetchZoomInfoLookup({ token, kind: "countries" });
+}
+
+export function getZoomInfoStates({ token }) {
+  return fetchZoomInfoLookup({ token, kind: "states" });
+}
+
 export async function searchCompanies({ token, filters, page, pageSize }) {
   return runZoomInfoSearch({
     token,

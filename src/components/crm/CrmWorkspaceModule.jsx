@@ -585,6 +585,12 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   const [zoomInfoTotalResults, setZoomInfoTotalResults] = useState(0);
   const [zoomInfoPage, setZoomInfoPage] = useState(1);
   const [zoomInfoHasSearched, setZoomInfoHasSearched] = useState(false);
+  // Country/state only accept exact values from ZoomInfo's own controlled
+  // vocabulary (confirmed live — free text like "africa" 400s naming
+  // GET /lookup/countries as the source of truth), so these back real
+  // dropdowns instead. Loaded once, lazily, the first time the panel opens.
+  const [zoomInfoCountries, setZoomInfoCountries] = useState([]);
+  const [zoomInfoStates, setZoomInfoStates] = useState([]);
   // A Contact search result never carries the real email (ZoomInfo's Search
   // API only returns a hasEmail true/false flag) — this tracks the
   // real Enrich lookup fired when a rep picks a result to add as a lead.
@@ -616,6 +622,14 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   useEffect(() => {
     universalFiltersApi.facets().then(setFacets).catch(() => {});
   }, []);
+
+  // Lazily, once — no point spending a ZoomInfo call before the panel is
+  // ever opened, and the lists are cached server-side afterward anyway.
+  useEffect(() => {
+    if (!zoomInfoPanelOpen || zoomInfoCountries.length || zoomInfoStates.length) return;
+    leadsApi.zoomInfoLookup("countries").then((r) => setZoomInfoCountries(r.values)).catch(() => {});
+    leadsApi.zoomInfoLookup("states").then((r) => setZoomInfoStates(r.values)).catch(() => {});
+  }, [zoomInfoPanelOpen, zoomInfoCountries.length, zoomInfoStates.length]);
 
   useEffect(() => {
     leadsApi.dealBoard().then(setDealBoard).catch(() => {});
@@ -1263,6 +1277,8 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
               hasSearched={zoomInfoHasSearched}
               onSearch={handleZoomInfoSearch}
               onAddAsLead={handleAddZoomInfoResultAsLead}
+              countries={zoomInfoCountries}
+              states={zoomInfoStates}
             />
           </div>
         ) : null}
@@ -1539,9 +1555,32 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
 // the existing New Record modal for the rep to review and save.
 function ZoomInfoSearchPanel({
   mode, setMode, companyFilters, setCompanyFilters, contactFilters, setContactFilters,
-  searching, error, results, totalResults, page, hasSearched, onSearch, onAddAsLead
+  searching, error, results, totalResults, page, hasSearched, onSearch, onAddAsLead,
+  countries, states
 }) {
   const hasMore = page * 25 < totalResults;
+
+  // A plain <select> (not a free-text field) — ZoomInfo's own API rejects
+  // anything not drawn from its controlled vocabulary (confirmed live: a
+  // free-text "africa" 400s naming GET /lookup/countries as the source of
+  // truth), so only real values are ever offered.
+  function LookupSelect({ label, value, onChange, options, placeholder }) {
+    return (
+      <label className="block">
+        <p className="mb-1.5 text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">{label}</p>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] text-[#102246] outline-none"
+        >
+          <option value="">{placeholder ?? `Any ${label.toLowerCase()}`}</option>
+          {options.map((name) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+      </label>
+    );
+  }
 
   return (
     <div>
@@ -1576,8 +1615,8 @@ function ZoomInfoSearchPanel({
           <EditField label="Employees max" value={companyFilters.employeeRangeMax} onChange={(v) => setCompanyFilters((c) => ({ ...c, employeeRangeMax: v }))} placeholder="e.g. 500" />
           <EditField label="Revenue min (USD)" value={companyFilters.revenueMin} onChange={(v) => setCompanyFilters((c) => ({ ...c, revenueMin: v }))} placeholder="e.g. 1000000" />
           <EditField label="Revenue max (USD)" value={companyFilters.revenueMax} onChange={(v) => setCompanyFilters((c) => ({ ...c, revenueMax: v }))} placeholder="e.g. 50000000" />
-          <EditField label="State" value={companyFilters.state} onChange={(v) => setCompanyFilters((c) => ({ ...c, state: v }))} placeholder="e.g. CA" />
-          <EditField label="Country" value={companyFilters.country} onChange={(v) => setCompanyFilters((c) => ({ ...c, country: v }))} placeholder="e.g. United States" />
+          <LookupSelect label="State" value={companyFilters.state} onChange={(v) => setCompanyFilters((c) => ({ ...c, state: v }))} options={states} />
+          <LookupSelect label="Country" value={companyFilters.country} onChange={(v) => setCompanyFilters((c) => ({ ...c, country: v }))} options={countries} />
         </div>
       ) : (
         <div className="mt-4 space-y-3">
@@ -1587,8 +1626,8 @@ function ZoomInfoSearchPanel({
             <EditField label="Company Name" value={contactFilters.companyName} onChange={(v) => setContactFilters((c) => ({ ...c, companyName: v }))} placeholder="e.g. Salesforce" />
             <EditField label="First Name" value={contactFilters.firstName} onChange={(v) => setContactFilters((c) => ({ ...c, firstName: v }))} placeholder="e.g. Marc" />
             <EditField label="Last Name" value={contactFilters.lastName} onChange={(v) => setContactFilters((c) => ({ ...c, lastName: v }))} placeholder="e.g. Benioff" />
-            <EditField label="State" value={contactFilters.state} onChange={(v) => setContactFilters((c) => ({ ...c, state: v }))} placeholder="e.g. CA" />
-            <EditField label="Country" value={contactFilters.country} onChange={(v) => setContactFilters((c) => ({ ...c, country: v }))} placeholder="e.g. United States" />
+            <LookupSelect label="State" value={contactFilters.state} onChange={(v) => setContactFilters((c) => ({ ...c, state: v }))} options={states} />
+            <LookupSelect label="Country" value={contactFilters.country} onChange={(v) => setContactFilters((c) => ({ ...c, country: v }))} options={countries} />
           </div>
           <div>
             <p className="mb-1.5 text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Management Level</p>
