@@ -1,4 +1,6 @@
 import { Router } from "express";
+import multer from "multer";
+import path from "node:path";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
@@ -7,6 +9,8 @@ import { hashPassword } from "../lib/auth.js";
 import { channelPartnerAgreementFillFormFragment } from "../lib/signedDocumentRenderer.js";
 import { LOGO_DATA_URI } from "../lib/brandLogo.js";
 import { CHANNEL_PARTNER_OPTIONAL_MODULE_IDS } from "../lib/channelPartnerPermissions.js";
+import { upload, UPLOAD_DIR, MAX_FILE_BYTES } from "../lib/fileUpload.js";
+import { extractText } from "../lib/documentText.js";
 
 export const channelPartnerAgreementRouter = Router();
 
@@ -134,6 +138,7 @@ channelPartnerAgreementRouter.get("/:partnerId/:token", requireValidToken, async
   const agreementDocHtml = await channelPartnerAgreementFillFormFragment(partner);
 
   const signError = req.query.error ? String(req.query.error) : null;
+  const uploadError = req.query.uploadError ? String(req.query.uploadError) : null;
 
   const inputStyle =
     "display:block;margin-top:6px;width:100%;padding:10px 12px;border:1px solid #d6deea;border-radius:10px;box-sizing:border-box;font-size:14px;color:#102246;font-family:inherit;";
@@ -179,6 +184,44 @@ channelPartnerAgreementRouter.get("/:partnerId/:token", requireValidToken, async
           Sign Agreement &amp; Create Portal Account
         </button>
       </form>
+
+      <div style="border-top:1px solid #e7edf5;margin-top:28px;padding-top:20px;">
+        <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#102246;">Prefer to sign by hand?</p>
+        <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#8592ab;">
+          Option 2 — print or save this page as a PDF, sign it by hand, then upload the scanned/photographed copy
+          below instead of using the form above. Your portal login is still created from the details you enter here.
+        </p>
+
+        ${uploadError ? `<p style="background:#fdeceb;color:#e0483f;font-size:13px;font-weight:500;padding:10px 14px;border-radius:10px;margin:0 0 16px;">${escapeHtml(uploadError)}</p>` : ""}
+
+        <form method="POST" action="/api/channel-partner-agreement/${partner.id}/${req.params.token}/upload" enctype="multipart/form-data">
+          <label style="${labelStyle}">
+            Type your full name
+            <input name="fullName" required style="${inputStyle}font-weight:400;" />
+          </label>
+          <label style="${labelStyle}">
+            Email
+            <input type="email" name="email" required style="${inputStyle}font-weight:400;" placeholder="you@partner.com" />
+          </label>
+          <label style="${labelStyle}">
+            Password (at least 8 characters)
+            <input type="password" name="password" required minlength="8" style="${inputStyle}font-weight:400;" placeholder="••••••••" />
+          </label>
+          <label style="${labelStyle}">
+            Signed agreement file
+            <input
+              type="file"
+              name="file"
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+              required
+              style="display:block;margin-top:6px;width:100%;font-size:13px;color:#334463;"
+            />
+          </label>
+          <button type="submit" style="width:100%;background:#fff;color:#1b295f;border:1.5px solid #1b295f;border-radius:12px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;margin-top:6px;">
+            Upload Signed Copy &amp; Create Portal Account
+          </button>
+        </form>
+      </div>
     `)
   );
 }));
@@ -291,3 +334,142 @@ channelPartnerAgreementRouter.post("/:partnerId/:token", requireValidToken, asyn
     )
   );
 }));
+
+// --- Upload a signed copy (alternative to filling in the blanks online) ---
+//
+// Same idea as the client portal's NDA/IOI upload (routes/clientPortal.js) —
+// a partner who'd rather print, sign by hand, and scan the agreement than
+// type into the form above can upload that scan/photo instead. Unlike the
+// client portal's version, this partner has no account yet, so the same
+// fullName/email/password fields the fill-in-the-blanks path collects are
+// still required here — uploading a copy replaces the "fill in the
+// agreement + checkbox" step, not the portal-account-creation step.
+function runUpload(req, res) {
+  return new Promise((resolve, reject) => {
+    upload.single("file")(req, res, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
+const uploadSignSchema = z.object({
+  fullName: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(8)
+});
+
+channelPartnerAgreementRouter.post(
+  "/:partnerId/:token/upload",
+  requireValidToken,
+  asyncHandler(async (req, res) => {
+    const redirectWithError = (message) =>
+      res.redirect(
+        `/api/channel-partner-agreement/${req.params.partnerId}/${req.params.token}?uploadError=${encodeURIComponent(message)}`
+      );
+
+    const partner = await prisma.channelPartner.findUnique({ where: { id: req.params.partnerId } });
+    if (!partner) {
+      return res.status(404).send(unknownRecipientNotice());
+    }
+    if (partner.agreementSignedAt) {
+      return res.send(
+        pageShell(
+          noticeCard({
+            icon: "✓",
+            iconBg: "#dff5e7",
+            iconColor: "#2b9b60",
+            title: "Already signed",
+            body: "This Channel Partner Agreement has already been signed. No further action is needed."
+          })
+        )
+      );
+    }
+
+    try {
+      await runUpload(req, res);
+    } catch (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? `That file is too large. The limit is ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`
+          : "Could not upload that file. Try again.";
+      return redirectWithError(message);
+    }
+
+    if (!req.file) {
+      return redirectWithError("Choose a file to upload.");
+    }
+
+    const parsed = uploadSignSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const message = parsed.error.issues.some((i) => i.path[0] === "password")
+        ? "Password must be at least 8 characters."
+        : parsed.error.issues.some((i) => i.path[0] === "email")
+          ? "Enter a valid email address."
+          : "Enter your full name.";
+      return redirectWithError(message);
+    }
+
+    const emailTaken = await prisma.channelPartnerUser.findUnique({ where: { email: parsed.data.email } });
+    if (emailTaken) {
+      return redirectWithError("That email is already registered to a portal account.");
+    }
+
+    const filePath = path.join(UPLOAD_DIR, req.file.filename);
+    // Extraction failures are captured as a note rather than thrown — a
+    // scanned PDF or a photo of a signature page should still upload fine.
+    const { text, note } = await extractText(filePath, req.file.mimetype, req.file.originalname);
+
+    const ip = (req.headers["x-forwarded-for"]?.toString().split(",")[0] ?? req.socket.remoteAddress ?? "unknown").trim();
+    const signedAt = new Date();
+    const passwordHash = await hashPassword(parsed.data.password);
+
+    // leadId stays null — this document belongs to a Channel Partner, not a
+    // deal's Data Room — and ChannelPartner.agreementDocumentId is what
+    // actually links it back (see routes/channelPartners.js's staff-facing
+    // download).
+    const doc = await prisma.document.create({
+      data: {
+        originalName: req.file.originalname,
+        storedName: req.file.filename,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        category: "Channel Partner Agreement",
+        description: `Uploaded by ${parsed.data.fullName} via the Channel Partner Agreement signing page`,
+        extractedText: text,
+        extractionNote: note
+      }
+    });
+
+    await prisma.$transaction([
+      prisma.channelPartner.update({
+        where: { id: partner.id },
+        data: {
+          agreementSignedAt: signedAt,
+          agreementSignedName: parsed.data.fullName,
+          agreementSignedIp: ip,
+          agreementDocumentId: doc.id
+        }
+      }),
+      prisma.channelPartnerUser.create({
+        data: {
+          channelPartnerId: partner.id,
+          name: parsed.data.fullName,
+          email: parsed.data.email,
+          passwordHash,
+          permissions: CHANNEL_PARTNER_OPTIONAL_MODULE_IDS
+        }
+      })
+    ]);
+
+    res.send(
+      pageShell(
+        noticeCard({
+          icon: "✓",
+          iconBg: "#dff5e7",
+          iconColor: "#2b9b60",
+          title: "You're all set",
+          body: `Thanks, ${escapeHtml(parsed.data.fullName)} — your signed Channel Partner Agreement has been recorded and your portal account is ready.
+            <a href="/partner/login" style="display:inline-block;margin-top:20px;background:#1b295f;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 24px;border-radius:12px;">Log in to the Channel Partner Portal →</a>`
+        })
+      )
+    );
+  })
+);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { channelPartnersApi } from "../../lib/relationshipsApi";
+import { documentsApi } from "../../lib/documentsApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
 import { CheckCircleIcon, CopyIcon, LinkIcon, PlusIcon, SearchIcon, XIcon } from "../Icons";
 
@@ -172,6 +173,22 @@ export function ChannelPartnerModule() {
 
   async function handleCopyAgreementLink() {
     setLinkCopied(await copyToClipboard(agreementLinkUrl));
+  }
+
+  // Only set when the partner chose "upload your own signed copy" instead
+  // of filling in the blanks online (see routes/channelPartnerAgreement.js's
+  // upload route) — nothing to download for the fill-in-the-blanks path,
+  // since there's no separate file, just the recorded fields themselves.
+  async function handleDownloadAgreementDocument(partner) {
+    try {
+      await documentsApi.open(
+        { id: partner.agreementDocumentId, originalName: `${partner.name} - Signed Channel Partner Agreement` },
+        { download: true }
+      );
+    } catch (err) {
+      setAgreementNotice(err.message);
+      setAgreementNoticeId(partner.id);
+    }
   }
 
   useEffect(() => {
@@ -489,6 +506,9 @@ export function ChannelPartnerModule() {
                   onClick={() => handleGetAgreementLink(p)}
                   disabled={agreementBusyId === p.id}
                 />
+                {p.agreementDocumentId ? (
+                  <ActionButton small label="Download signed copy" onClick={() => handleDownloadAgreementDocument(p)} />
+                ) : null}
                 <ActionButton small label={activityOpenId === p.id ? "Hide portal activity" : "Portal activity"} onClick={() => toggleActivity(p)} />
                 <ActionButton small label="Delete" onClick={() => remove(p)} disabled={busyId === p.id} />
               </div>

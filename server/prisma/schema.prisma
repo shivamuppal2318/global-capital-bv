@@ -280,10 +280,11 @@ model Document {
   verifiedBy   User?     @relation("DocumentVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
   verifiedById String?
 
-  dealStages   DealStageRecord[]
-  ndaDocuments NdaRecord[] @relation("NdaDocument")
-  visitReports VisitPlan[] @relation("VisitReport")
-  ioiDocuments IoiRecord[] @relation("IoiDocument")
+  dealStages              DealStageRecord[]
+  ndaDocuments            NdaRecord[]      @relation("NdaDocument")
+  visitReports            VisitPlan[]      @relation("VisitReport")
+  ioiDocuments            IoiRecord[]      @relation("IoiDocument")
+  channelPartnerAgreement ChannelPartner[] @relation("ChannelPartnerAgreementDocument")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -589,6 +590,13 @@ model ChannelPartner {
   // that.
   agreementAddress         String?
   agreementPaymentSchedule String?
+
+  // Set only when the partner chose "upload your own signed copy" instead
+  // of filling in the blanks online (see routes/channelPartnerAgreement.js's
+  // upload route) — null for the fill-in-the-blanks path, same as
+  // NdaRecord.documentId's own null-means-clickwrap-not-upload convention.
+  agreementDocument   Document? @relation("ChannelPartnerAgreementDocument", fields: [agreementDocumentId], references: [id], onDelete: SetNull)
+  agreementDocumentId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
