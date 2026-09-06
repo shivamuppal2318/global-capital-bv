@@ -47,7 +47,8 @@ async function resolveWatchedAccounts() {
         port: Number(process.env.IMAP_PORT ?? 993),
         secure: process.env.IMAP_SECURE !== "false",
         user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
+        pass: process.env.SMTP_PASS,
+        ownerChannelPartnerId: null
       }
     ];
   }
@@ -60,7 +61,8 @@ async function resolveWatchedAccounts() {
     port: 993,
     secure: true,
     user: account.smtpUser,
-    pass: decryptSecret(account.smtpPassEncrypted)
+    pass: decryptSecret(account.smtpPassEncrypted),
+    ownerChannelPartnerId: account.ownerChannelPartnerId
   }));
 }
 
@@ -294,7 +296,24 @@ async function pollAccount(account) {
         const textBody = parsed.text ?? "";
 
         if (fromEmail && textBody) {
-          const lead = await prisma.emailLead.findFirst({ where: { email: fromEmail } });
+          // EmailLead.email has no unique constraint — the same address can
+          // genuinely exist as a lead in more than one campaign, including
+          // across different owners (a Channel Partner's own campaign and a
+          // staff one, or two different partners'). Scoped to the SAME
+          // owner boundary as the mailbox actually being polled — without
+          // this, a reply landing in one partner's own mailbox could get
+          // recorded against a completely different partner's (or staff's)
+          // lead, leaking that reply's real content into the wrong owner's
+          // data and firing an auto-response from the wrong campaign/mailbox
+          // entirely.
+          const lead = await prisma.emailLead.findFirst({
+            where: {
+              email: fromEmail,
+              campaign: account.ownerChannelPartnerId
+                ? { ownerChannelPartnerId: account.ownerChannelPartnerId }
+                : { ownerChannelPartnerId: null }
+            }
+          });
           if (lead) {
             // account.id is the synthetic string "env" for an env-var-configured
             // mailbox (see resolveWatchedAccounts) rather than a real
