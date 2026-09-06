@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionButton, Field } from "../ui.jsx";
 import { FunnelIcon, SendIcon, MegaphoneIcon, SearchIcon, EyeIcon, XIcon } from "../Icons.jsx";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
+import { emailTemplatesApi } from "../../lib/emailTemplatesApi.js";
 
 const campaignToneClass = {
   Sending: "bg-[#dff5e7] text-[#2b9b60]",
@@ -92,6 +93,28 @@ export function CampaignsTab({ mailing }) {
   const [viewMode, setViewMode] = useState("list");
   const [searchText, setSearchText] = useState("");
   const [blastPreviewHtml, setBlastPreviewHtml] = useState(null);
+
+  // Real saved Templates (Templates tab, server/src/routes/emailTemplates.js)
+  // — loaded here so a rep can pick one and have its real subject/HTML
+  // dropped straight into this campaign's own Subject/Email Content fields,
+  // instead of retyping content that already exists in the Templates
+  // library. Not a persistent link: picking one just copies its current
+  // content in once, same as pasting.
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState("");
+
+  useEffect(() => {
+    emailTemplatesApi.list().then(setTemplates).catch(() => setTemplates([]));
+  }, []);
+
+  function handleSelectTemplate(key) {
+    setSelectedTemplateKey(key);
+    if (!key) return;
+    const template = templates.find((t) => t.key === key);
+    if (!template) return;
+    handleFormChange("subject", template.subject);
+    handleFormChange("bodyHtml", template.html || template.body);
+  }
 
   // Live warnings as the rep types — same heuristics the real send logs,
   // surfaced before Send Now instead of only discoverable afterward.
@@ -330,6 +353,25 @@ export function CampaignsTab({ mailing }) {
                   onChange={(event) => handleFormChange("campaignName", event.target.value)}
                   className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none"
                 />
+              </Field>
+
+              <Field label="Select Template">
+                <select
+                  value={selectedTemplateKey}
+                  onChange={(event) => handleSelectTemplate(event.target.value)}
+                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                >
+                  <option value="">Choose a saved template to fill in Subject/Email Content below…</option>
+                  {templates.map((template) => (
+                    <option key={template.key} value={template.key}>
+                      {template.key} — {template.subject}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                  Pulled from the Templates tab. Picking one copies its subject and HTML content into this campaign
+                  — edit freely afterward, it does not stay linked.
+                </p>
               </Field>
 
               <Field label="Template Label">
