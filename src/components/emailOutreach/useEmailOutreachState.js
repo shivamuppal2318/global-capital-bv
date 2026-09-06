@@ -761,9 +761,10 @@ export function useEmailOutreachState({ demoData = true } = {}) {
   // One click, straight to the backend: parses the pasted CSV client-side,
   // cross-checks each row's email against leads already loaded for this
   // campaign (allLeads) and the rest of the pasted batch to skip obvious
-  // duplicates without a wasted API call, DNS-checks whatever's left, then
-  // imports immediately — no separate "preview" click in between, so the
-  // Subscribers list on the right updates as soon as this finishes.
+  // duplicates without a wasted API call, then imports everything else
+  // immediately (no deliverability gate — see POST /bulk) — no separate
+  // "preview" click in between, so the Subscribers list on the right
+  // updates as soon as this finishes.
   async function handleImportCsv() {
     if (!csvText.trim()) {
       setAutomationNotice("Choose a CSV file first.");
@@ -793,45 +794,21 @@ export function useEmailOutreachState({ demoData = true } = {}) {
 
     setCsvImportBusy(true);
     try {
-      // Format/duplicate checks above are instant and local; a real
-      // deliverability check (DNS MX/A/AAAA lookup) needs the backend, so it
-      // only runs for rows that passed those free checks — no point
-      // DNS-checking an email that's already going to be skipped as a
-      // duplicate.
-      let readyRows = candidateRows;
-      if (candidateRows.length > 0) {
-        try {
-          const { results } = await emailLeadsApi.validateEmails(candidateRows.map((row) => row.email));
-          const deliverabilityByEmail = new Map(results.map((result) => [result.email.toLowerCase(), result]));
-          readyRows = candidateRows.filter((row) => {
-            const deliverability = deliverabilityByEmail.get(row.email.toLowerCase());
-            const ok = !deliverability || deliverability.valid;
-            if (!ok) invalidCount += 1;
-            return ok;
-          });
-        } catch {
-          // Deliverability check itself failed (backend unreachable, etc.) —
-          // import the format/duplicate-clean rows anyway rather than
-          // blocking the whole thing on one extra check; the bulk-create
-          // call below re-validates independently regardless.
-        }
-      }
-
-      if (readyRows.length === 0) {
+      // No deliverability (DNS MX/A/AAAA) gate here or on the backend's
+      // POST /bulk — every syntactically-valid, non-duplicate row goes
+      // through. invalidCount below only ever counts rows the CSV parser
+      // itself couldn't read (missing a required column), not DNS lookups.
+      if (candidateRows.length === 0) {
         setAutomationNotice(
           `Nothing to import — ${duplicateCount} duplicate(s) and ${invalidCount} invalid row(s) out of ${rows.length + errors.length}.`
         );
         return;
       }
 
-      const importRows = readyRows.map(({ name, company, email, owner, country }) => ({ name, company, email, owner, country: country || null }));
+      const importRows = candidateRows.map(({ name, company, email, owner, country }) => ({ name, company, email, owner, country: country || null }));
       const result = await emailLeadsApi.bulkCreate(selectedCampaign.id, importRows);
       const duplicateNote = duplicateCount || result.duplicateCount ? `, ${duplicateCount + (result.duplicateCount ?? 0)} duplicate(s) skipped` : "";
-      // Should normally be 0 here — already DNS-checked above — but the
-      // backend re-validates independently at import time regardless (see
-      // POST /bulk), so this stays honest if something changed in between
-      // (e.g. a domain's DNS dropped its MX record in the meantime).
-      const invalidNote = invalidCount || result.invalidCount ? `, ${invalidCount + (result.invalidCount ?? 0)} invalid row(s) skipped` : "";
+      const invalidNote = invalidCount ? `, ${invalidCount} invalid row(s) skipped` : "";
       setAutomationNotice(
         `CSV import: ${result.createdCount} lead(s) added to "${selectedCampaign.name}"${duplicateNote}${invalidNote}${result.failedCount ? `, ${result.failedCount} failed on the backend` : ""}.`
       );

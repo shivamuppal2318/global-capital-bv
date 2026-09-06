@@ -308,6 +308,11 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
   const created = [];
   const failed = [];
   const duplicates = [];
+  // CSV import intentionally skips the deliverability (DNS MX/A/AAAA)
+  // gate that the single-add and inbound-webhook routes still enforce —
+  // a bulk paste is reviewed by the person importing it, and rejecting
+  // rows here just meant re-uploading the same file to get the rest in.
+  // Kept in the response shape as always-empty for frontend compatibility.
   const invalid = [];
   // Rows within the same CSV paste count against each other too (a pasted
   // list with the same email twice), not just against what's already in
@@ -315,17 +320,8 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
   // is caught without a redundant query.
   const seenInBatch = new Set();
 
-  // Validated up front, once per unique domain, rather than inline in the
-  // loop below — same reasoning as the /inbound and single-create routes:
-  // only real, deliverable-looking addresses should reach the campaign.
-  const deliverabilityResults = await verifyEmailsDeliverability(parsed.data.leads.map((lead) => lead.email));
-
   for (const [index, leadInput] of parsed.data.leads.entries()) {
     const rowNumber = index + 1;
-    if (!deliverabilityResults[index].valid) {
-      invalid.push({ row: rowNumber, email: leadInput.email, reason: deliverabilityResults[index].reason });
-      continue;
-    }
     if (seenInBatch.has(leadInput.email)) {
       duplicates.push({ row: rowNumber, email: leadInput.email, reason: "Duplicate email earlier in this same import." });
       continue;
