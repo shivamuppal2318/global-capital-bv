@@ -9,6 +9,7 @@ import { hashPassword, signChannelPartnerUserToken } from "../lib/auth.js";
 import { getEmailProvider } from "../lib/emailProvider.js";
 import { plainTextToHtml } from "../lib/leadSender.js";
 import { CHANNEL_PARTNER_OPTIONAL_MODULES, CHANNEL_PARTNER_OPTIONAL_MODULE_IDS } from "../lib/channelPartnerPermissions.js";
+import { renderSignedChannelPartnerAgreement, slugify } from "../lib/signedDocumentRenderer.js";
 
 export const channelPartnersRouter = Router();
 
@@ -140,6 +141,32 @@ channelPartnersRouter.get("/:id/agreement-link", asyncHandler(async (req, res) =
     emailSent,
     emailError
   });
+}));
+
+// A partner who signed via "fill in the blanks online" never uploaded a
+// real file -- agreementDocumentId stays null, so there's nothing for the
+// frontend to just download. This renders the template's own text with
+// the partner's recorded values filled in instead, same pattern NDA/IOI
+// already use (routes/ndaRecords.js's own /:id/signed-document). A partner
+// who DID upload their own copy skips this route entirely -- the frontend
+// downloads that real Document directly via agreementDocumentId.
+channelPartnersRouter.get("/:id/signed-document", asyncHandler(async (req, res) => {
+  const partner = await prisma.channelPartner.findUnique({ where: { id: req.params.id } });
+  if (!partner) {
+    return res.status(404).json({ error: "Channel partner not found" });
+  }
+  if (!partner.agreementSignedAt) {
+    return res.status(400).json({ error: "This Channel Partner Agreement hasn't been signed yet." });
+  }
+  if (partner.agreementDocumentId) {
+    return res.status(400).json({ error: "This partner uploaded their own signed copy — download that instead." });
+  }
+
+  const html = await renderSignedChannelPartnerAgreement(partner);
+  const filename = `Signed-Channel-Partner-Agreement-${slugify(partner.name)}.html`;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(html);
 }));
 
 // Real Channel Partner Portal activity — distinct from withReferredLeads'

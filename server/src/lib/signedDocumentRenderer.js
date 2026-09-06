@@ -161,6 +161,33 @@ export async function renderSignedIoi(ioi) {
   });
 }
 
+// Same "nothing to hand back but the recorded field values" case as
+// renderSignedNda/Ioi above, for a Channel Partner who signed via "fill in
+// the blanks online" rather than uploading their own scanned copy (see
+// routes/channelPartnerAgreement.js -- a real upload skips this entirely,
+// the frontend downloads that file directly via ChannelPartner.agreementDocumentId).
+// There's no separate "agreement date" field on ChannelPartner the way NDA
+// has agreementDate; agreementSignedAt is the only real timestamp recorded,
+// so it doubles as both.
+export async function renderSignedChannelPartnerAgreement(partner) {
+  const raw = await fs.readFile(path.join(ASSETS_DIR, "channel-partner-agreement-template-body.txt"), "utf8");
+  const filled = fillTokens(raw, {
+    AGREEMENT_DATE: fmtDate(partner.agreementSignedAt),
+    PARTNER_NAME: partner.name,
+    PARTNER_ADDRESS: partner.agreementAddress || "[address not provided]",
+    TERRITORY: partner.region || "[territory not provided]",
+    PAYMENT_SCHEDULE: partner.agreementPaymentSchedule || "[payment schedule not provided]",
+    SIGNATURE_STATUS: `signed electronically by ${partner.agreementSignedName ?? "the partner"} on ${fmtDateTime(partner.agreementSignedAt)}`
+  });
+  const { mainHtml, signatureHtml } = renderBody(filled);
+  return documentShell({
+    title: `Signed Channel Partner Agreement — ${partner.name}`,
+    mainHtml,
+    signatureHtml,
+    footerNote: `Accepted online via the Channel Partner Agreement signing page by ${partner.agreementSignedName ?? "the partner"} on ${fmtDateTime(partner.agreementSignedAt)}. This copy reflects the details submitted at acceptance.`
+  });
+}
+
 // --- Interactive "fill in your details online" document, embedded in the
 // client portal's Option 1 (see clientPortal.js's ndaSignFormHtml /
 // ioiRespondFormHtml) -----------------------------------------------------

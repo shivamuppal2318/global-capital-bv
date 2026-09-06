@@ -92,6 +92,10 @@ export const channelPartnersApi = {
   // channelPartnerAgreement.js) — copy it and send it to the partner
   // however you want; nothing auto-sends.
   agreementLink: (id) => apiFetch(`${channelPartnersBase}/${id}/agreement-link`),
+  // Only for a partner who signed via "fill in the blanks online" (no real
+  // file to hand back otherwise) -- one who uploaded their own copy has a
+  // real agreementDocumentId, downloaded directly via documentsApi instead.
+  downloadSignedDocument: (id) => downloadBlob(`${channelPartnersBase}/${id}/signed-document`),
   // What this partner has actually done with their own Channel Partner
   // Portal login (separate from referredLeads above, which matches
   // Lead.channelPartner by name) — see server/src/routes/channelPartners.js.

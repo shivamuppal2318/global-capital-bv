@@ -175,16 +175,24 @@ export function ChannelPartnerModule() {
     setLinkCopied(await copyToClipboard(agreementLinkUrl));
   }
 
-  // Only set when the partner chose "upload your own signed copy" instead
-  // of filling in the blanks online (see routes/channelPartnerAgreement.js's
-  // upload route) — nothing to download for the fill-in-the-blanks path,
-  // since there's no separate file, just the recorded fields themselves.
+  // Two real paths to a downloadable copy: a partner who uploaded their own
+  // scanned/signed file has a real agreementDocumentId (see
+  // routes/channelPartnerAgreement.js's upload route) -- downloaded via the
+  // documents API like any other Document. One who signed via "fill in the
+  // blanks online" has no separate file at all; the server instead renders
+  // the template text with their recorded field values (same pattern
+  // NDA/IOI already use — server/src/routes/channelPartners.js's own
+  // /:id/signed-document).
   async function handleDownloadAgreementDocument(partner) {
     try {
-      await documentsApi.open(
-        { id: partner.agreementDocumentId, originalName: `${partner.name} - Signed Channel Partner Agreement` },
-        { download: true }
-      );
+      if (partner.agreementDocumentId) {
+        await documentsApi.open(
+          { id: partner.agreementDocumentId, originalName: `${partner.name} - Signed Channel Partner Agreement` },
+          { download: true }
+        );
+      } else {
+        await channelPartnersApi.downloadSignedDocument(partner.id);
+      }
     } catch (err) {
       setAgreementNotice(err.message);
       setAgreementNoticeId(partner.id);
@@ -506,7 +514,7 @@ export function ChannelPartnerModule() {
                   onClick={() => handleGetAgreementLink(p)}
                   disabled={agreementBusyId === p.id}
                 />
-                {p.agreementDocumentId ? (
+                {p.agreementSignedAt ? (
                   <ActionButton small label="Download signed copy" onClick={() => handleDownloadAgreementDocument(p)} />
                 ) : null}
                 <ActionButton small label={activityOpenId === p.id ? "Hide portal activity" : "Portal activity"} onClick={() => toggleActivity(p)} />
