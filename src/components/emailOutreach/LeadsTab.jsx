@@ -460,6 +460,7 @@ function SubscribersView({
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Company</th>
+                  <th className="px-4 py-3">Country</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Subscribed</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -472,6 +473,7 @@ function SubscribersView({
                       <td className="px-4 py-3 font-medium text-[#102246]">{lead.email}</td>
                       <td className="px-4 py-3">{lead.name}</td>
                       <td className="px-4 py-3">{lead.company}</td>
+                      <td className="px-4 py-3">{lead.country || "—"}</td>
                       <td className="px-4 py-3">{lead.stage}</td>
                       <td className="px-4 py-3">{lead.unsubscribed ? "No" : "Yes"}</td>
                       <td className="px-4 py-3 text-right">
@@ -487,7 +489,7 @@ function SubscribersView({
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="px-4 py-5 text-[13px] text-[#7a7d9c]">
+                    <td colSpan="7" className="px-4 py-5 text-[13px] text-[#7a7d9c]">
                       No subscribers yet — add one above or import a CSV.
                     </td>
                   </tr>
