@@ -5,12 +5,17 @@ import { prisma } from "./prisma.js";
 // recipient geography is a real deliverability lever a single campaign-wide
 // "Sending mailbox" assignment (routes/emailCampaigns.js) can't express,
 // since one campaign's leads often span several countries. A lead whose
-// country matches an active mailbox's country always routes there,
-// regardless of which mailbox the campaign itself is assigned to. Falls
-// back to the campaign's assigned mailbox (then the single global
-// env-configured provider) for any lead whose country isn't set, or has no
-// matching mailbox — so nothing breaks for countries that haven't been
-// configured yet.
+// country matches an active mailbox (within the campaign's own owner
+// boundary) always routes there, regardless of which mailbox the campaign
+// itself is assigned to.
+//
+// Three tiers, in order: (1) country match, (2) the campaign's own
+// explicitly-assigned mailbox, (3) for a Channel Partner's campaign only,
+// that same partner's own active mailbox even if not explicitly assigned to
+// THIS campaign — a partner who has connected a mailbox should never send
+// under the shared admin identity by accident. Only the single global
+// env-configured provider (returning null) is left for a staff/admin
+// campaign with nothing assigned, or a partner with no mailbox at all.
 // `client` is injectable (same reason as accountSendCap.js's
 // isAccountUnderDailyCap) — testable without mocking Prisma's proxy-based
 // model delegates.
@@ -43,5 +48,27 @@ export async function resolveEmailAccount(lead, campaign, client = prisma) {
   // branch above, which already required it). Deactivating a mailbox now
   // actually stops it being used here too, falling back to the single
   // global env-configured provider exactly as "no mailbox assigned" already does.
-  return campaign?.emailAccount?.isActive ? campaign.emailAccount : null;
+  if (campaign?.emailAccount?.isActive) {
+    return campaign.emailAccount;
+  }
+
+  // A Channel Partner who has connected their own mailbox should never send
+  // under the shared admin identity by accident just because nobody
+  // remembered to explicitly assign it to this particular campaign — that
+  // silent fallback to the global env-configured provider was exactly the
+  // "partner's mail mixed with admin's mail" behavior this exists to
+  // prevent. If they have any active mailbox of their own, use it before
+  // ever reaching the global default; only a partner with genuinely no
+  // mailbox configured falls all the way through.
+  if (campaign?.ownerChannelPartnerId) {
+    const ownMailbox = await client.emailAccount.findFirst({
+      where: { isActive: true, ownerChannelPartnerId: campaign.ownerChannelPartnerId },
+      orderBy: { updatedAt: "desc" }
+    });
+    if (ownMailbox) {
+      return ownMailbox;
+    }
+  }
+
+  return null;
 }
