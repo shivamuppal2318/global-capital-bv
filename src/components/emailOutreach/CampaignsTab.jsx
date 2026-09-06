@@ -386,44 +386,6 @@ export function CampaignsTab({ mailing }) {
                 />
               </Field>
 
-              <Field label="Select Template">
-                <select
-                  value={selectedTemplateKey}
-                  onChange={(event) => handleSelectTemplate(event.target.value)}
-                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none"
-                >
-                  <option value="">Choose a saved template to fill in Subject/Email Content below…</option>
-                  {templates.map((template) => (
-                    <option key={template.key} value={template.key}>
-                      {template.key} — {template.subject}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
-                  Pulled from the Templates tab. Picking one copies its subject and HTML content into this campaign
-                  — edit freely afterward, it does not stay linked.
-                </p>
-              </Field>
-
-              <Field label="Template Label">
-                <input
-                  value={automationForm.template}
-                  onChange={(event) => handleFormChange("template", event.target.value)}
-                  list="template-label-options"
-                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
-                />
-                <datalist id="template-label-options">
-                  <option value="Cold intro — Renewables founder" />
-                  <option value="Follow-up — Sector teaser" />
-                  <option value="Portfolio quarterly update" />
-                </datalist>
-              </Field>
-
-              <p className="rounded-[10px] bg-[#f7f9fc] px-4 py-3 text-[12px] leading-5 text-[#6a7790]">
-                A short descriptive name for this campaign's approach (not an email subject line, and not the email
-                body) — shown in campaign lists.
-              </p>
-
               <Field label="Subject">
                 <input
                   value={automationForm.subject}
@@ -494,6 +456,43 @@ export function CampaignsTab({ mailing }) {
 
           <div className="rounded-[24px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
             <div className="space-y-3">
+              <Field label="Select Template">
+                <select
+                  value={selectedTemplateKey}
+                  onChange={(event) => handleSelectTemplate(event.target.value)}
+                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                >
+                  <option value="">Choose a saved template to fill in Subject/Email Content…</option>
+                  {templates.map((template) => (
+                    <option key={template.key} value={template.key}>
+                      {template.key} — {template.subject}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                  Pulled from the Templates tab. Picking one copies its subject and HTML content into this campaign
+                  — edit freely afterward, it does not stay linked.
+                </p>
+              </Field>
+
+              <Field label="Template Label">
+                <input
+                  value={automationForm.template}
+                  onChange={(event) => handleFormChange("template", event.target.value)}
+                  list="template-label-options"
+                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                />
+                <datalist id="template-label-options">
+                  <option value="Cold intro — Renewables founder" />
+                  <option value="Follow-up — Sector teaser" />
+                  <option value="Portfolio quarterly update" />
+                </datalist>
+                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                  A short descriptive name for this campaign's approach (not an email subject line, and not the
+                  email body) — shown in campaign lists.
+                </p>
+              </Field>
+
               <Field label="From Email">
                 <input
                   value={resolvedFromAddress}
