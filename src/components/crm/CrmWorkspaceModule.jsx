@@ -28,6 +28,21 @@ const avatarToneClass = {
 
 const STATUS_LABEL = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified", NEGOTIATION: "Negotiation", CONVERTED: "Converted", LOST: "Lost" };
 
+// Same status->color mapping Universal Filters already uses for the same
+// statuses — the status badge below used to be colored by lead.tone (a
+// value assigned once at random when the lead was created purely to give
+// avatars visual variety, see leads.js's TONES array), which had nothing to
+// do with the lead's actual status: a LOST lead could show green, a
+// CONVERTED lead could show red, entirely by chance.
+const STATUS_TONE = {
+  NEW: "blue",
+  CONTACTED: "amber",
+  QUALIFIED: "green",
+  NEGOTIATION: "violet",
+  CONVERTED: "green",
+  LOST: "red"
+};
+
 const TEMPERATURE_OPTIONS = ["HOT", "WARM", "COLD"];
 
 // ZoomInfo's own controlled vocabulary for its contacts/search
@@ -105,7 +120,7 @@ function LeadDetailModal({
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`rounded-full px-3 py-1 text-[12px] font-semibold ${noteToneClass[lead.tone]}`}>{STATUS_LABEL[lead.status]}</span>
+            <span className={`rounded-full px-3 py-1 text-[12px] font-semibold ${noteToneClass[STATUS_TONE[lead.status]]}`}>{STATUS_LABEL[lead.status]}</span>
             <button
               type="button"
               onClick={onClose}
@@ -1350,7 +1365,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                   <td className="px-4 py-4 align-top text-[#435471]">{lead.capitalAsk}</td>
                   <td className="px-4 py-4 align-top text-[#435471]">{lead.owner || "Unassigned"}</td>
                   <td className="px-4 py-4 align-top text-right">
-                    <span className={`inline-block rounded-full px-2 py-1 text-[10.5px] font-semibold leading-tight ${noteToneClass[lead.tone]}`}>
+                    <span className={`inline-block rounded-full px-2 py-1 text-[10.5px] font-semibold leading-tight ${noteToneClass[STATUS_TONE[lead.status]]}`}>
                       {STATUS_LABEL[lead.status]}
                     </span>
                   </td>

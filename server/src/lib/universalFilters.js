@@ -128,7 +128,17 @@ export function matchesFilters(row, filters = {}) {
 
   if (f.doe && row.doe !== f.doe) return false;
   if (f.timeFrom && row.createdAt < new Date(f.timeFrom)) return false;
-  if (f.timeTo && row.createdAt > new Date(f.timeTo)) return false;
+  // f.timeTo is a date-only string ("2026-09-06") from a plain <input
+  // type="date">, which Date parses as that day's UTC midnight — comparing
+  // createdAt directly against it excluded every record from later that
+  // same day, so picking "today" as the end date looked like it had no
+  // results at all. End-of-day instead, so the whole selected day is
+  // included, matching timeFrom's own inclusive-start-of-day behavior.
+  if (f.timeTo) {
+    const endOfDay = new Date(f.timeTo);
+    endOfDay.setUTCHours(23, 59, 59, 999);
+    if (row.createdAt > endOfDay) return false;
+  }
 
   return true;
 }
