@@ -19,7 +19,7 @@ export function LeadsTab({ mailing }) {
     selectedCampaign, selectedCampaignId, selectCampaign, startNewCampaign,
     leadsViewSignal, setLeadsViewSignal,
     newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
-    csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, handleImportCsv, csvPreviewBusy, csvImportBusy
+    csvText, handleCsvTextChange, handleImportCsv, csvImportBusy
   } = mailing;
   const [viewMode, setViewMode] = useState("list");
 
@@ -228,10 +228,7 @@ export function LeadsTab({ mailing }) {
         handleDeleteLead={handleDeleteLead}
         csvText={csvText}
         handleCsvTextChange={handleCsvTextChange}
-        csvPreview={csvPreview}
-        handlePreviewCsv={handlePreviewCsv}
         handleImportCsv={handleImportCsv}
-        csvPreviewBusy={csvPreviewBusy}
         csvImportBusy={csvImportBusy}
         automationNotice={automationNotice}
         onBack={() => setViewMode("list")}
@@ -358,7 +355,7 @@ export function LeadsTab({ mailing }) {
 function SubscribersView({
   selectedCampaign, selectedCampaignId, allLeads,
   newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
-  csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, handleImportCsv, csvPreviewBusy, csvImportBusy,
+  csvText, handleCsvTextChange, handleImportCsv, csvImportBusy,
   automationNotice, onBack
 }) {
   const inputClass = "w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none";
@@ -440,17 +437,12 @@ function SubscribersView({
             </button>
 
             {csvText ? (
-              <div className="mt-3 space-y-2">
-                {csvPreview ? (
-                  <p className="text-[12px] text-[#5d6286]">
-                    {csvPreview.readyCount} ready · {csvPreview.duplicateCount} duplicate(s) · {csvPreview.invalidCount} invalid
-                  </p>
-                ) : null}
+              <div className="mt-3">
                 <ActionButton
-                  label={csvPreviewBusy ? "Checking…" : csvImportBusy ? "Importing…" : csvPreview ? "Import CSV" : "Preview CSV"}
+                  label={csvImportBusy ? "Importing…" : "Import CSV"}
                   primary
-                  disabled={csvPreviewBusy || csvImportBusy || !selectedCampaignId}
-                  onClick={csvPreview ? handleImportCsv : handlePreviewCsv}
+                  disabled={csvImportBusy || !selectedCampaignId}
+                  onClick={handleImportCsv}
                 />
               </div>
             ) : null}

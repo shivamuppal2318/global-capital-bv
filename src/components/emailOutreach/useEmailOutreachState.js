@@ -565,9 +565,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
   }
   const [newLeadForm, setNewLeadForm] = useState({ firstName: "", lastName: "", email: "", country: "", company: "" });
   const [csvText, setCsvText] = useState("");
-  const [csvPreview, setCsvPreview] = useState(null);
   const [csvImportBusy, setCsvImportBusy] = useState(false);
-  const [csvPreviewBusy, setCsvPreviewBusy] = useState(false);
   const [previewHtml, setPreviewHtml] = useState(null);
   const [emailAccounts, setEmailAccounts] = useState([]);
   const [newAccountForm, setNewAccountForm] = useState({
@@ -760,14 +758,15 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     }
   }
 
-  // Shows what will happen BEFORE anything is sent to the backend: parses the
-  // pasted CSV client-side and cross-checks every row's email against leads
-  // already loaded for this campaign (allLeads) and against the rest of the
-  // pasted batch, so duplicates and bad rows are visible up front instead of
-  // only surfacing afterward in a single collapsed notice line.
-  async function handlePreviewCsv() {
+  // One click, straight to the backend: parses the pasted CSV client-side,
+  // cross-checks each row's email against leads already loaded for this
+  // campaign (allLeads) and the rest of the pasted batch to skip obvious
+  // duplicates without a wasted API call, DNS-checks whatever's left, then
+  // imports immediately — no separate "preview" click in between, so the
+  // Subscribers list on the right updates as soon as this finishes.
+  async function handleImportCsv() {
     if (!csvText.trim()) {
-      setAutomationNotice("Paste some CSV rows first.");
+      setAutomationNotice("Choose a CSV file first.");
       return;
     }
     if (!selectedCampaign) {
@@ -778,99 +777,65 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     const { rows, errors } = parseLeadsCsv(csvText);
     const existingEmails = new Set(allLeads.map((lead) => lead.email.toLowerCase()));
     const seenInFile = new Set();
-    const previewRows = [];
-
-    errors.forEach((message) => {
-      previewRows.push({ name: "", company: "", email: "", owner: "", status: "invalid", reason: message });
-    });
+    const candidateRows = [];
+    let duplicateCount = 0;
+    let invalidCount = errors.length;
 
     rows.forEach((row) => {
       const emailKey = row.email.toLowerCase();
-      let status = "ready";
-      let reason = "Ready to import";
-      if (seenInFile.has(emailKey)) {
-        status = "duplicate-in-file";
-        reason = "Duplicate email earlier in this same paste.";
-      } else if (existingEmails.has(emailKey)) {
-        status = "duplicate-existing";
-        reason = `Already in "${selectedCampaign.name}".`;
+      if (seenInFile.has(emailKey) || existingEmails.has(emailKey)) {
+        duplicateCount += 1;
+      } else {
+        candidateRows.push(row);
       }
       seenInFile.add(emailKey);
-      previewRows.push({ ...row, status, reason });
     });
-
-    // Format/duplicate checks above are instant and local; a real
-    // deliverability check (DNS MX/A/AAAA lookup) needs the backend, so it
-    // only runs for rows that passed those free checks — no point DNS
-    // -checking an email that's already going to be skipped as a duplicate.
-    setCsvPreviewBusy(true);
-    try {
-      const candidateRows = previewRows.filter((row) => row.status === "ready");
-      if (candidateRows.length > 0) {
-        const { results } = await emailLeadsApi.validateEmails(candidateRows.map((row) => row.email));
-        const deliverabilityByEmail = new Map(results.map((result) => [result.email.toLowerCase(), result]));
-        previewRows.forEach((row) => {
-          if (row.status !== "ready") return;
-          const deliverability = deliverabilityByEmail.get(row.email.toLowerCase());
-          if (deliverability && !deliverability.valid) {
-            row.status = "invalid";
-            row.reason = deliverability.reason;
-          }
-        });
-      }
-    } catch (error) {
-      setAutomationNotice(`Preview built, but the deliverability check failed (${error.message}) — showing format/duplicate checks only.`);
-    } finally {
-      setCsvPreviewBusy(false);
-    }
-
-    const readyCount = previewRows.filter((row) => row.status === "ready").length;
-    const duplicateCount = previewRows.filter((row) => row.status === "duplicate-in-file" || row.status === "duplicate-existing").length;
-    const invalidCount = previewRows.filter((row) => row.status === "invalid").length;
-
-    setCsvPreview({ rows: previewRows, readyCount, duplicateCount, invalidCount });
-    setAutomationNotice(
-      `Preview ready: ${readyCount} row(s) will be imported, ${duplicateCount} duplicate(s) and ${invalidCount} invalid row(s) will be skipped.`
-    );
-  }
-
-  async function handleImportCsv() {
-    if (!selectedCampaign) {
-      setAutomationNotice("Select a campaign first.");
-      return;
-    }
-
-    // If nothing's been previewed yet, build one first instead of importing
-    // blind — the user always sees the row-by-row breakdown before anything
-    // is created.
-    if (!csvPreview) {
-      handlePreviewCsv();
-      return;
-    }
-
-    const readyRows = csvPreview.rows
-      .filter((row) => row.status === "ready")
-      .map(({ name, company, email, owner, country }) => ({ name, company, email, owner, country: country || null }));
-    if (readyRows.length === 0) {
-      setAutomationNotice("Nothing to import — every row was a duplicate or invalid. Fix the CSV and preview again.");
-      return;
-    }
 
     setCsvImportBusy(true);
     try {
-      const result = await emailLeadsApi.bulkCreate(selectedCampaign.id, readyRows);
-      const duplicateNote = result.duplicateCount ? `, ${result.duplicateCount} already in this campaign (skipped)` : "";
-      // Should normally be 0 here — the preview step already DNS-checked
-      // every "ready" row — but the backend re-validates independently at
-      // import time regardless (see POST /bulk), so this stays honest if
-      // something changed between preview and import (e.g. a domain's DNS
-      // dropped its MX record in the meantime).
-      const invalidNote = result.invalidCount ? `, ${result.invalidCount} failed a deliverability re-check (skipped)` : "";
+      // Format/duplicate checks above are instant and local; a real
+      // deliverability check (DNS MX/A/AAAA lookup) needs the backend, so it
+      // only runs for rows that passed those free checks — no point
+      // DNS-checking an email that's already going to be skipped as a
+      // duplicate.
+      let readyRows = candidateRows;
+      if (candidateRows.length > 0) {
+        try {
+          const { results } = await emailLeadsApi.validateEmails(candidateRows.map((row) => row.email));
+          const deliverabilityByEmail = new Map(results.map((result) => [result.email.toLowerCase(), result]));
+          readyRows = candidateRows.filter((row) => {
+            const deliverability = deliverabilityByEmail.get(row.email.toLowerCase());
+            const ok = !deliverability || deliverability.valid;
+            if (!ok) invalidCount += 1;
+            return ok;
+          });
+        } catch {
+          // Deliverability check itself failed (backend unreachable, etc.) —
+          // import the format/duplicate-clean rows anyway rather than
+          // blocking the whole thing on one extra check; the bulk-create
+          // call below re-validates independently regardless.
+        }
+      }
+
+      if (readyRows.length === 0) {
+        setAutomationNotice(
+          `Nothing to import — ${duplicateCount} duplicate(s) and ${invalidCount} invalid row(s) out of ${rows.length + errors.length}.`
+        );
+        return;
+      }
+
+      const importRows = readyRows.map(({ name, company, email, owner, country }) => ({ name, company, email, owner, country: country || null }));
+      const result = await emailLeadsApi.bulkCreate(selectedCampaign.id, importRows);
+      const duplicateNote = duplicateCount || result.duplicateCount ? `, ${duplicateCount + (result.duplicateCount ?? 0)} duplicate(s) skipped` : "";
+      // Should normally be 0 here — already DNS-checked above — but the
+      // backend re-validates independently at import time regardless (see
+      // POST /bulk), so this stays honest if something changed in between
+      // (e.g. a domain's DNS dropped its MX record in the meantime).
+      const invalidNote = invalidCount || result.invalidCount ? `, ${invalidCount + (result.invalidCount ?? 0)} invalid row(s) skipped` : "";
       setAutomationNotice(
-        `CSV import: ${result.createdCount} lead(s) added to "${selectedCampaign.name}"${duplicateNote}${invalidNote}, ${result.failedCount} failed on the backend.`
+        `CSV import: ${result.createdCount} lead(s) added to "${selectedCampaign.name}"${duplicateNote}${invalidNote}${result.failedCount ? `, ${result.failedCount} failed on the backend` : ""}.`
       );
       setCsvText("");
-      setCsvPreview(null);
       loadAllLeadsForCampaign(selectedCampaign.id);
     } catch (error) {
       setAutomationNotice(`CSV import failed via the backend (${error.message}). No local-only fallback for this action.`);
@@ -881,10 +846,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
 
   function handleCsvTextChange(value) {
     setCsvText(value);
-    // A preview describes an exact snapshot of the pasted text — once the
-    // text changes, that snapshot is stale and must be rebuilt before import.
-    setCsvPreview(null);
-    setAutomationNotice(value.trim() ? "CSV loaded. Click Preview CSV to check rows before import." : "");
+    setAutomationNotice(value.trim() ? "CSV loaded. Click Import CSV to add these subscribers." : "");
   }
 
   async function handleAddEmailAccount() {
@@ -1277,7 +1239,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     campaigns, segments, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
     repliedLeads, allLeads, targetListLeads, handleChangeSendTarget, systemStatus, dashboardSummary, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
     automationForm, automationNotice, newLeadForm, setNewLeadForm,
-    csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, csvImportBusy, csvPreviewBusy, previewHtml, setPreviewHtml,
+    csvText, handleCsvTextChange, csvImportBusy, previewHtml, setPreviewHtml,
     emailAccounts, newAccountForm, setNewAccountForm,
     selectedCampaign, selectedLead, selectedLeadTimeline, activeReplyRule,
     liveSteps, workflowSteps, replyAction,
