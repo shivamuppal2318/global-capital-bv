@@ -96,9 +96,10 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
             type="button"
             title={label}
             aria-label={label}
+            disabled={htmlMode}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => runCommand(command)}
-            className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2]"
+            className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
           >
             <Icon className="size-4" />
           </button>
@@ -108,9 +109,10 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
           type="button"
           title="Insert link"
           aria-label="Insert link"
+          disabled={htmlMode}
           onMouseDown={(event) => event.preventDefault()}
           onClick={handleInsertLink}
-          className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2]"
+          className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
         >
           <LinkIcon className="size-4" />
         </button>
@@ -119,9 +121,10 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
             type="button"
             title="Insert unsubscribe link (select text first, or inserts fresh)"
             aria-label="Insert unsubscribe link"
+            disabled={htmlMode}
             onMouseDown={(event) => event.preventDefault()}
             onClick={handleInsertUnsubscribeLink}
-            className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2]"
+            className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
           >
             <LogOutIcon className="size-4" />
           </button>
@@ -130,9 +133,10 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
           type="button"
           title="Insert image"
           aria-label="Insert image"
+          disabled={htmlMode}
           onMouseDown={(event) => event.preventDefault()}
           onClick={handleInsertImage}
-          className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2]"
+          className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
           >
             <ImageIcon className="size-4" />
           </button>

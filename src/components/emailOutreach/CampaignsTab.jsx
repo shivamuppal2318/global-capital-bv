@@ -337,6 +337,11 @@ export function CampaignsTab({ mailing }) {
     if (selectedCampaignId) {
       setViewMode("composer");
     }
+    // Local UI state, not tied to any real campaign field — without this,
+    // picking a template in one campaign left the dropdown showing it as
+    // "selected" after switching to a different campaign that never had
+    // it applied, which read as if that campaign's content came from it.
+    setSelectedTemplateKey("");
   }, [selectedCampaignId]);
 
   const filteredCampaigns = campaigns.filter((campaign) => {
