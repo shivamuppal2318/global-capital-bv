@@ -9,13 +9,16 @@ import { prisma } from "./prisma.js";
 // boundary) always routes there, regardless of which mailbox the campaign
 // itself is assigned to.
 //
-// Three tiers, in order: (1) country match, (2) the campaign's own
-// explicitly-assigned mailbox, (3) for a Channel Partner's campaign only,
-// that same partner's own active mailbox even if not explicitly assigned to
-// THIS campaign — a partner who has connected a mailbox should never send
-// under the shared admin identity by accident. Only the single global
-// env-configured provider (returning null) is left for a staff/admin
-// campaign with nothing assigned, or a partner with no mailbox at all.
+// Four tiers, in order: (1) country match, (2) the campaign's own
+// explicitly-assigned mailbox, (3) for a Channel Partner's campaign, that
+// same partner's own active mailbox even if not explicitly assigned to THIS
+// campaign, (4) for a staff/admin campaign, the lead's own DOE (owner)'s
+// active mailbox if that name matches a real employee — in both (3) and
+// (4), a person who has connected their own mailbox should never send
+// under the shared admin identity by accident just because nobody
+// remembered to explicitly assign it. Only the single global
+// env-configured provider (returning null) is left once every tier above
+// has nothing to offer.
 // `client` is injectable (same reason as accountSendCap.js's
 // isAccountUnderDailyCap) — testable without mocking Prisma's proxy-based
 // model delegates.
@@ -67,6 +70,28 @@ export async function resolveEmailAccount(lead, campaign, client = prisma) {
     });
     if (ownMailbox) {
       return ownMailbox;
+    }
+    return null;
+  }
+
+  // Same guarantee, one level down: a staff/admin campaign's lead is
+  // usually attributed to a real DOE (Deal Originator Executive) via
+  // EmailLead.owner — a plain name string (matching User.name), not a
+  // foreign key, since leads/campaigns predate any per-employee ownership
+  // model. If that name matches a real employee who has connected their own
+  // mailbox, their sends should go out from it, not the shared company one
+  // — same reasoning as the Channel Partner tier above, just per-person
+  // instead of per-partner.
+  if (lead.owner) {
+    const doeUser = await client.user.findFirst({ where: { name: lead.owner } });
+    if (doeUser) {
+      const doeMailbox = await client.emailAccount.findFirst({
+        where: { isActive: true, ownerId: doeUser.id },
+        orderBy: { updatedAt: "desc" }
+      });
+      if (doeMailbox) {
+        return doeMailbox;
+      }
     }
   }
 

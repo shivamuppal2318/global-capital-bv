@@ -2,23 +2,31 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resolveEmailAccount } from "../src/lib/accountRouting.js";
 
-// `responder` can be a fixed value (every findFirst call returns it) or a
-// function of the call's args (so a country-match query and the
-// partner's-own-mailbox fallback query — resolveEmailAccount can issue
-// either or both — can be answered differently in the same test).
-function fakeClient(responder) {
+// `emailAccountResponder`/`userResponder` can each be a fixed value (every
+// call to that model returns it) or a function of the call's args — needed
+// since resolveEmailAccount can issue more than one emailAccount.findFirst
+// call in a single run (a country-match query, then a fallback query) that
+// need different answers, plus an optional user.findFirst for DOE lookups.
+function fakeClient(emailAccountResponder, userResponder = null) {
   const calls = [];
-  const respond = typeof responder === "function" ? responder : () => responder;
+  const respondEmailAccount = typeof emailAccountResponder === "function" ? emailAccountResponder : () => emailAccountResponder;
+  const respondUser = typeof userResponder === "function" ? userResponder : () => userResponder;
   return {
     client: {
       emailAccount: {
         findFirst: async (args) => {
-          calls.push(args);
-          return respond(args);
+          calls.push({ model: "emailAccount", args });
+          return respondEmailAccount(args);
+        }
+      },
+      user: {
+        findFirst: async (args) => {
+          calls.push({ model: "user", args });
+          return respondUser(args);
         }
       }
     },
-    getCapturedArgs: () => calls[calls.length - 1],
+    getCapturedArgs: () => calls[calls.length - 1]?.args,
     getCallCount: () => calls.length
   };
 }
@@ -121,6 +129,49 @@ test("does not fall through to any mailbox for a staff/admin campaign with nothi
   // Only the campaign's own assignment was checked (no country, no
   // partner id) -- no extra findFirst call should have been made.
   assert.equal(getCallCount(), 0);
+});
+
+// EmailLead.owner is the DOE (Deal Originator Executive) attributed to this
+// lead -- a plain name string, not a foreign key, since leads predate any
+// per-employee ownership model. A DOE who has connected their own mailbox
+// should never send under the shared admin identity by accident, same
+// guarantee as the Channel Partner tier, just per-person.
+test("falls back to the DOE's own active mailbox when nothing else matched", async () => {
+  const doeMailbox = { id: "acct-doe-own", ownerId: "user-vimal" };
+  const { client, getCallCount } = fakeClient(
+    (args) => (args.where.country ? null : doeMailbox),
+    { id: "user-vimal", name: "Vimal" }
+  );
+  const lead = { country: null, owner: "Vimal" };
+  const campaign = { emailAccount: null }; // staff/admin-owned, no explicit assignment
+
+  const resolved = await resolveEmailAccount(lead, campaign, client);
+
+  assert.equal(resolved.id, "acct-doe-own");
+  assert.equal(getCallCount(), 2); // one user lookup, one mailbox lookup
+});
+
+test("does not use the DOE fallback when the lead's owner name matches no real employee", async () => {
+  const { client } = fakeClient(null, null);
+  const lead = { country: null, owner: "Someone Not On Staff" };
+  const campaign = { emailAccount: null };
+
+  const resolved = await resolveEmailAccount(lead, campaign, client);
+
+  assert.equal(resolved, null);
+});
+
+test("never uses the DOE fallback for a channel-partner-owned campaign, even if the lead has an owner name", async () => {
+  const { client, getCallCount } = fakeClient(null, () => {
+    throw new Error("should never look up a DOE user for a partner-owned campaign");
+  });
+  const lead = { country: null, owner: "Vimal" };
+  const campaign = { ownerChannelPartnerId: "partner-1", emailAccount: null };
+
+  const resolved = await resolveEmailAccount(lead, campaign, client);
+
+  assert.equal(resolved, null);
+  assert.equal(getCallCount(), 1); // only the partner's-own-mailbox check
 });
 
 test("prefers the campaign's own explicitly-assigned mailbox over the partner's other mailboxes", async () => {
