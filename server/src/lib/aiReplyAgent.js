@@ -3,7 +3,7 @@
 // their real inbound message text (ReplyEvent.rawBody), not a fabricated
 // status. Credentials come from Admin Panel → AI Assistant, falling back to
 // ANTHROPIC_API_KEY (see lib/aiSettings.js).
-import { getAiConfig, isAiConfigured, extractResponseText } from "./aiSettings.js";
+import { getAiConfig, getAiSettingsRow, isAiConfigured, extractResponseText } from "./aiSettings.js";
 
 export function isAiReplyAgentConfigured() {
   return isAiConfigured();
@@ -22,20 +22,29 @@ const REPLY_TYPE_CONTEXT = {
   NO_REPLY: "The lead has not replied yet — this is a proactive follow-up nudge, not a reply to a specific message."
 };
 
-// Pure — testable without any network access or API key.
-export function buildReplyDraftPrompt({ leadName, company, replyType, rawReplyText }) {
+// Pure — testable without any network access or API key. companyProfile is
+// the same admin-written background the main AI Assistant chat is grounded
+// in (Admin Panel → AI Assistant, see routes/aiChat.js's buildSystemPrompt)
+// — without it, a draft has nothing real to say about Global Capital BV
+// beyond its name, which is what made replies read generically ("happy to
+// help", no actual mandate/thesis specifics) rather than like they came
+// from someone who actually knows the firm.
+export function buildReplyDraftPrompt({ leadName, company, replyType, rawReplyText, companyProfile }) {
   const context = REPLY_TYPE_CONTEXT[replyType] ?? REPLY_TYPE_CONTEXT.NO_REPLY;
   const replySection = rawReplyText
     ? `Their message:\n"""\n${rawReplyText.slice(0, 2000)}\n"""`
     : "They have not sent a message yet — this is a proactive follow-up, not a reply to something specific.";
+  const profileSection = companyProfile?.trim()
+    ? `Company background (written by an admin — treat as authoritative, and draw on it specifically rather than writing generically):\n${companyProfile.trim()}\n`
+    : "";
 
   return `You are drafting a reply email on behalf of a private equity deal-sourcing team (Global Capital BV) to a lead in a cold-outreach campaign.
-
+${profileSection}
 Lead: ${leadName} at ${company}
 Situation: ${context}
 ${replySection}
 
-Write a short, professional reply email (3-6 sentences) that directly addresses their message, moves the conversation to the appropriate next step, and does not invent facts, figures, or promises that aren't implied by their message. Do not include a placeholder like "[Subject]" — put the actual subject line in the subject field.
+Write a short, professional reply email (3-6 sentences) that directly addresses their message, moves the conversation to the appropriate next step, and does not invent facts, figures, or promises that aren't implied by their message or the company background above. Do not include a placeholder like "[Subject]" — put the actual subject line in the subject field.
 
 Return ONLY valid JSON, no other text, in exactly this shape:
 {"subject": "the email subject line", "body": "the full email body, plain text with \\n for line breaks"}`;
@@ -67,6 +76,7 @@ export async function generateReplyDraft({ leadName, company, replyType, rawRepl
   if (!apiKey) {
     throw new Error("AI Agent is not configured — add a Claude API key under Admin Panel → AI Assistant.");
   }
+  const companyProfile = (await getAiSettingsRow())?.companyProfile;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -78,7 +88,7 @@ export async function generateReplyDraft({ leadName, company, replyType, rawRepl
     body: JSON.stringify({
       model,
       max_tokens: 600,
-      messages: [{ role: "user", content: buildReplyDraftPrompt({ leadName, company, replyType, rawReplyText }) }]
+      messages: [{ role: "user", content: buildReplyDraftPrompt({ leadName, company, replyType, rawReplyText, companyProfile }) }]
     })
   });
 
