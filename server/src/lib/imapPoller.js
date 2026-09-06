@@ -5,7 +5,7 @@ import { recordReply } from "./replyRecorder.js";
 import { decryptSecret } from "./credentialCrypto.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 60_000;
-const POLL_STATE_KEY = "imap_poll_uid_state";
+const POLL_STATE_KEY_PREFIX = "imap_poll_uid_state";
 
 // Well-known providers whose IMAP host doesn't follow the generic
 // smtp.X -> imap.X pattern below. Extend this list rather than making the
@@ -28,41 +28,40 @@ export function deriveImapHost(smtpHost) {
   return smtpHost.startsWith("smtp.") ? `imap.${smtpHost.slice("smtp.".length)}` : `imap.${smtpHost}`;
 }
 
-// The one mailbox IMAP actually watches — same "single watched inbox"
-// design as before (one poll-state key, see POLL_STATE_KEY), just resolved
-// from whichever real mailbox is actually configured in Settings instead of
-// requiring a matching IMAP_HOST/SMTP_USER/SMTP_PASS env var to be kept in
-// sync by hand. Prefers the shared company mailbox (no owner) since that's
-// the one real replies land in; falls back to whichever active mailbox was
-// configured most recently. Env vars still win when set (e.g. local dev
-// without a database), so nothing here breaks an existing setup.
-async function resolveWatchedAccount() {
+// Every active mailbox is watched, not just one — a second (or third)
+// mailbox added in Settings previously never had its own inbox checked at
+// all (only a single "shared company mailbox" account was ever polled), so
+// real replies landing in any other configured mailbox sat there forever
+// unseen. Each account gets its own IMAP connection and its own UID
+// bookmark (see pollStateKey below) since UIDs aren't comparable across
+// different mailboxes. Env vars still win when set (e.g. local dev without
+// a database) and behave as a single synthetic watched account, same as
+// before.
+async function resolveWatchedAccounts() {
   if (process.env.IMAP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    return {
-      host: process.env.IMAP_HOST,
-      port: Number(process.env.IMAP_PORT ?? 993),
-      secure: process.env.IMAP_SECURE !== "false",
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    };
+    return [
+      {
+        id: "env",
+        label: "Env-configured mailbox",
+        host: process.env.IMAP_HOST,
+        port: Number(process.env.IMAP_PORT ?? 993),
+        secure: process.env.IMAP_SECURE !== "false",
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    ];
   }
 
-  const account = await prisma.emailAccount.findFirst({
-    where: { isActive: true, ownerId: null, ownerChannelPartnerId: null },
-    orderBy: { updatedAt: "desc" }
-  });
-  const fallback =
-    account ??
-    (await prisma.emailAccount.findFirst({ where: { isActive: true }, orderBy: { updatedAt: "desc" } }));
-  if (!fallback) return null;
-
-  return {
-    host: deriveImapHost(fallback.smtpHost),
+  const accounts = await prisma.emailAccount.findMany({ where: { isActive: true }, orderBy: { updatedAt: "desc" } });
+  return accounts.map((account) => ({
+    id: account.id,
+    label: account.label,
+    host: deriveImapHost(account.smtpHost),
     port: 993,
     secure: true,
-    user: fallback.smtpUser,
-    pass: decryptSecret(fallback.smtpPassEncrypted)
-  };
+    user: account.smtpUser,
+    pass: decryptSecret(account.smtpPassEncrypted)
+  }));
 }
 
 // Persisted across restarts (the same generic key/value table AppSecret
@@ -73,9 +72,14 @@ async function resolveWatchedAccount() {
 // a lead's reply as read before the poller gets to it. That's not
 // hypothetical: it's exactly how a real reply went permanently unprocessed
 // on a shared company mailbox — seen by a person first, so `{seen: false}`
-// never matched it again.
-async function getPollState() {
-  const row = await prisma.appSecret.findUnique({ where: { key: POLL_STATE_KEY } });
+// never matched it again. Keyed per account (not one global key) since each
+// mailbox has its own independent UID sequence.
+function pollStateKey(accountId) {
+  return `${POLL_STATE_KEY_PREFIX}:${accountId}`;
+}
+
+async function getPollState(accountId) {
+  const row = await prisma.appSecret.findUnique({ where: { key: pollStateKey(accountId) } });
   if (!row) return null;
   try {
     return JSON.parse(row.value);
@@ -84,11 +88,12 @@ async function getPollState() {
   }
 }
 
-async function savePollState(state) {
+async function savePollState(accountId, state) {
+  const key = pollStateKey(accountId);
   const value = JSON.stringify(state);
   await prisma.appSecret.upsert({
-    where: { key: POLL_STATE_KEY },
-    create: { key: POLL_STATE_KEY, value },
+    where: { key },
+    create: { key, value },
     update: { value }
   });
 }
@@ -106,14 +111,14 @@ export function nextFetchRange({ uidValidity, uidNext, savedState }) {
   return { lastUid, hasNew: uidNext - 1 > lastUid };
 }
 
-// This is what actually watches a real mailbox for replies — without it,
+// This is what actually watches real mailboxes for replies — without it,
 // POST /webhooks/inbound-email only ever fires if something calls it, and
 // nothing did. Hostinger (and most plain hosting-provider mailboxes) don't
 // have a "forward every incoming email to this URL" feature the way
 // Postmark/SendGrid/Mailgun's inbound-parse products do, so polling over
 // IMAP is the practical alternative for a mailbox like this one.
 export async function isImapPollerEnabled() {
-  return Boolean(await resolveWatchedAccount());
+  return (await resolveWatchedAccounts()).length > 0;
 }
 
 let intervalHandle = null;
@@ -125,22 +130,26 @@ let intervalHandle = null;
 let lastPollResult = null;
 
 export async function getImapStatus() {
-  const account = await resolveWatchedAccount();
+  const accounts = await resolveWatchedAccounts();
   return {
-    enabled: Boolean(account),
-    host: account?.host ?? null,
-    watching: account?.user ?? null,
+    enabled: accounts.length > 0,
+    accounts: accounts.map((a) => ({ label: a.label, user: a.user, host: a.host })),
+    // Back-compat single-value fields for any caller expecting one mailbox
+    // — the first watched account, so an old UI still gets a sensible
+    // answer instead of undefined.
+    host: accounts[0]?.host ?? null,
+    watching: accounts[0]?.user ?? null,
     lastPoll: lastPollResult
   };
 }
 
 async function pollAndRecord() {
   try {
-    const { processedCount } = await pollOnce();
-    lastPollResult = { at: new Date().toISOString(), processedCount, error: null };
-    return { processedCount };
+    const { processedCount, perAccount } = await pollOnce();
+    lastPollResult = { at: new Date().toISOString(), processedCount, error: null, perAccount };
+    return { processedCount, perAccount };
   } catch (err) {
-    lastPollResult = { at: new Date().toISOString(), processedCount: 0, error: err.message };
+    lastPollResult = { at: new Date().toISOString(), processedCount: 0, error: err.message, perAccount: [] };
     throw err;
   }
 }
@@ -157,7 +166,7 @@ export async function fetchNow() {
 }
 
 // Always starts the interval loop, even with no mailbox configured yet —
-// resolveWatchedAccount() is re-checked on every single tick (see runPoll
+// resolveWatchedAccounts() is re-checked on every single tick (see runPoll
 // below), so adding a mailbox in Settings later starts real polling on the
 // next tick automatically. No IMAP_HOST env var to hand-edit, and no
 // backend restart, ever needed after the first deploy.
@@ -189,7 +198,7 @@ export function startImapPoller() {
 
   runPoll();
   intervalHandle = setInterval(runPoll, pollIntervalMs);
-  console.log(`[imap-poller] started (checks every ${pollIntervalMs}ms for a mailbox to watch)`);
+  console.log(`[imap-poller] started (checks every ${pollIntervalMs}ms for mailboxes to watch)`);
   return intervalHandle;
 }
 
@@ -200,19 +209,18 @@ export function stopImapPoller() {
   }
 }
 
-// Exported separately from the interval loop so it can be called directly
-// for a one-off check/test without waiting for the interval.
-export async function pollOnce() {
-  const watched = await resolveWatchedAccount();
-  if (!watched) {
-    throw new Error("No mailbox is configured to watch yet — add one in Settings, or set IMAP_HOST/SMTP_USER/SMTP_PASS.");
-  }
-
+// One mailbox's real poll — connects, fetches whatever's new since its own
+// last remembered UID, records any reply matching a real lead, then
+// bookmarks its own UID state. Isolated to just this account: an error here
+// (bad password, unreachable host) is thrown to the caller, which isolates
+// it per-account rather than letting one broken mailbox stop every other
+// one from being checked (see pollOnce below).
+async function pollAccount(account) {
   const client = new ImapFlow({
-    host: watched.host,
-    port: watched.port,
-    secure: watched.secure,
-    auth: { user: watched.user, pass: watched.pass },
+    host: account.host,
+    port: account.port,
+    secure: account.secure,
+    auth: { user: account.user, pass: account.pass },
     logger: false
   });
 
@@ -224,7 +232,7 @@ export async function pollOnce() {
   // backend, not just this poll. A listener — even one that only logs —
   // is what stops that from being fatal.
   client.on("error", (err) => {
-    console.error("[imap-poller] connection error:", err.message);
+    console.error(`[imap-poller] connection error (${account.label}):`, err.message);
   });
 
   let processedCount = 0;
@@ -245,7 +253,7 @@ export async function pollOnce() {
       // changes again.
       uidValidity = client.mailbox.uidValidity.toString();
       const uidNext = client.mailbox.uidNext;
-      const savedState = await getPollState();
+      const savedState = await getPollState(account.id);
       const { lastUid, hasNew } = nextFetchRange({ uidValidity, uidNext, savedState });
       newLastUid = lastUid;
 
@@ -272,14 +280,14 @@ export async function pollOnce() {
           if (lead) {
             await recordReply(lead, textBody);
             processedCount += 1;
-            console.log(`[imap-poller] processed reply from ${fromEmail} for lead ${lead.id}`);
+            console.log(`[imap-poller] processed reply from ${fromEmail} for lead ${lead.id} (${account.label})`);
           }
         }
       } catch (err) {
         // Isolated per message: a DB error or a malformed email shouldn't
         // abort the whole poll and leave every other new message
         // unprocessed until the next cycle.
-        console.error(`[imap-poller] failed to process message uid=${message.uid}:`, err.message);
+        console.error(`[imap-poller] failed to process message uid=${message.uid} (${account.label}):`, err.message);
       }
     }
 
@@ -288,10 +296,35 @@ export async function pollOnce() {
     // old \Seen-based marking made, just tracked ourselves now instead of a
     // flag anything else touching this real mailbox could mutate out from
     // under us.
-    await savePollState({ uidValidity, lastUid: newLastUid });
+    await savePollState(account.id, { uidValidity, lastUid: newLastUid });
   } finally {
     await client.logout();
   }
 
-  return { processedCount };
+  return processedCount;
+}
+
+// Exported separately from the interval loop so it can be called directly
+// for a one-off check/test without waiting for the interval. Polls every
+// active mailbox, one at a time — isolated per account, so one broken
+// mailbox (wrong password, host unreachable) doesn't stop the others from
+// being checked.
+export async function pollOnce() {
+  const watchedAccounts = await resolveWatchedAccounts();
+  if (!watchedAccounts.length) {
+    throw new Error("No mailbox is configured to watch yet — add one in Settings, or set IMAP_HOST/SMTP_USER/SMTP_PASS.");
+  }
+
+  let processedCount = 0;
+  const perAccount = [];
+  for (const account of watchedAccounts) {
+    try {
+      const count = await pollAccount(account);
+      processedCount += count;
+      perAccount.push({ label: account.label, processedCount: count, error: null });
+    } catch (err) {
+      perAccount.push({ label: account.label, processedCount: 0, error: err.message });
+    }
+  }
+  return { processedCount, perAccount };
 }

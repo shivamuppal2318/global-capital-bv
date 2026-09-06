@@ -102,17 +102,37 @@ export function MailboxTab({ mailing, onNavigateTab }) {
           {imapStatus ? (
             <>
               <p className={imapStatus.enabled ? "text-[#2b9b60]" : "text-[#c94b6b]"}>
-                IMAP: {imapStatus.enabled ? `configured — watching ${imapStatus.watching} on ${imapStatus.host}` : "not configured — add a mailbox in Settings, or set IMAP_HOST/SMTP_USER/SMTP_PASS"}
+                IMAP: {imapStatus.enabled
+                  ? `configured — watching ${imapStatus.accounts?.length ?? 0} mailbox${(imapStatus.accounts?.length ?? 0) === 1 ? "" : "es"}`
+                  : "not configured — add a mailbox in Settings, or set IMAP_HOST/SMTP_USER/SMTP_PASS"}
               </p>
+              {imapStatus.accounts?.length ? (
+                <ul className="mt-1.5 list-disc pl-4 text-[#5f6f89]">
+                  {imapStatus.accounts.map((account) => (
+                    <li key={account.user}>{account.user} on {account.host}</li>
+                  ))}
+                </ul>
+              ) : null}
               {imapStatus.lastPoll ? (
-                <p className="mt-1.5 text-[#5f6f89]">
-                  Last poll: {new Date(imapStatus.lastPoll.at).toLocaleString()} —{" "}
-                  {imapStatus.lastPoll.error ? (
-                    <span className="text-[#c94b6b]">failed: {imapStatus.lastPoll.error}</span>
-                  ) : (
-                    `${imapStatus.lastPoll.processedCount} real repl${imapStatus.lastPoll.processedCount === 1 ? "y" : "ies"} imported`
-                  )}
-                </p>
+                <>
+                  <p className="mt-1.5 text-[#5f6f89]">
+                    Last poll: {new Date(imapStatus.lastPoll.at).toLocaleString()} —{" "}
+                    {imapStatus.lastPoll.error ? (
+                      <span className="text-[#c94b6b]">failed: {imapStatus.lastPoll.error}</span>
+                    ) : (
+                      `${imapStatus.lastPoll.processedCount} real repl${imapStatus.lastPoll.processedCount === 1 ? "y" : "ies"} imported`
+                    )}
+                  </p>
+                  {imapStatus.lastPoll.perAccount?.length ? (
+                    <ul className="mt-1 list-disc pl-4 text-[#8592ab]">
+                      {imapStatus.lastPoll.perAccount.map((row) => (
+                        <li key={row.label}>
+                          {row.label}: {row.error ? <span className="text-[#c94b6b]">failed — {row.error}</span> : `${row.processedCount} imported`}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </>
               ) : (
                 <p className="mt-1.5 text-[#8592ab]">No poll has run yet since the backend started.</p>
               )}
@@ -161,7 +181,12 @@ export function MailboxTab({ mailing, onNavigateTab }) {
           <p className="text-[15px] text-[#6a7790]">
             Mailbox Accounts:{" "}
             <button type="button" onClick={() => onNavigateTab?.("settings")} className="font-medium text-[#5c6cff]">
-              {emailAccounts.length ? emailAccounts[0].label : "New Account"}
+              {emailAccounts.filter((account) => account.isActive).length
+                ? emailAccounts
+                    .filter((account) => account.isActive)
+                    .map((account) => account.label)
+                    .join(", ")
+                : "New Account"}
             </button>
           </p>
           <div className="flex items-center gap-2 rounded-[12px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] text-[#5f6f89]">
