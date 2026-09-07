@@ -18,7 +18,7 @@ export function LeadsTab({ mailing }) {
     campaigns, allLeads, automationForm, handleFormChange, handleSaveAutomation, automationNotice,
     selectedCampaign, selectedCampaignId, selectCampaign, startNewCampaign,
     leadsViewSignal, setLeadsViewSignal,
-    newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
+    newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead, handleDeleteCampaign,
     csvText, handleCsvTextChange, handleImportCsv, csvImportBusy
   } = mailing;
   const [viewMode, setViewMode] = useState("list");
@@ -320,6 +320,17 @@ export function LeadsTab({ mailing }) {
                           className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#435471]"
                         >
                           Settings
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Delete "${row.name}"? This only works if it has no subscribers — otherwise pause it instead.`)) {
+                              handleDeleteCampaign(row);
+                            }
+                          }}
+                          className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#e0483f]"
+                        >
+                          Delete
                         </button>
                       </div>
                     </td>

@@ -655,6 +655,24 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     setAutomationNotice(`Loaded ${lead.name}'s reply into the follow-up panel.`);
   }
 
+  // Only succeeds for an empty list (see emailCampaignsApi.remove ->
+  // DELETE /api/email/campaigns/:id) -- the backend refuses one with real
+  // leads/activity attached rather than cascading the delete through them,
+  // and surfaces that as a real error message here instead of a silent
+  // no-op, so a rep knows to pause it instead.
+  async function handleDeleteCampaign(campaign) {
+    try {
+      await emailCampaignsApi.remove(campaign.id);
+      setCampaigns((current) => current.filter((c) => c.id !== campaign.id));
+      if (selectedCampaignId === campaign.id) {
+        setSelectedCampaignId(null);
+      }
+      setAutomationNotice(`"${campaign.name}" deleted.`);
+    } catch (error) {
+      setAutomationNotice(`Could not delete "${campaign.name}" (${error.message}).`);
+    }
+  }
+
   async function handleDeleteLead(lead) {
     try {
       await emailLeadsApi.remove(lead.id);
@@ -1223,7 +1241,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     selectedCampaign, selectedLead, selectedLeadTimeline, activeReplyRule,
     liveSteps, workflowSteps, replyAction,
     convertingLeadId, convertResults, handleConvertToLead,
-    handleFormChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
+    handleFormChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead, handleDeleteCampaign,
     handleToggleCampaignStatus, handleAddLead, handleImportCsv, handleAddEmailAccount,
     handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation, handleSendNow, selectCampaign, startNewCampaign,
     startNewList, leadsViewSignal, setLeadsViewSignal,
