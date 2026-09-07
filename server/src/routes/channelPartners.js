@@ -5,7 +5,9 @@ import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { STANDARD_COMMISSION_TIERS, computeChannelPartnerCommission, isMaintenanceFeeEligible } from "../lib/channelPartnerCommission.js";
 import { signChannelPartnerToken } from "../lib/channelPartnerSignToken.js";
-import { hashPassword } from "../lib/auth.js";
+import { hashPassword, signChannelPartnerUserToken } from "../lib/auth.js";
+import { getEmailProvider } from "../lib/emailProvider.js";
+import { plainTextToHtml } from "../lib/leadSender.js";
 import { CHANNEL_PARTNER_OPTIONAL_MODULES, CHANNEL_PARTNER_OPTIONAL_MODULE_IDS } from "../lib/channelPartnerPermissions.js";
 
 export const channelPartnersRouter = Router();
@@ -95,12 +97,13 @@ channelPartnersRouter.get("/:id/estimate-commission", asyncHandler(async (req, r
 }));
 
 // Generates the real signed link to the public agreement-signing page (see
-// routes/channelPartnerAgreement.js) — an admin copies this and sends it to
-// the partner however they want (email, WhatsApp, ...). Deliberately
-// doesn't send anything itself: this app has no established channel for a
-// one-off message to a channel partner's contact the way it does for
-// EmailLead cadence sends, so generating the link and letting a human
-// decide how to deliver it is the honest scope for now.
+// routes/channelPartnerAgreement.js) and, by default, emails it straight to
+// the partner's own contact address too — an admin can still copy/share it
+// manually (e.g. over WhatsApp) from the response, but doesn't have to.
+// Uses the single global env-configured provider (no per-partner mailbox
+// concept exists), and skips the send entirely — rather than failing the
+// whole request — when there's no contactEmail on file or the agreement is
+// already signed (nothing left to invite them to).
 channelPartnersRouter.get("/:id/agreement-link", asyncHandler(async (req, res) => {
   const partner = await prisma.channelPartner.findUnique({ where: { id: req.params.id } });
   if (!partner) {
@@ -109,12 +112,33 @@ channelPartnersRouter.get("/:id/agreement-link", asyncHandler(async (req, res) =
 
   const base = process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
   const url = `${base}/api/channel-partner-agreement/${partner.id}/${signChannelPartnerToken(partner.id)}`;
+  const signed = Boolean(partner.agreementSignedAt);
+
+  let emailSent = false;
+  let emailError = null;
+  if (!signed && partner.contactEmail) {
+    const body = `Hi ${partner.contactName || partner.name},\n\nPlease review and sign your Channel Partner Agreement with Global Capital BV here:\n\n${url}\n\nLet us know if you have any questions.\n\nBest regards,\nGlobal Capital BV`;
+    try {
+      await getEmailProvider().send({
+        to: partner.contactEmail,
+        subject: "Your Channel Partner Agreement — Global Capital BV",
+        body,
+        html: plainTextToHtml(body)
+      });
+      emailSent = true;
+    } catch (err) {
+      emailError = err.message;
+    }
+  }
 
   res.json({
     url,
-    signed: Boolean(partner.agreementSignedAt),
+    signed,
     signedAt: partner.agreementSignedAt,
-    signedName: partner.agreementSignedName
+    signedName: partner.agreementSignedName,
+    contactEmail: partner.contactEmail ?? null,
+    emailSent,
+    emailError
   });
 }));
 
@@ -133,7 +157,7 @@ channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "Channel partner not found" });
   }
 
-  const [campaignCount, leadCount, lastSent] = await Promise.all([
+  const [campaignCount, leadCount, lastSent, campaigns, recentActivity] = await Promise.all([
     prisma.emailCampaign.count({ where: { ownerChannelPartnerId: partner.id } }),
     prisma.emailLead.count({ where: { campaign: { ownerChannelPartnerId: partner.id } } }),
     prisma.emailActivityLog.findFirst({
@@ -143,6 +167,18 @@ channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
       },
       orderBy: { createdAt: "desc" },
       select: { createdAt: true }
+    }),
+    prisma.emailCampaign.findMany({
+      where: { ownerChannelPartnerId: partner.id },
+      orderBy: { updatedAt: "desc" },
+      take: 5,
+      include: { _count: { select: { leads: true } } }
+    }),
+    prisma.emailActivityLog.findMany({
+      where: { lead: { campaign: { ownerChannelPartnerId: partner.id } } },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } } }
     })
   ]);
 
@@ -151,8 +187,44 @@ channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
     portalAccount: partner.portalUser,
     campaignCount,
     leadCount,
-    lastSentAt: lastSent?.createdAt ?? null
+    lastSentAt: lastSent?.createdAt ?? null,
+    campaigns: campaigns.map((campaign) => ({
+      id: campaign.id,
+      name: campaign.name,
+      status: campaign.status,
+      leadCount: campaign._count.leads,
+      updatedAt: campaign.updatedAt
+    })),
+    recentActivity: recentActivity.map((activity) => ({
+      id: activity.id,
+      kind: activity.kind,
+      title: activity.title,
+      detail: activity.detail,
+      createdAt: activity.createdAt,
+      leadName: activity.lead.name,
+      leadEmail: activity.lead.email,
+      campaignName: activity.lead.campaign.name
+    }))
   });
+}));
+
+channelPartnersRouter.post("/:id/portal-login-link", asyncHandler(async (req, res) => {
+  const partner = await prisma.channelPartner.findUnique({
+    where: { id: req.params.id },
+    include: { portalUser: { include: { channelPartner: { select: { id: true, name: true } } } } }
+  });
+  if (!partner) {
+    return res.status(404).json({ error: "Channel partner not found" });
+  }
+  if (!partner.portalUser) {
+    return res.status(409).json({ error: "No portal account yet — the partner must sign the agreement first." });
+  }
+  if (partner.portalUser.status === "SUSPENDED") {
+    return res.status(403).json({ error: "This partner portal account is suspended." });
+  }
+
+  const token = signChannelPartnerUserToken(partner.portalUser, "15m");
+  res.json({ url: `${req.protocol}://${req.get("host")}/partner?loginToken=${encodeURIComponent(token)}` });
 }));
 
 function publicPortalUser(portalUser) {

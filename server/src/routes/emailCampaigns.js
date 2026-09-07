@@ -174,13 +174,11 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
   const sevenDaysAgo = new Date(today);
   sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
 
-  // A Channel Partner's dashboard should only summarize their own leads —
-  // staff get {} (no filter, today's behavior unchanged). Mailbox
-  // performance is deliberately left global/unscoped: Phase 1 gives
-  // partners no mailboxes of their own (see channelPartnerScope.js's
-  // comment and the plan's "no new sending capability" note), so there's
-  // no per-partner mailbox data to scope it to.
+  // A Channel Partner's dashboard should only summarize their own campaign
+  // graph: campaigns, leads, activity, and mailbox stats all stay under the
+  // same ownerChannelPartnerId.
   const campaignFilter = ownerWhereClause(req);
+  const mailboxFilter = req.channelPartner ? { ownerChannelPartnerId: req.channelPartner.id } : { ownerChannelPartnerId: null };
 
   const [sentRows, openedRows, totalLeads, repliedLeads, interestedLeads, ndaSignedLeads, recentActivity, mailboxes] = await Promise.all([
     prisma.emailActivityLog.findMany({ where: { kind: { in: SEND_KINDS }, createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
@@ -195,7 +193,7 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
       take: 8,
       include: { lead: { select: { name: true, campaign: { select: { name: true } } } } }
     }),
-    prisma.emailAccount.findMany({ where: { isActive: true }, orderBy: { label: "asc" } })
+    prisma.emailAccount.findMany({ where: { isActive: true, ...mailboxFilter }, orderBy: { label: "asc" } })
   ]);
 
   const sentByDay = bucketByDay(sentRows, days);
@@ -322,18 +320,11 @@ const assignAccountSchema = z.object({
 });
 
 emailCampaignsRouter.post("/:id/email-account", asyncHandler(async (req, res) => {
-  // Phase 1 gives Channel Partners no mailboxes of their own — their
-  // campaigns always fall back to the shared global env-configured sender
-  // (see channelPartnerScope.js's comment), so assigning one of the real
-  // company mailboxes to a partner's campaign isn't offered at all.
-  if (req.channelPartner) {
-    return res.status(403).json({ error: "Channel Partner campaigns use the shared default sender — mailbox assignment is staff-only." });
-  }
-
   const parsed = assignAccountSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  if (!(await loadOwnedCampaignOr404(req, res, req.params.id))) return;
 
   if (parsed.data.emailAccountId) {
     const account = await prisma.emailAccount.findUnique({ where: { id: parsed.data.emailAccountId } });
@@ -342,6 +333,15 @@ emailCampaignsRouter.post("/:id/email-account", asyncHandler(async (req, res) =>
     }
     if (!account.isActive) {
       return res.status(409).json({ error: `Email account "${account.label}" is deactivated.` });
+    }
+    if (req.channelPartner && account.ownerChannelPartnerId !== req.channelPartner.id) {
+      return res.status(403).json({ error: "You don't have access to this mailbox." });
+    }
+    if (!req.channelPartner && req.user.role !== "ADMIN" && account.ownerId !== req.user.id) {
+      return res.status(403).json({ error: "You don't have access to this mailbox." });
+    }
+    if (!req.channelPartner && account.ownerChannelPartnerId) {
+      return res.status(403).json({ error: "You don't have access to this mailbox." });
     }
   }
 
@@ -496,7 +496,12 @@ emailCampaignsRouter.post("/:id/send-now", asyncHandler(async (req, res) => {
     const idSet = new Set(parsed.data.leadIds);
     leads = leads.filter((lead) => idSet.has(lead.id));
   } else if (parsed.data.segmentId) {
-    const segment = await prisma.emailSegment.findUnique({ where: { id: parsed.data.segmentId } });
+    const segment = await prisma.emailSegment.findFirst({
+      where: {
+        id: parsed.data.segmentId,
+        OR: [{ campaignId: null }, { campaign: ownerWhereClause(req) }]
+      }
+    });
     if (!segment) {
       return res.status(404).json({ error: "Segment not found" });
     }

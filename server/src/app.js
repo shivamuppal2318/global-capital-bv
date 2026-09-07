@@ -121,6 +121,7 @@ const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
   "/api/email/segments",
   "/api/email/templates",
   "/api/email/ai-agent",
+  "/api/email-accounts",
   "/api/market-intelligence",
   "/api/leads",
   "/api/documents",

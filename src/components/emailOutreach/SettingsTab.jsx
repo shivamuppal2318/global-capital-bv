@@ -4,7 +4,7 @@ import { PlusIcon, CogIcon, ZapIcon, CheckCircleIcon, LinkIcon, CopyIcon, Refres
 import { api } from "../../lib/api.js";
 import { emailAccountsApi } from "../../lib/emailAccountsApi.js";
 
-export function SettingsTab({ mailing }) {
+export function SettingsTab({ mailing, availableTabs }) {
   const {
     emailAccounts, newAccountForm, setNewAccountForm, handleAddEmailAccount, handleDeactivateAccount, systemStatus,
     testConnectionResult, handleTestConnection, selectedCampaign
@@ -13,10 +13,18 @@ export function SettingsTab({ mailing }) {
   const [integrationError, setIntegrationError] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
   const [copied, setCopied] = useState(null);
+  const showLeadIngestionApi = !availableTabs;
   // Per-mailbox SMTP test results, keyed by account id — the backend
   // (POST /api/email-accounts/:id/test) and API client already existed;
   // this is what was actually missing, a button in the UI to call them.
   const [accountTestResults, setAccountTestResults] = useState({});
+  // Which mailbox's "Activity" panel is open (one at a time) — real sends
+  // logged against that account, fetched on demand rather than for every
+  // mailbox up front.
+  const [activityOpenId, setActivityOpenId] = useState(null);
+  const [activityData, setActivityData] = useState(null);
+  const [activityBusy, setActivityBusy] = useState(false);
+  const [activityError, setActivityError] = useState(null);
 
   async function handleTestAccount(id) {
     setAccountTestResults((current) => ({ ...current, [id]: { pending: true } }));
@@ -28,12 +36,32 @@ export function SettingsTab({ mailing }) {
     }
   }
 
+  async function toggleActivity(accountId) {
+    if (activityOpenId === accountId) {
+      setActivityOpenId(null);
+      return;
+    }
+    setActivityOpenId(accountId);
+    setActivityData(null);
+    setActivityError(null);
+    setActivityBusy(true);
+    try {
+      const result = await emailAccountsApi.activity(accountId);
+      setActivityData(result);
+    } catch (err) {
+      setActivityError(err.message);
+    } finally {
+      setActivityBusy(false);
+    }
+  }
+
   useEffect(() => {
+    if (!showLeadIngestionApi) return;
     api
       .get("/settings/integrations")
       .then(setIntegration)
       .catch((err) => setIntegrationError(err.message));
-  }, []);
+  }, [showLeadIngestionApi]);
 
   const emailWebhookUrl = integration?.webhookUrl?.replace("/api/leads/inbound", "/api/email/leads/inbound");
 
@@ -121,49 +149,51 @@ export function SettingsTab({ mailing }) {
         </div>
       </div>
 
-      <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-        <div className="flex items-center gap-3">
-          <LinkIcon className="size-5 text-[#3046b2]" />
-          <h2 className="text-[16px] font-semibold text-[#102246]">Lead ingestion API</h2>
-        </div>
-
-        {integrationError ? <p className="mt-4 text-[13px] text-[#c94b6b]">{integrationError}</p> : null}
-        {!integrationError && !integration ? <p className="mt-4 text-[13px] text-[#9aa6ba]">Loading...</p> : null}
-
-        {integration ? (
-          <div className="mt-4 space-y-4">
-            <div>
-              <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Webhook / API endpoint</label>
-              <div className="flex items-center gap-2">
-                <input readOnly value={emailWebhookUrl} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f7f9fc] px-3.5 py-2.5 font-mono text-[13px] text-[#102246] outline-none" />
-                <button type="button" onClick={() => handleCopy("url", emailWebhookUrl)} className="grid size-10 shrink-0 place-items-center rounded-[12px] border border-[#d6deea] bg-white text-[#5f6f89]">
-                  <CopyIcon className="size-4" />
-                </button>
-              </div>
-              {copied === "url" ? <p className="mt-1 text-[12px] text-[#2b9b60]">Copied.</p> : null}
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">API key</label>
-              <div className="flex items-center gap-2">
-                <input readOnly value={integration.apiKey} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f7f9fc] px-3.5 py-2.5 font-mono text-[13px] text-[#102246] outline-none" />
-                <button type="button" onClick={() => handleCopy("key", integration.apiKey)} className="grid size-10 shrink-0 place-items-center rounded-[12px] border border-[#d6deea] bg-white text-[#5f6f89]">
-                  <CopyIcon className="size-4" />
-                </button>
-                <ActionButton label={regenerating ? "Regenerating..." : "Regenerate"} icon={RefreshIcon} small onClick={handleRegenerateKey} />
-              </div>
-              {copied === "key" ? <p className="mt-1 text-[12px] text-[#2b9b60]">Copied.</p> : null}
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Example request</label>
-              <pre className="overflow-x-auto rounded-[14px] bg-[#0f2042] px-4 py-3 text-[12px] leading-6 text-[#dfe6f7]">
-                <code>{curlExample}</code>
-              </pre>
-            </div>
+      {showLeadIngestionApi ? (
+        <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+          <div className="flex items-center gap-3">
+            <LinkIcon className="size-5 text-[#3046b2]" />
+            <h2 className="text-[16px] font-semibold text-[#102246]">Lead ingestion API</h2>
           </div>
-        ) : null}
-      </div>
+
+          {integrationError ? <p className="mt-4 text-[13px] text-[#c94b6b]">{integrationError}</p> : null}
+          {!integrationError && !integration ? <p className="mt-4 text-[13px] text-[#9aa6ba]">Loading...</p> : null}
+
+          {integration ? (
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Webhook / API endpoint</label>
+                <div className="flex items-center gap-2">
+                  <input readOnly value={emailWebhookUrl} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f7f9fc] px-3.5 py-2.5 font-mono text-[13px] text-[#102246] outline-none" />
+                  <button type="button" onClick={() => handleCopy("url", emailWebhookUrl)} className="grid size-10 shrink-0 place-items-center rounded-[12px] border border-[#d6deea] bg-white text-[#5f6f89]">
+                    <CopyIcon className="size-4" />
+                  </button>
+                </div>
+                {copied === "url" ? <p className="mt-1 text-[12px] text-[#2b9b60]">Copied.</p> : null}
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">API key</label>
+                <div className="flex items-center gap-2">
+                  <input readOnly value={integration.apiKey} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f7f9fc] px-3.5 py-2.5 font-mono text-[13px] text-[#102246] outline-none" />
+                  <button type="button" onClick={() => handleCopy("key", integration.apiKey)} className="grid size-10 shrink-0 place-items-center rounded-[12px] border border-[#d6deea] bg-white text-[#5f6f89]">
+                    <CopyIcon className="size-4" />
+                  </button>
+                  <ActionButton label={regenerating ? "Regenerating..." : "Regenerate"} icon={RefreshIcon} small onClick={handleRegenerateKey} />
+                </div>
+                {copied === "key" ? <p className="mt-1 text-[12px] text-[#2b9b60]">Copied.</p> : null}
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[13px] font-semibold text-[#334463]">Example request</label>
+                <pre className="overflow-x-auto rounded-[14px] bg-[#0f2042] px-4 py-3 text-[12px] leading-6 text-[#dfe6f7]">
+                  <code>{curlExample}</code>
+                </pre>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         <div className="flex items-center gap-3">
@@ -194,6 +224,13 @@ export function SettingsTab({ mailing }) {
                       >
                         {testResult?.pending ? "Testing..." : "Test"}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleActivity(account.id)}
+                        className="text-[12px] font-semibold text-[#3046b2]"
+                      >
+                        {activityOpenId === account.id ? "Hide activity" : "Activity"}
+                      </button>
                       {account.isActive ? (
                         <button type="button" onClick={() => handleDeactivateAccount(account.id)} className="text-[12px] font-semibold text-[#5f6f89]">
                           Deactivate
@@ -206,6 +243,37 @@ export function SettingsTab({ mailing }) {
                       {testResult.success ? <CheckCircleIcon className="mt-0.5 size-3.5 shrink-0" /> : null}
                       {testResult.message}
                     </p>
+                  ) : null}
+                  {activityOpenId === account.id ? (
+                    <div className="mt-2.5 rounded-[10px] border border-[#e7edf5] bg-[#f8faff] px-3 py-2.5">
+                      {activityBusy ? (
+                        <p className="text-[12px] text-[#9aa6ba]">Loading activity...</p>
+                      ) : activityError ? (
+                        <p className="text-[12px] text-[#c94b6b]">{activityError}</p>
+                      ) : activityData ? (
+                        <>
+                          <p className="text-[12px] font-semibold text-[#334463]">
+                            {activityData.totalSent} email{activityData.totalSent === 1 ? "" : "s"} sent through this mailbox
+                          </p>
+                          {activityData.activity.length ? (
+                            <ul className="mt-2 max-h-64 space-y-2 overflow-y-auto">
+                              {activityData.activity.map((row) => (
+                                <li key={row.id} className="border-t border-[#e7edf5] pt-2 first:border-t-0 first:pt-0">
+                                  <p className="truncate text-[12.5px] font-medium text-[#102246]">{row.title}</p>
+                                  <p className="truncate text-[12px] text-[#6a7790]">
+                                    To {row.lead?.name || row.lead?.email || "unknown lead"}
+                                    {row.lead?.company ? ` (${row.lead.company})` : ""} · {new Date(row.createdAt).toLocaleString()}
+                                  </p>
+                                  <p className="truncate text-[11.5px] text-[#8a95aa]">{row.detail}</p>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="mt-1.5 text-[12px] text-[#9aa6ba]">Nothing sent through this mailbox yet.</p>
+                          )}
+                        </>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               );

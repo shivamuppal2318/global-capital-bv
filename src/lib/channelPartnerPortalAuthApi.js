@@ -25,6 +25,15 @@ export const channelPartnerPortalAuthApi = {
   forgotPassword: (email) => apiFetch(`${API_BASE_URL}/forgot-password`, { method: "POST", body: { email } }),
   resetPassword: (token, newPassword) =>
     apiFetch(`${API_BASE_URL}/reset-password`, { method: "POST", body: { token, newPassword } }),
+  acceptLoginToken: async (token) => {
+    setToken(token);
+    try {
+      return await apiFetch(`${API_BASE_URL}/me`);
+    } catch (error) {
+      setToken(null);
+      throw error;
+    }
+  },
   logout: () => setToken(null),
   hasToken: () => Boolean(getToken())
 };

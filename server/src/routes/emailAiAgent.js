@@ -5,6 +5,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { isAiReplyAgentConfigured, generateReplyDraft } from "../lib/aiReplyAgent.js";
 import { getAiConfig } from "../lib/aiSettings.js";
 import { sendRawEmail } from "../lib/leadSender.js";
+import { ownerWhereClause } from "../lib/channelPartnerScope.js";
 
 export const emailAiAgentRouter = Router();
 
@@ -27,12 +28,26 @@ emailAiAgentRouter.get("/drafts", asyncHandler(async (req, res) => {
   }
 
   const drafts = await prisma.aiReplyDraft.findMany({
-    where: statusParam ? { status: statusParam } : {},
+    where: {
+      ...(statusParam ? { status: statusParam } : {}),
+      lead: { campaign: ownerWhereClause(req) }
+    },
     include: { lead: leadSelect },
     orderBy: { createdAt: "desc" }
   });
   res.json(drafts);
 }));
+
+async function loadOwnedDraftOr404(req, res, id) {
+  const draft = await prisma.aiReplyDraft.findFirst({
+    where: { id, lead: { campaign: ownerWhereClause(req) } }
+  });
+  if (!draft) {
+    res.status(404).json({ error: "Draft not found" });
+    return null;
+  }
+  return draft;
+}
 
 const generateSchema = z.object({ leadId: z.string().min(1) });
 
@@ -45,7 +60,7 @@ emailAiAgentRouter.post("/drafts/generate", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const lead = await prisma.emailLead.findUnique({ where: { id: parsed.data.leadId } });
+  const lead = await prisma.emailLead.findFirst({ where: { id: parsed.data.leadId, campaign: ownerWhereClause(req) } });
   if (!lead) {
     return res.status(404).json({ error: "Lead not found" });
   }
@@ -92,9 +107,9 @@ emailAiAgentRouter.post("/drafts/generate", asyncHandler(async (req, res) => {
 // send in this app uses (see lib/leadSender.js) — nothing about the AI
 // Agent gets a shortcut around unsubscribe/bounce/daily-cap checks.
 emailAiAgentRouter.post("/drafts/:id/send", asyncHandler(async (req, res) => {
-  const draft = await prisma.aiReplyDraft.findUnique({ where: { id: req.params.id } });
+  const draft = await loadOwnedDraftOr404(req, res, req.params.id);
   if (!draft) {
-    return res.status(404).json({ error: "Draft not found" });
+    return;
   }
   if (draft.status === "SENT") {
     return res.status(409).json({ error: "This draft was already sent." });
@@ -119,9 +134,9 @@ emailAiAgentRouter.post("/drafts/:id/send", asyncHandler(async (req, res) => {
 }));
 
 emailAiAgentRouter.post("/drafts/:id/skip", asyncHandler(async (req, res) => {
-  const draft = await prisma.aiReplyDraft.findUnique({ where: { id: req.params.id } });
+  const draft = await loadOwnedDraftOr404(req, res, req.params.id);
   if (!draft) {
-    return res.status(404).json({ error: "Draft not found" });
+    return;
   }
   if (draft.status === "SENT") {
     return res.status(409).json({ error: "This draft was already sent." });
@@ -139,9 +154,9 @@ emailAiAgentRouter.post("/drafts/:id/skip", asyncHandler(async (req, res) => {
 // actually went out — blocked the same way emailTemplates.js protects its
 // load-bearing keys from deletion.
 emailAiAgentRouter.delete("/drafts/:id", asyncHandler(async (req, res) => {
-  const existing = await prisma.aiReplyDraft.findUnique({ where: { id: req.params.id } });
+  const existing = await loadOwnedDraftOr404(req, res, req.params.id);
   if (!existing) {
-    return res.status(404).json({ error: "Draft not found" });
+    return;
   }
   if (existing.status === "SENT") {
     return res.status(409).json({ error: "Can't discard a draft that was already sent — it's the real send record." });

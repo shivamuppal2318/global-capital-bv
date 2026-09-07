@@ -10,11 +10,13 @@ function request(path, options = {}) {
 export const dealStagesApi = {
   catalogue: () => request("/catalogue"),
   summary: () => request("/summary"),
-  list: ({ stage, status, q } = {}) => {
+  list: ({ stage, status, q, leadId, owner } = {}) => {
     const params = new URLSearchParams();
     if (stage) params.set("stage", stage);
     if (status && status !== "All") params.set("status", status);
     if (q) params.set("q", q);
+    if (leadId) params.set("leadId", leadId);
+    if (owner) params.set("owner", owner);
     const suffix = params.toString();
     return request(suffix ? `?${suffix}` : "");
   },

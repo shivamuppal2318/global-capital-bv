@@ -130,8 +130,17 @@ export function UniversalFiltersModule() {
   const [error, setError] = useState(null);
   const [showMore, setShowMore] = useState(false);
 
+  // Previously swallowed silently — a facets-load failure (403 from the
+  // module permission gate, an expired session, network issue) left every
+  // dropdown looking empty/broken with zero indication why, while the
+  // search error below (same backend gate) was already surfaced. Now uses
+  // that same error banner so a real cause is always visible instead of a
+  // mysterious "options don't work."
   useEffect(() => {
-    universalFiltersApi.facets().then(setFacets).catch(() => {});
+    universalFiltersApi
+      .facets()
+      .then(setFacets)
+      .catch((err) => setError(`Could not load filter options: ${err.message}`));
   }, []);
 
   const runSearch = useCallback(() => {

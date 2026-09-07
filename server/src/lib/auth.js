@@ -96,11 +96,11 @@ export function verifyClientToken(token) {
 // Authorization-header convention instead.
 const CHANNEL_PARTNER_TOKEN_TTL = "30d";
 
-export function signChannelPartnerUserToken(channelPartnerUser) {
+export function signChannelPartnerUserToken(channelPartnerUser, expiresIn = CHANNEL_PARTNER_TOKEN_TTL) {
   return jwt.sign(
     { sub: channelPartnerUser.id, email: channelPartnerUser.email, type: "channel-partner" },
     jwtSecret(),
-    { expiresIn: CHANNEL_PARTNER_TOKEN_TTL }
+    { expiresIn }
   );
 }
 

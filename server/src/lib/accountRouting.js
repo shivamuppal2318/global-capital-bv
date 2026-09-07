@@ -24,5 +24,11 @@ export async function resolveEmailAccount(lead, campaign, client = prisma) {
       return match;
     }
   }
-  return campaign?.emailAccount ?? null;
+  // A campaign's explicitly-assigned mailbox was still used to send even
+  // after an admin deactivated it — this fallback returned campaign.emailAccount
+  // unconditionally, with no isActive check at all (unlike the country-match
+  // branch above, which already required it). Deactivating a mailbox now
+  // actually stops it being used here too, falling back to the single
+  // global env-configured provider exactly as "no mailbox assigned" already does.
+  return campaign?.emailAccount?.isActive ? campaign.emailAccount : null;
 }

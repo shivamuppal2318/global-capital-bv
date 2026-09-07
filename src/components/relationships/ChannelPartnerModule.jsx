@@ -53,6 +53,10 @@ export function ChannelPartnerModule() {
   const [agreementNotice, setAgreementNotice] = useState(null);
   const [agreementLinkUrl, setAgreementLinkUrl] = useState(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  // Whether the link was also emailed to the partner's contact address by
+  // default (see channelPartnersApi.agreementLink) — shown next to the
+  // copy-friendly link box, not folded into agreementNotice above.
+  const [agreementEmailStatus, setAgreementEmailStatus] = useState(null);
   // Real Channel Partner Portal activity — what a partner has actually done
   // with their own login (own campaigns/leads, see channelPartnerScope.js),
   // shown as an expandable section per partner, one open at a time, same
@@ -63,9 +67,24 @@ export function ChannelPartnerModule() {
   const [activityBusy, setActivityBusy] = useState(false);
   const [activityError, setActivityError] = useState(null);
   const [portalLinkCopied, setPortalLinkCopied] = useState(false);
+  const [portalLoginBusyId, setPortalLoginBusyId] = useState(null);
+  const [portalLoginError, setPortalLoginError] = useState(null);
 
   async function handleCopyPortalLink(url) {
     setPortalLinkCopied(await copyToClipboard(url));
+  }
+
+  async function openPortalAsPartner(partner) {
+    setPortalLoginBusyId(partner.id);
+    setPortalLoginError(null);
+    try {
+      const result = await channelPartnersApi.portalLoginLink(partner.id);
+      window.open(result.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setPortalLoginError(err.message);
+    } finally {
+      setPortalLoginBusyId(null);
+    }
   }
 
   async function toggleActivity(partner) {
@@ -78,6 +97,7 @@ export function ChannelPartnerModule() {
     setActivityError(null);
     setActivityBusy(true);
     setPortalLinkCopied(false);
+    setPortalLoginError(null);
     try {
       const result = await channelPartnersApi.activity(partner.id);
       setActivityData(result);
@@ -124,6 +144,7 @@ export function ChannelPartnerModule() {
     setAgreementNoticeId(null);
     setAgreementLinkUrl(null);
     setLinkCopied(false);
+    setAgreementEmailStatus(null);
     try {
       const result = await channelPartnersApi.agreementLink(partner.id);
       if (result.signed) {
@@ -132,6 +153,13 @@ export function ChannelPartnerModule() {
         setLinkCopied(await copyToClipboard(result.url));
         setAgreementNotice(null);
         setAgreementLinkUrl(result.url);
+        if (!result.contactEmail) {
+          setAgreementEmailStatus("No contact email on file for this partner — copy and send the link manually.");
+        } else if (result.emailSent) {
+          setAgreementEmailStatus(`Also emailed to ${result.contactEmail}.`);
+        } else {
+          setAgreementEmailStatus(`Could not email ${result.contactEmail} (${result.emailError}) — copy and send manually.`);
+        }
       }
       setAgreementNoticeId(partner.id);
     } catch (err) {
@@ -473,7 +501,7 @@ export function ChannelPartnerModule() {
                 <div className="mt-2.5 rounded-[12px] border border-[#e7edf5] bg-[#fbfcfe] p-3">
                   <p className="flex items-center gap-1.5 text-[12px] font-semibold text-[#2b9b60]">
                     <CheckCircleIcon className="size-3.5" />
-                    {linkCopied ? "Link copied to clipboard" : "Link generated"} — send it to the partner however you'd like
+                    {linkCopied ? "Link copied to clipboard" : "Link generated"} — you can still send it manually below
                   </p>
                   <div className="mt-2 flex items-center gap-2">
                     <input
@@ -491,6 +519,9 @@ export function ChannelPartnerModule() {
                       {linkCopied ? "Copied" : "Copy"}
                     </button>
                   </div>
+                  {agreementEmailStatus ? (
+                    <p className="mt-2 text-[12px] text-[#6a7790]">{agreementEmailStatus}</p>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -563,6 +594,41 @@ export function ChannelPartnerModule() {
                             ? new Date(activityData.portalAccount.lastLoginAt).toLocaleString()
                             : "Never"}
                         </p>
+                        {activityData.campaigns?.length ? (
+                          <div className="!mt-3 rounded-[10px] border border-[#e7edf5] bg-white">
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-[#e7edf5] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8a8fe8]">
+                              <span>Campaign</span>
+                              <span>Status</span>
+                              <span>Leads</span>
+                            </div>
+                            {activityData.campaigns.map((campaign) => (
+                              <div key={campaign.id} className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-[#f0f3f9] px-3 py-2 last:border-b-0">
+                                <span className="min-w-0 truncate font-medium text-[#102246]">{campaign.name}</span>
+                                <span className="text-[#5f6f89]">{campaign.status}</span>
+                                <span className="text-[#5f6f89]">{campaign.leadCount}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="!mt-3 text-[12px] text-[#8593ac]">No partner campaigns created yet.</p>
+                        )}
+                        {activityData.recentActivity?.length ? (
+                          <div className="!mt-3 space-y-2">
+                            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Recent activity</p>
+                            {activityData.recentActivity.map((activity) => (
+                              <div key={activity.id} className="rounded-[10px] border border-[#e7edf5] bg-white px-3 py-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="font-medium text-[#102246]">{activity.title}</p>
+                                  <span className="text-[12px] text-[#8593ac]">{new Date(activity.createdAt).toLocaleString()}</span>
+                                </div>
+                                <p className="mt-1 text-[12px] text-[#5f6f89]">
+                                  {activity.leadName} · {activity.campaignName}
+                                </p>
+                                {activity.detail ? <p className="mt-1 text-[12px] text-[#8593ac]">{activity.detail}</p> : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
                         <div className="!mt-2.5 flex items-center gap-2">
                           <input
                             readOnly
@@ -578,7 +644,18 @@ export function ChannelPartnerModule() {
                             <CopyIcon className="size-3.5" />
                             {portalLinkCopied ? "Copied" : "Copy portal link"}
                           </button>
+                          <a
+                            href={`${window.location.origin}/partner`}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              openPortalAsPartner(p);
+                            }}
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[12px] font-medium text-[#3046b2] hover:bg-[#f4f7fb]"
+                          >
+                            {portalLoginBusyId === p.id ? "Opening..." : "Open portal"}
+                          </a>
                         </div>
+                        {portalLoginError ? <p className="text-[12px] font-medium text-[#e0483f]">{portalLoginError}</p> : null}
                       </div>
                     )
                   ) : null}

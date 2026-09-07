@@ -595,6 +595,7 @@ model ChannelPartner {
 
   portalUser     ChannelPartnerUser?
   ownedCampaigns EmailCampaign[]
+  emailAccounts  EmailAccount[]
 
   @@index([status])
 }
@@ -1183,16 +1184,20 @@ model EmailAccount {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // null = a shared/company mailbox (managed by an Admin, usable in any
-  // campaign). Set = a personal mailbox owned by that employee — only they
-  // (or an Admin) can see or edit it.
+  // null owner + null ownerChannelPartner = a shared/company mailbox
+  // (managed by an Admin, usable in staff campaigns). ownerId = a personal
+  // employee mailbox. ownerChannelPartnerId = a Channel Partner portal
+  // mailbox, visible/editable only to that partner.
   owner   User?   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId String?
+  ownerChannelPartner   ChannelPartner? @relation(fields: [ownerChannelPartnerId], references: [id], onDelete: Cascade)
+  ownerChannelPartnerId String?
 
   campaigns EmailCampaign[]
   sentActivity EmailActivityLog[]
 
   @@index([ownerId])
+  @@index([ownerChannelPartnerId])
   @@index([country])
 }
 
