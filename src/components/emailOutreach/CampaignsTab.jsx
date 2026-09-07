@@ -152,30 +152,21 @@ export function CampaignsTab({ mailing }) {
   const [recentSendsLoading, setRecentSendsLoading] = useState(false);
   // Which recent-send row's full detail (message id, deliverability
   // warnings, etc.) is open in a popup -- that text is often too long to
-  // read truncated inline in the row itself. Shared by both the composer's
-  // own "Recent sends" panel and the list view's per-campaign popup below,
-  // so it's rendered once (activityDetailPopup) and referenced from both
-  // of this component's two early-return branches.
+  // read truncated inline in the row itself.
   const [activityDetailRow, setActivityDetailRow] = useState(null);
 
-  // The list view's own "who did this campaign actually send to" popup --
-  // distinct from the composer's always-loaded Recent sends panel, since a
-  // campaign can be inspected this way straight from the list without
-  // opening it first. Fetched on demand per campaign, not preloaded for
-  // every row up front.
-  const [listActivityCampaign, setListActivityCampaign] = useState(null);
-  const [listActivityRows, setListActivityRows] = useState([]);
-  const [listActivityLoading, setListActivityLoading] = useState(false);
+  const [activityPage, setActivityPage] = useState(null);
+  const [activityPageLoading, setActivityPageLoading] = useState(false);
 
   function openListActivity(campaign) {
-    setListActivityCampaign(campaign);
-    setListActivityRows([]);
-    setListActivityLoading(true);
+    setViewMode("activity");
+    setActivityPage({ campaign, stats: null, recipients: [], events: [] });
+    setActivityPageLoading(true);
     emailCampaignsApi
-      .sentActivity(campaign.id)
-      .then(setListActivityRows)
-      .catch(() => setListActivityRows([]))
-      .finally(() => setListActivityLoading(false));
+      .activityDetail(campaign.id)
+      .then(setActivityPage)
+      .catch(() => setActivityPage({ campaign, stats: null, recipients: [], events: [], error: "Could not load campaign activity." }))
+      .finally(() => setActivityPageLoading(false));
   }
 
   const activityDetailPopup = activityDetailRow ? (
@@ -216,63 +207,6 @@ export function CampaignsTab({ mailing }) {
     </div>
   ) : null;
 
-  const listActivityPopup = listActivityCampaign ? (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" onClick={() => setListActivityCampaign(null)}>
-      <div
-        className="max-h-[80vh] w-full max-w-[560px] overflow-y-auto rounded-[16px] border border-[#d6deea] bg-white p-5 shadow-[0_12px_36px_rgba(16,34,70,0.18)]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold text-[#102246]">{listActivityCampaign.name}</p>
-            <p className="text-[12px] text-[#8592ab]">Emails sent — click a lead for its full activity</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setListActivityCampaign(null)}
-            className="grid size-7 shrink-0 place-items-center rounded-[8px] text-[#8592ab] hover:bg-[#f0f3f9]"
-          >
-            <XIcon className="size-4" />
-          </button>
-        </div>
-
-        {listActivityLoading ? (
-          <p className="mt-4 text-[13px] text-[#9aa6ba]">Loading…</p>
-        ) : listActivityRows.length ? (
-          <div className="mt-4 space-y-2">
-            {listActivityRows.map((row) => (
-              <button
-                key={row.id}
-                type="button"
-                onClick={() => setActivityDetailRow(row)}
-                className="flex w-full items-center justify-between gap-4 rounded-[12px] border border-[#e7edf5] px-4 py-2.5 text-left hover:bg-[#f8faff]"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-[13.5px] font-semibold text-[#102246]">
-                    {row.leadName} <span className="font-normal text-[#8592ab]">— {row.leadEmail}</span>
-                  </p>
-                  <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">{row.detail}</p>
-                </div>
-                <span
-                  className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                    row.status === "sent"
-                      ? "bg-[#dff5e7] text-[#2b9b60]"
-                      : row.status === "failed"
-                        ? "bg-[#ffe4ee] text-[#ef5b8f]"
-                        : "bg-[#fff4de] text-[#c47f1a]"
-                  }`}
-                >
-                  {row.status === "sent" ? "Sent" : row.status === "failed" ? "Failed" : "Sending…"}
-                </span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-4 text-[13px] text-[#9aa6ba]">No blast sends yet for this campaign.</p>
-        )}
-      </div>
-    </div>
-  ) : null;
   function loadRecentSends() {
     if (!selectedCampaignId) return;
     setRecentSendsLoading(true);
@@ -361,6 +295,167 @@ export function CampaignsTab({ mailing }) {
   function openCampaign(campaign) {
     selectCampaign(campaign);
     setViewMode("composer");
+  }
+
+  function fmtDateTime(value) {
+    return value ? new Date(value).toLocaleString() : "—";
+  }
+
+  function fmtRate(value) {
+    return value === null || value === undefined ? "—" : `${value}%`;
+  }
+
+  function activityKindLabel(kind) {
+    return String(kind ?? "").replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  function activityDotClass(kind) {
+    if (kind === "LINK_CLICKED") return "bg-[#e8f7ff] text-[#247db8]";
+    if (kind === "REPLY_RECEIVED") return "bg-[#efe8ff] text-[#7a4ec2]";
+    if (kind === "BOUNCED" || kind === "SEND_BLOCKED") return "bg-[#ffe4ee] text-[#ef5b8f]";
+    if (kind === "EMAIL_OPENED") return "bg-[#eaf8ef] text-[#2b9b60]";
+    return "bg-[#eef4fb] text-[#60708b]";
+  }
+
+  if (viewMode === "activity") {
+    const detail = activityPage ?? {};
+    const campaign = detail.campaign ?? {};
+    const stats = detail.stats ?? {};
+    const statCards = [
+      ["Recipients", stats.recipients ?? "—", "Total contacts in list"],
+      ["Emails Sent", stats.sent ?? "—", "Actual provider sends"],
+      ["Opened", stats.opened ?? "—", `${fmtRate(stats.openRate)} open rate`],
+      ["Clicked", stats.clicked ?? "—", `${fmtRate(stats.clickRate)} click rate`],
+      ["Replies", stats.replied ?? "—", "Interested / not interested / other"],
+      ["Issues", (stats.bounced ?? 0) + (stats.unsubscribed ?? 0), `${stats.bounced ?? 0} bounced, ${stats.unsubscribed ?? 0} unsubscribed`]
+    ];
+
+    return (
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              className="inline-flex items-center gap-2 rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-medium text-[#435471] shadow-[0_2px_8px_rgba(30,48,87,0.04)]"
+            >
+              <span aria-hidden="true">←</span>
+              Back to campaigns
+            </button>
+            <div className="min-w-0">
+              <p className="truncate text-[18px] font-semibold text-[#102246]">{campaign.name ?? "Campaign activity"}</p>
+              <p className="truncate text-[12px] text-[#8592ab]">{campaign.subject || "No subject saved yet"}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => campaign.id && openListActivity(campaign)}
+            disabled={activityPageLoading || !campaign.id}
+            className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#3046b2] disabled:opacity-50"
+          >
+            {activityPageLoading ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+
+        {detail.error ? (
+          <div className="rounded-[16px] border border-[#ffe4ee] bg-[#fff6f9] px-4 py-3 text-[13px] font-semibold text-[#c43d72]">{detail.error}</div>
+        ) : null}
+
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {statCards.map(([label, value, note]) => (
+            <div key={label} className="rounded-[14px] border border-[#d6deea] bg-white px-4 py-3 shadow-[0_3px_12px_rgba(30,48,87,0.05)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7a89a4]">{label}</p>
+              <p className="mt-2 text-[24px] font-semibold text-[#102246]">{value}</p>
+              <p className="mt-1 truncate text-[12px] text-[#8592ab]">{note}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+          <div className="rounded-[20px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-[16px] font-semibold text-[#102246]">Recipients</h2>
+              <span className="rounded-full bg-[#eef4fb] px-2.5 py-1 text-[11px] font-semibold text-[#60708b]">{detail.recipients?.length ?? 0}</span>
+            </div>
+            <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e7edf5]">
+              <table className="w-full min-w-[780px] text-left">
+                <thead>
+                  <tr className="bg-[#f4f7fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#60708b]">
+                    <th className="px-3 py-3">Lead</th>
+                    <th className="px-3 py-3 text-right">Sent</th>
+                    <th className="px-3 py-3 text-right">Opened</th>
+                    <th className="px-3 py-3 text-right">Clicked</th>
+                    <th className="px-3 py-3">Reply</th>
+                    <th className="px-3 py-3">Last activity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activityPageLoading ? (
+                    <tr><td colSpan="6" className="px-3 py-5 text-[13px] text-[#9aa6ba]">Loading…</td></tr>
+                  ) : detail.recipients?.length ? (
+                    detail.recipients.map((lead) => (
+                      <tr key={lead.id} className="border-t border-[#edf1f6] text-[13px] text-[#5f6f89]">
+                        <td className="px-3 py-3">
+                          <p className="font-semibold text-[#102246]">{lead.leadName}</p>
+                          <p className="mt-0.5 text-[12px] text-[#8592ab]">{lead.company} · {lead.leadEmail}</p>
+                        </td>
+                        <td className="px-3 py-3 text-right font-semibold text-[#102246]">{lead.sentCount}</td>
+                        <td className="px-3 py-3 text-right">{lead.openCount}</td>
+                        <td className="px-3 py-3 text-right">{lead.clickCount}</td>
+                        <td className="px-3 py-3">
+                          <span className="rounded-full bg-[#f0f3f9] px-2 py-1 text-[11px] font-semibold text-[#60708b]">{activityKindLabel(lead.replyType)}</span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <p>{fmtDateTime(lead.lastActivityAt)}</p>
+                          <p className="mt-0.5 max-w-[220px] truncate text-[12px] text-[#9aa6ba]">{lead.lastDetail ?? "No activity yet"}</p>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr><td colSpan="6" className="px-3 py-5 text-[13px] text-[#9aa6ba]">No recipients in this campaign yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="rounded-[20px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-[16px] font-semibold text-[#102246]">Activity Timeline</h2>
+              <span className="rounded-full bg-[#eef4fb] px-2.5 py-1 text-[11px] font-semibold text-[#60708b]">{detail.events?.length ?? 0}</span>
+            </div>
+            <div className="mt-4 max-h-[560px] space-y-2 overflow-y-auto pr-1">
+              {activityPageLoading ? (
+                <p className="text-[13px] text-[#9aa6ba]">Loading…</p>
+              ) : detail.events?.length ? (
+                detail.events.map((event) => (
+                  <button
+                    key={event.id}
+                    type="button"
+                    onClick={() => setActivityDetailRow({ ...event, status: event.detail?.startsWith("Failed") ? "failed" : event.detail?.startsWith("Sending") ? "pending" : "sent" })}
+                    className="w-full rounded-[12px] border border-[#e7edf5] px-3 py-3 text-left hover:bg-[#f8faff]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-[#102246]">{event.leadName}</p>
+                        <p className="mt-0.5 truncate text-[12px] text-[#8592ab]">{event.title}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${activityDotClass(event.kind)}`}>{activityKindLabel(event.kind)}</span>
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-[#5f6f89]">{event.detail}</p>
+                    <p className="mt-2 text-[11px] text-[#9aa6ba]">{fmtDateTime(event.createdAt)}</p>
+                  </button>
+                ))
+              ) : (
+                <p className="text-[13px] text-[#9aa6ba]">No send, open, click, or reply activity yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {activityDetailPopup}
+      </section>
+    );
   }
 
   if (viewMode === "composer") {
@@ -876,7 +971,6 @@ export function CampaignsTab({ mailing }) {
         <p className="mt-2 text-[15px] font-medium text-[#102246]">{automationNotice}</p>
       </div>
 
-      {listActivityPopup}
       {activityDetailPopup}
     </section>
   );
