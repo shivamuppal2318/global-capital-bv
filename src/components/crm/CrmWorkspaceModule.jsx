@@ -11,7 +11,7 @@ import {
   UploadIcon,
   UserCheckIcon
 } from "../Icons";
-import { ActionButton, Card, noteToneClass, SectionTitle, StatCard } from "../ui";
+import { ActionButton, Card, noteToneClass, SectionTitle } from "../ui";
 import { leadsApi } from "../../lib/leadsApi";
 import { documentsApi } from "../../lib/documentsApi";
 import { universalFiltersApi } from "../../lib/universalFiltersApi";
@@ -1266,17 +1266,6 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     }
   }
 
-  const unassigned = leads.filter((l) => !l.owner).length;
-  const convertedPct = leads.length ? ((leads.filter((l) => l.status === "CONVERTED").length / leads.length) * 100).toFixed(1) : "0.0";
-  const qualifiedCount = leads.filter((l) => l.qualified).length;
-
-  const stats = [
-    { label: "Total records", value: String(leads.length), note: "Live from Postgres", noteTone: "blue" },
-    { label: "Unassigned", value: String(unassigned), note: "Assignment rules", noteTone: "amber" },
-    { label: "Converted", value: `${convertedPct}%`, note: "Lead → deal", noteTone: "green" },
-    { label: "Qualified", value: String(qualifiedCount), note: "Ready for outreach", noteTone: "cyan" }
-  ];
-
   const overview = selectedLead
     ? [
         ["Lead Owner", selectedLead.owner ?? "Unassigned"],
@@ -1299,11 +1288,15 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     : [];
 
   const visibleLeads = statusFilter === "ALL" ? leads : leads.filter((lead) => lead.status === statusFilter);
+  const dealStageCounts = dealBoard?.map((column) => ({
+    id: column.id,
+    label: column.label,
+    count: column.deals.length
+  })) ?? [];
 
   return (
     <div className="space-y-6">
       <Header
-        stats={stats}
         onNewRecord={() => setAddModalOpen(true)}
         onImport={() => setImportModalOpen(true)}
         viewsOpen={viewsOpen}
@@ -1317,6 +1310,14 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
           <SectionTitle icon={RadarIcon} iconClass="text-[#2f96da]">
             Deal pipeline
           </SectionTitle>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+            {dealStageCounts.map((stage) => (
+              <div key={stage.id} className="rounded-[14px] border border-[#e7edf5] bg-[#f8faff] px-4 py-3">
+                <p className="truncate text-[12px] font-semibold text-[#435471]">{stage.label}</p>
+                <p className="mt-2 text-[24px] font-semibold leading-none text-[#102246]">{stage.count}</p>
+              </div>
+            ))}
+          </div>
           <div className="mt-5 overflow-x-auto">
             <div className="flex gap-4" style={{ minWidth: "max-content" }}>
               {dealBoard.map((column) => (
@@ -1983,7 +1984,7 @@ const VIEW_OPTIONS = [
   { value: "LOST", label: "Lost" }
 ];
 
-function Header({ stats, onNewRecord, onImport, viewsOpen, setViewsOpen, statusFilter, setStatusFilter }) {
+function Header({ onNewRecord, onImport, viewsOpen, setViewsOpen, statusFilter, setStatusFilter }) {
   return (
     <section>
       <div className="flex items-start justify-between gap-4">
@@ -2025,14 +2026,6 @@ function Header({ stats, onNewRecord, onImport, viewsOpen, setViewsOpen, statusF
           ) : null}
         </div>
       </div>
-
-      {stats ? (
-        <div className="mt-7 grid gap-4 xl:grid-cols-4">
-          {stats.map((card) => (
-            <StatCard key={card.label} card={card} />
-          ))}
-        </div>
-      ) : null}
     </section>
   );
 }
