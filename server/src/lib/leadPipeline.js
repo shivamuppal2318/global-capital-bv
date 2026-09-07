@@ -248,27 +248,10 @@ export async function computePipelineSummary(where = {}) {
 }
 
 // A Kanban view of the SAME per-lead pipeline computeLeadPipeline already
-// tracks — one column per stage, one card per lead, placed in whichever
-// stage is furthest along for that lead (the highest-index stage that
-// isn't "not_started"). Deliberately not the same shape as
-// computePipelineSummary: that one is cumulative ("reached this stage at
-// least once", so one lead counts toward several stages at once); a Kanban
-// board needs each deal to live in exactly one column, its current stage,
-// the way a real pipeline board works.
-//
-// Outreach is the one deliberate exception to "exactly one column": every
-// other stage describes a gate a deal is currently AT (an unsigned NDA, a
-// scheduled call) and stops describing it once resolved or superseded, but
-// Outreach describes something that either happened or didn't — a lead who
-// replied "interested" and moved on was still, undeniably, sent a real
-// cold email. Hiding it from Outreach the moment it progresses would make
-// the column read as "leads currently stuck at first contact" instead of
-// what it's actually meant to answer here: "who did we genuinely email via
-// Email Automation" (confirmed live: a rep expected a lead that had
-// replied and moved to Interested to still show up in Outreach too, not
-// disappear from it). So it's added to board[OUTREACH] whenever real send
-// evidence exists, independent of — and in addition to — that lead's
-// single current-stage card below.
+// tracks. Unlike computePipelineSummary, this is not cumulative: one lead
+// appears in exactly one column, its current active stage. That's the
+// convention most CRM pipeline boards use, because column counts should add
+// up to active deals rather than double-counting every stage a deal passed.
 export async function computeDealBoard(where = {}) {
   const leads = await prisma.lead.findMany({ where, select: { id: true, name: true, company: true, capitalAsk: true, updatedAt: true } });
   const pipelines = await Promise.all(leads.map((l) => computeLeadPipeline(l.id)));
@@ -301,16 +284,6 @@ export async function computeDealBoard(where = {}) {
       stageDetail: pipeline[idx].detail
     });
 
-    // See the Outreach exception in this function's own comment above —
-    // real send evidence keeps a lead's card in Outreach even after it
-    // moves further along, so this is added independent of currentIdx
-    // below rather than competing with it for the one slot a lead gets in
-    // every other column.
-    const outreachIdx = STAGES.indexOf("OUTREACH");
-    if (pipeline[outreachIdx].status === "done") {
-      board[outreachIdx].deals.push(dealCard(outreachIdx));
-    }
-
     // The deal's real current column is its earliest unresolved gate
     // (in_progress or blocked) — e.g. an NDA that's been sent but not
     // signed yet — not just whichever stage was touched most recently.
@@ -331,10 +304,6 @@ export async function computeDealBoard(where = {}) {
       }
     });
     if (firstUnresolvedIdx !== null) currentIdx = firstUnresolvedIdx;
-
-    // currentIdx === outreachIdx means Outreach is the only thing this
-    // lead ever reached — already added above, don't double it up.
-    if (currentIdx === outreachIdx) return;
 
     board[currentIdx].deals.push(dealCard(currentIdx));
   });
