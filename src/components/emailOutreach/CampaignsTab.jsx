@@ -333,14 +333,18 @@ export function CampaignsTab({ mailing }) {
     );
   }
 
+  // Local UI state, not tied to any real campaign field — without this,
+  // picking a template in one campaign left the dropdown showing it as
+  // "selected" after switching to a different campaign that never had
+  // it applied, which read as if that campaign's content came from it.
+  // Deliberately does NOT also switch viewMode to "composer" here —
+  // selectedCampaignId defaults to (and gets reset to) the most recently
+  // created real campaign's id as soon as the backend list loads, even
+  // before the user has clicked anything, which used to jump straight
+  // into that campaign's editor instead of showing the list. openCampaign/
+  // openNewCampaign below already switch to "composer" themselves, exactly
+  // when the user actually asks to.
   useEffect(() => {
-    if (selectedCampaignId) {
-      setViewMode("composer");
-    }
-    // Local UI state, not tied to any real campaign field — without this,
-    // picking a template in one campaign left the dropdown showing it as
-    // "selected" after switching to a different campaign that never had
-    // it applied, which read as if that campaign's content came from it.
     setSelectedTemplateKey("");
   }, [selectedCampaignId]);
 
