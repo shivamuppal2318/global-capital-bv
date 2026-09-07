@@ -17,10 +17,9 @@ function MetricCard({ label, value, icon: Icon, iconClass }) {
   );
 }
 
-// onClick is only passed for the cards backed by a real per-lead breakdown
-// (Opened/Clicked/Unsubscribed) — Emails Sent counts raw send events, not
-// distinct leads, so there's no single matching "who" list for it the way
-// there is for the other three.
+// onClick opens the matching engagement-detail popup below — every card
+// here has one now, including Emails Sent (a list of individual sends,
+// since that number counts raw send events rather than distinct leads).
 function SummaryCard({ label, value, toneClass, onClick }) {
   const Tag = onClick ? "button" : "div";
   return (
@@ -98,7 +97,7 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
         </div>
 
         <div className="mt-3 grid gap-3 lg:grid-cols-5">
-          <SummaryCard label="Emails Sent" value={emailsSent} toneClass="text-[#2995db]" />
+          <SummaryCard label="Emails Sent" value={emailsSent} toneClass="text-[#2995db]" onClick={() => openEngagementDetail("sent", "Emails Sent")} />
           <SummaryCard label="Opened" value={opened} toneClass="text-[#2b9b60]" onClick={() => openEngagementDetail("opened", "Opened")} />
           <SummaryCard label="Clicked" value={clicked} toneClass="text-[#f29c38]" onClick={() => openEngagementDetail("clicked", "Clicked")} />
           <SummaryCard label="Bounced" value={bounced} toneClass="text-[#c47f1a]" onClick={() => openEngagementDetail("bounced", "Bounced")} />
@@ -204,7 +203,9 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
               <div className="min-w-0">
                 <p className="text-[15px] font-semibold text-[#102246]">{engagementDetail.label}</p>
                 <p className="text-[12px] text-[#8592ab]">
-                  {engagementDetail.loading ? "Loading…" : `${engagementDetail.rows.length} lead(s) — across every campaign`}
+                  {engagementDetail.loading
+                    ? "Loading…"
+                    : `${engagementDetail.rows.length} ${engagementDetail.kind === "sent" ? "send(s)" : "lead(s)"} — across every campaign`}
                 </p>
               </div>
               <button

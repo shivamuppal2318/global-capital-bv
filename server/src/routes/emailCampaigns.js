@@ -242,12 +242,10 @@ const ENGAGEMENT_DETAIL_ACTIVITY_KINDS = {
   bounced: "BOUNCED"
 };
 
-// Backs the Dashboard's Opened/Clicked/Bounced/Unsubscribed stat cards —
-// clicking one shows exactly which leads make up that number instead of
-// just the count. Same owner scoping as GET / and dashboard-summary, and
-// the same distinct-lead semantics withEngagementRates' own opened/
-// clicked/bounced counts use (one row per lead, their most recent event)
-// — so the list length always matches the number the card showed.
+// Backs the Dashboard's Emails Sent/Opened/Clicked/Bounced/Unsubscribed
+// stat cards — clicking one shows exactly which leads (or, for Sent,
+// which individual sends) make up that number instead of just the count.
+// Same owner scoping as GET / and dashboard-summary.
 emailCampaignsRouter.get("/engagement-detail/:kind", asyncHandler(async (req, res) => {
   const campaignFilter = ownerWhereClause(req);
 
@@ -260,6 +258,30 @@ emailCampaignsRouter.get("/engagement-detail/:kind", asyncHandler(async (req, re
     return res.json(leads.map((l) => ({ leadName: l.name, leadEmail: l.email, campaignName: l.campaign.name, at: l.updatedAt })));
   }
 
+  // Emails Sent deliberately counts every real send (SEND_KINDS), not
+  // distinct leads — a lead getting an intro plus 2 follow-up cadence
+  // steps is 3 real sends, and the card's own number (withEngagementRates'
+  // `sent`) already counts it that way. Distinct-by-lead here would make
+  // the list shorter than the number the card showed.
+  if (req.params.kind === "sent") {
+    const rows = await prisma.emailActivityLog.findMany({
+      where: { kind: { in: SEND_KINDS }, lead: { campaign: campaignFilter } },
+      orderBy: { createdAt: "desc" },
+      include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } } }
+    });
+    return res.json(rows.map((r) => ({
+      leadName: r.lead.name,
+      leadEmail: r.lead.email,
+      campaignName: r.lead.campaign.name,
+      at: r.createdAt,
+      detail: r.detail
+    })));
+  }
+
+  // Every kind from here on (opened/clicked/bounced) uses the same
+  // distinct-lead semantics withEngagementRates' own counts use (one row
+  // per lead, their most recent event) — so the list length always
+  // matches the number the card showed.
   const activityKind = ENGAGEMENT_DETAIL_ACTIVITY_KINDS[req.params.kind];
   if (!activityKind) {
     return res.status(400).json({ error: `Unknown engagement kind "${req.params.kind}"` });
