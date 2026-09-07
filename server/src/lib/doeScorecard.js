@@ -14,7 +14,12 @@
 import { outreachMetrics } from "./executiveMetrics.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const SEND_KINDS = new Set(["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"]);
+// Excludes BULK_INTRO_SENT on purpose — see the matching comment in
+// routes/emailCampaigns.js's own SEND_KINDS: it's logged when a lead is
+// merely added to a campaign, not when a real email actually goes out, so
+// counting it here would credit a DOE with "emails sent" for leads that
+// were only ever imported/added, never delivered to.
+const SEND_KINDS = new Set(["BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"]);
 
 function round(n, places = 1) {
   const f = 10 ** places;

@@ -187,9 +187,14 @@ channelPartnersRouter.get("/:id/activity", asyncHandler(async (req, res) => {
   const [campaignCount, leadCount, lastSent, campaigns, recentActivity] = await Promise.all([
     prisma.emailCampaign.count({ where: { ownerChannelPartnerId: partner.id } }),
     prisma.emailLead.count({ where: { campaign: { ownerChannelPartnerId: partner.id } } }),
+    // Excludes BULK_INTRO_SENT on purpose — see the matching comment in
+    // routes/emailCampaigns.js's own SEND_KINDS: it's logged when a lead is
+    // merely added to a campaign, not when a real email actually goes out,
+    // so counting it here could show a recent "last sent" for a partner
+    // who has only ever added/imported leads and never actually sent one.
     prisma.emailActivityLog.findFirst({
       where: {
-        kind: { in: ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"] },
+        kind: { in: ["BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"] },
         lead: { campaign: { ownerChannelPartnerId: partner.id } }
       },
       orderBy: { createdAt: "desc" },

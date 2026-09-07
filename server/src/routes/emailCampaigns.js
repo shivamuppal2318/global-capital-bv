@@ -81,7 +81,19 @@ const createCampaignSchema = z.object({
 // dashboard-summary's own SEND_KINDS-based one), which would have made a
 // campaign's own Sent count silently ignore its real CAMPAIGN_BLAST_SENT
 // sends — the very metric this feature needs to show correctly.
-const SEND_KINDS = ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"];
+//
+// Deliberately excludes BULK_INTRO_SENT — despite its name, that kind is
+// logged the moment a lead is merely ADDED to a campaign (see
+// routes/emailLeads.js's POST / and POST /bulk), regardless of whether a
+// real email ever went out for them: with no CadenceStep configured (the
+// common case today) or the queue disabled, scheduleCadenceSteps schedules
+// nothing, yet this row got created and counted as "sent" anyway. That
+// made Emails Sent jump the instant leads were bulk-added/imported/added
+// to a List — before any real delivery attempt — which is exactly what
+// made "Add to List" look like it silently sent mail. A real send is
+// always BRANCH_EMAIL_SENT (the cadence worker) or CAMPAIGN_BLAST_SENT
+// (Send Now) — both created only once an actual provider send happens.
+const SEND_KINDS = ["BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"];
 
 // Real open/click rates, computed from ActivityLog rows the tracking pixel
 // and click-redirect actually write (see routes/tracking.js) — not the
