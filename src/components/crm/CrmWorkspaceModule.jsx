@@ -572,9 +572,12 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   const [importResult, setImportResult] = useState(null);
   // "Views" — a quick client-side status filter over the already-loaded
   // leads list (New Enquiries table below); no new backend call needed
-  // since every lead's status is already in `leads`.
+  // since every lead's status is already in `leads`. Defaults to
+  // "Interested" per request — the table a rep lands on should already be
+  // narrowed to the leads worth acting on, not every status mixed together;
+  // "Views" still switches to "All statuses" or any other one in one click.
   const [viewsOpen, setViewsOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("INTERESTED");
   // Convert: promotes a lead to CONVERTED — a single-field shortcut from the
   // action bar onto the same PATCH the Edit form already uses.
   const [converting, setConverting] = useState(false);
