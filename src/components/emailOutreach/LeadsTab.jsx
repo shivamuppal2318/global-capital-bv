@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActionButton, Field } from "../ui.jsx";
+import { ActionButton, Field, noteToneClass } from "../ui.jsx";
 import { SearchIcon } from "../Icons.jsx";
 
 function downloadSampleLeadsCsv() {
@@ -475,7 +475,11 @@ function SubscribersView({
                       <td className="px-4 py-3">{lead.company}</td>
                       <td className="px-4 py-3">{lead.country || "—"}</td>
                       <td className="px-4 py-3">{lead.stage}</td>
-                      <td className="px-4 py-3">{lead.unsubscribed ? "No" : "Yes"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${lead.unsubscribed ? noteToneClass.slate : noteToneClass.green}`}>
+                          {lead.unsubscribed ? "Unsubscribed" : "Subscribed"}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
