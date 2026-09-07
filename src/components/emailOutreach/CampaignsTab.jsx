@@ -380,18 +380,18 @@ export function CampaignsTab({ mailing }) {
           </p>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[1.45fr_0.75fr] xl:items-start">
-          <div className="rounded-[24px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-            <div className="-mx-4 -mt-4 rounded-t-[24px] border-b border-[#e7edf5] px-4 py-4">
+        <div className="grid gap-5 xl:grid-cols-[1.45fr_0.75fr] xl:items-start">
+          <div className="rounded-[24px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+            <div className="-mx-5 -mt-5 rounded-t-[24px] border-b border-[#e7edf5] px-5 py-4">
               <h2 className="text-[17px] font-semibold text-[#222347]">{selectedCampaign ? "Campaign Editor" : "New Campaign"}</h2>
             </div>
 
-            <div className="mt-4 space-y-3">
+            <div className="mt-5 space-y-5">
               <Field label="Campaign Name">
                 <input
                   value={automationForm.campaignName}
                   onChange={(event) => handleFormChange("campaignName", event.target.value)}
-                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[14px] text-[#102246] outline-none focus:border-[#3046b2] focus:ring-1 focus:ring-[#3046b2]/20"
                 />
               </Field>
 
@@ -400,7 +400,7 @@ export function CampaignsTab({ mailing }) {
                   value={automationForm.subject}
                   onChange={(event) => handleFormChange("subject", event.target.value)}
                   placeholder="e.g. Q4 renewables mandate — quick intro"
-                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[14px] text-[#102246] outline-none focus:border-[#3046b2] focus:ring-1 focus:ring-[#3046b2]/20"
                 />
               </Field>
 
@@ -411,7 +411,7 @@ export function CampaignsTab({ mailing }) {
                   placeholder="Hi {{leadName}}, ..."
                   unsubscribeLinkTag="{{unsubscribeUrl}}"
                 />
-                <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
+                <p className="mt-3 text-[11px] leading-5 text-[#8593ac]">
                   Format with the toolbar, or click the HTML button to edit raw HTML. Use the sign-out-shaped button
                   to insert a working Unsubscribe link in one click (select text first to relink it, e.g. the word
                   "unsubscribe") — typing the merge tag itself into the regular link button's prompt makes a dead
@@ -463,8 +463,8 @@ export function CampaignsTab({ mailing }) {
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-            <div className="space-y-3">
+          <div className="rounded-[24px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+            <div className="space-y-4">
               <Field label="Select Template">
                 <select
                   value={selectedTemplateKey}

@@ -86,10 +86,10 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
   }
 
   return (
-    <div className="rounded-[14px] border border-[#d6deea] bg-[#f8faff] focus-within:border-[#3046b2]">
-      <div className="flex flex-wrap items-center gap-1 border-b border-[#e1e7f0] px-2 py-1.5">
-        <span className="px-2 text-[12px] text-[#5f6f89]">Normal</span>
-        <span className="mx-1 h-4 w-px bg-[#d6deea]" />
+    <div className="overflow-hidden rounded-[14px] border border-[#d6deea] bg-[#f4f7fc] focus-within:border-[#3046b2] focus-within:ring-1 focus-within:ring-[#3046b2]/20">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-[#e1e7f0] px-3 py-2.5">
+        <span className="px-2 text-[12px] font-medium text-[#5f6f89]">Normal</span>
+        <span className="mx-1 h-5 w-px bg-[#d6deea]" />
         {toolbarButtons.map(({ command, icon: Icon, label }) => (
           <button
             key={command}
@@ -99,12 +99,12 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
             disabled={htmlMode}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => runCommand(command)}
-            className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+            className="grid size-8 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
           >
             <Icon className="size-4" />
           </button>
         ))}
-        <span className="mx-1 h-4 w-px bg-[#d6deea]" />
+        <span className="mx-1 h-5 w-px bg-[#d6deea]" />
         <button
           type="button"
           title="Insert link"
@@ -124,7 +124,7 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
             disabled={htmlMode}
             onMouseDown={(event) => event.preventDefault()}
             onClick={handleInsertUnsubscribeLink}
-            className="grid size-7 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+            className="grid size-8 place-items-center rounded-[8px] text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
           >
             <LogOutIcon className="size-4" />
           </button>
@@ -140,7 +140,7 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
           >
             <ImageIcon className="size-4" />
           </button>
-        <span className="mx-1 h-4 w-px bg-[#d6deea]" />
+        <span className="mx-1 h-5 w-px bg-[#d6deea]" />
         <button
           type="button"
           onMouseDown={(event) => event.preventDefault()}
@@ -157,7 +157,7 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
           value={value}
           onChange={(event) => handleHtmlTextareaChange(event.target.value)}
           placeholder={placeholder}
-          className="min-h-[220px] w-full resize-y bg-white px-4 py-3 font-mono text-[13px] leading-6 text-[#435471] outline-none"
+          className="min-h-[320px] w-full resize-y bg-white px-5 py-4 font-mono text-[13px] leading-7 text-[#435471] outline-none"
         />
       ) : (
         <div
@@ -166,7 +166,7 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
           suppressContentEditableWarning
           onInput={emitChange}
           data-placeholder={placeholder}
-          className="min-h-[220px] px-4 py-3 text-[14px] leading-6 text-[#435471] outline-none empty:before:text-[#9aa6ba] empty:before:content-[attr(data-placeholder)] [&_a]:text-[#3046b2] [&_a]:underline [&_img]:max-w-full [&_img]:rounded-[8px] [&_ul]:list-disc [&_ul]:pl-5"
+          className="min-h-[320px] bg-white px-5 py-4 text-[14.5px] leading-7 text-[#334463] outline-none empty:before:text-[#9aa6ba] empty:before:content-[attr(data-placeholder)] [&_a]:text-[#3046b2] [&_a]:underline [&_img]:max-w-full [&_img]:rounded-[8px] [&_ul]:list-disc [&_ul]:pl-5 [&_p]:mb-3 [&_p:last-child]:mb-0"
         />
       )}
     </div>
