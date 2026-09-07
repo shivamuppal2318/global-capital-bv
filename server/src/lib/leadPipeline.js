@@ -248,10 +248,10 @@ export async function computePipelineSummary(where = {}) {
 }
 
 // A Kanban view of the SAME per-lead pipeline computeLeadPipeline already
-// tracks. Unlike computePipelineSummary, this is not cumulative: one lead
-// appears in exactly one column, its current active stage. That's the
-// convention most CRM pipeline boards use, because column counts should add
-// up to active deals rather than double-counting every stage a deal passed.
+// tracks. Later-stage columns are current-stage only, but Outreach is a
+// deliberate exception: that column is the "real outreach was sent" pool,
+// so it should include every emailed lead, even if that same deal has
+// since moved on to Interested/NDA/IOI.
 export async function computeDealBoard(where = {}) {
   const leads = await prisma.lead.findMany({ where, select: { id: true, name: true, company: true, capitalAsk: true, updatedAt: true } });
   const pipelines = await Promise.all(leads.map((l) => computeLeadPipeline(l.id)));
@@ -284,6 +284,10 @@ export async function computeDealBoard(where = {}) {
       stageDetail: pipeline[idx].detail
     });
 
+    if (pipeline[0].status !== "not_started") {
+      board[0].deals.push(dealCard(0));
+    }
+
     // The deal's real current column is its earliest unresolved gate
     // (in_progress or blocked) — e.g. an NDA that's been sent but not
     // signed yet — not just whichever stage was touched most recently.
@@ -305,6 +309,7 @@ export async function computeDealBoard(where = {}) {
     });
     if (firstUnresolvedIdx !== null) currentIdx = firstUnresolvedIdx;
 
+    if (currentIdx === 0) return;
     board[currentIdx].deals.push(dealCard(currentIdx));
   });
 
