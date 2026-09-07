@@ -30,7 +30,7 @@ test("routes to the country-matching account even when a different one is assign
 test("falls back to the campaign's assigned account when the lead has no country", async () => {
   const { client } = fakeClient(null);
   const lead = { country: null };
-  const campaign = { emailAccount: { id: "acct-default" } };
+  const campaign = { emailAccount: { id: "acct-default", isActive: true } };
 
   const resolved = await resolveEmailAccount(lead, campaign, client);
   assert.equal(resolved.id, "acct-default");
@@ -39,10 +39,19 @@ test("falls back to the campaign's assigned account when the lead has no country
 test("falls back to the campaign's assigned account when no mailbox matches the lead's country", async () => {
   const { client } = fakeClient(null);
   const lead = { country: "SG" };
-  const campaign = { emailAccount: { id: "acct-default" } };
+  const campaign = { emailAccount: { id: "acct-default", isActive: true } };
 
   const resolved = await resolveEmailAccount(lead, campaign, client);
   assert.equal(resolved.id, "acct-default");
+});
+
+test("does not fall back to the campaign's assigned account if it's been deactivated", async () => {
+  const { client } = fakeClient(null);
+  const lead = { country: null };
+  const campaign = { emailAccount: { id: "acct-default", isActive: false } };
+
+  const resolved = await resolveEmailAccount(lead, campaign, client);
+  assert.equal(resolved, null);
 });
 
 test("returns null when the lead has no country and the campaign has no assigned account either", async () => {
