@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { verifyInterestToken } from "../lib/interestToken.js";
 import { sendTemplateEmail } from "../lib/leadSender.js";
+import { autoTrackInterestedEmailLead } from "../lib/emailLeadConversion.js";
 import { LOGO_DATA_URI } from "../lib/brandLogo.js";
 
 export const interestedRouter = Router();
@@ -109,6 +110,13 @@ interestedRouter.get("/:leadId/:token", requireValidToken, asyncHandler(async (r
   // for a lead who hasn't replied by any other channel yet.
   if (lead.replyType === "NO_REPLY") {
     await prisma.emailLead.update({ where: { id: lead.id }, data: { replyType: "INTERESTED" } });
+    // Same auto-track replyRecorder.js does for a text reply classified
+    // INTERESTED — this one-click button is if anything a MORE reliable
+    // interest signal (see the module comment above), so it should surface
+    // in CRM Workspace just as reliably. `lead` here is still the
+    // pre-update fetch, so its convertedToLeadId is accurate for the
+    // idempotency check inside.
+    await autoTrackInterestedEmailLead(lead);
   }
 
   // Same non-fatal pattern as autoRespond.js — a suppressed/capped send
