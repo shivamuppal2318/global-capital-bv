@@ -4,7 +4,7 @@ import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { visitMetrics } from "../lib/relationshipMetrics.js";
 import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
-import { generateStageReport, fmtFactDate } from "../lib/stageCompletionReports.js";
+import { generateStageReport, visitReportFacts } from "../lib/stageCompletionReports.js";
 
 export const visitPlansRouter = Router();
 
@@ -168,15 +168,7 @@ visitPlansRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res
       dedupKey: `VISIT:${plan.id}`,
       stageLabel: "Visit Planning",
       ownerName: plan.owner,
-      facts: [
-        { label: "Location", value: plan.location },
-        { label: "Region / Country", value: [plan.region, plan.country].filter(Boolean).join(", ") },
-        { label: "Visit date", value: fmtFactDate(plan.plannedFor) },
-        { label: "Completed on", value: fmtFactDate(plan.completedAt) },
-        { label: "Cost", value: plan.costAmount ? `${plan.costCurrency} ${Number(plan.costAmount).toLocaleString("en-US")}` : null },
-        { label: "Travel mode", value: plan.travelMode },
-        { label: "Owner", value: plan.owner }
-      ]
+      facts: visitReportFacts(plan)
     }).catch(() => {});
   }
 

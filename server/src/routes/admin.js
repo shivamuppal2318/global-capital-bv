@@ -17,6 +17,7 @@ import { testProviderConnection } from "../lib/marketIntelligenceProviderTest.js
 import { getScoringCriteria, updateScoringCriterionPoints } from "../lib/scoringCriteria.js";
 import { appBaseUrl } from "../lib/appUrl.js";
 import { recordAudit } from "../lib/auditLog.js";
+import { backfillAllStageReports } from "../lib/stageCompletionReports.js";
 
 const router = Router();
 
@@ -526,5 +527,21 @@ router.get("/audit-logs/actions", asyncHandler(async (_req, res) => {
   const rows = await prisma.auditLog.findMany({ distinct: ["action"], select: { action: true }, orderBy: { action: "asc" } });
   res.json(rows.map((r) => r.action));
 }));
+
+// One-time (but safe to run more than once — see backfillAllStageReports'
+// own dedup guard) sweep to generate completion reports for every deal
+// stage that finished before that feature existed, so Reports tabs and
+// client-portal links aren't just missing for anything already done.
+// Triggered manually from here rather than run automatically on boot,
+// since it's a real, one-off data operation (and sends real emails), not
+// something that should silently re-run on every deploy.
+router.post(
+  "/backfill-stage-reports",
+  asyncHandler(async (req, res) => {
+    const counts = await backfillAllStageReports();
+    await recordAudit({ req, action: "admin.stage_reports_backfilled", detail: JSON.stringify(counts) });
+    res.json({ ok: true, counts });
+  })
+);
 
 export default router;
