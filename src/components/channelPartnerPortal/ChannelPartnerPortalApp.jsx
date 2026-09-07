@@ -415,7 +415,7 @@ function PartnerShell() {
               <EmailOutreachModule
                 initialTab="dashboard"
                 demoData={false}
-                visibleTabs={["dashboard", "campaigns", "leads", ...(permissions.includes("cold-bulk-mailing") ? ["templates"] : []), "mailbox", "settings"]}
+                visibleTabs={["dashboard", "campaigns", "leads", "templates", "mailbox", "settings"]}
               />
             )}
           </div>
