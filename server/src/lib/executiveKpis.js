@@ -16,17 +16,21 @@ import {
   pipelineValueMetrics
 } from "./executiveMetrics.js";
 
-export async function computeExecutiveKpis() {
+export async function computeExecutiveKpis(channelPartner = null) {
+  const leadWhere = channelPartner ? { channelPartner: channelPartner.businessName } : {};
+  const relatedLeadWhere = channelPartner ? { lead: { channelPartner: channelPartner.businessName } } : {};
+  const emailLeadWhere = channelPartner ? { campaign: { ownerChannelPartnerId: channelPartner.id } } : {};
+
   const [leads, emailLeads, ndaRecords, meetings, documentCategories, ioiRecords, visitPlans, stageRows] =
     await Promise.all([
-      prisma.lead.findMany({ select: { id: true, status: true, createdAt: true } }),
-      prisma.emailLead.findMany({ select: { replyType: true } }),
-      prisma.ndaRecord.findMany(),
-      prisma.meeting.findMany(),
-      prisma.document.findMany({ select: { category: true }, distinct: ["category"] }),
-      prisma.ioiRecord.findMany(),
-      prisma.visitPlan.findMany(),
-      prisma.dealStageRecord.findMany({ select: { leadId: true, stage: true, status: true, amount: true } })
+      prisma.lead.findMany({ where: leadWhere, select: { id: true, status: true, createdAt: true } }),
+      prisma.emailLead.findMany({ where: emailLeadWhere, select: { replyType: true } }),
+      prisma.ndaRecord.findMany({ where: relatedLeadWhere }),
+      prisma.meeting.findMany({ where: relatedLeadWhere }),
+      prisma.document.findMany({ where: relatedLeadWhere, select: { category: true }, distinct: ["category"] }),
+      prisma.ioiRecord.findMany({ where: relatedLeadWhere }),
+      prisma.visitPlan.findMany({ where: relatedLeadWhere }),
+      prisma.dealStageRecord.findMany({ where: relatedLeadWhere, select: { leadId: true, stage: true, status: true, amount: true } })
     ]);
 
   const atStage = (stage) => stageRows.filter((r) => r.stage === stage);
