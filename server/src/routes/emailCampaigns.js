@@ -95,6 +95,18 @@ const createCampaignSchema = z.object({
 // (Send Now) — both created only once an actual provider send happens.
 const SEND_KINDS = ["BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"];
 
+// A tracking-pixel image load is the weakest possible open signal — most
+// real mail clients (Gmail included) only fetch it if the recipient has
+// remote images turned on, or don't fetch it at all for some accounts, so
+// EMAIL_OPENED alone systematically undercounts real opens. But a lead who
+// clicked a link/button IN the email, or replied to it, definitely opened
+// it first — there's no way to click or reply to an email without reading
+// it — so those two are just as valid proof of an open as the pixel firing,
+// confirmed live: a lead who replied "interested" had zero EMAIL_OPENED
+// rows (their client never loaded the pixel) and was invisibly missing
+// from Opened despite obviously having read the email.
+const OPEN_PROOF_KINDS = ["EMAIL_OPENED", "LINK_CLICKED", "REPLY_RECEIVED"];
+
 // Real open/click rates, computed from ActivityLog rows the tracking pixel
 // and click-redirect actually write (see routes/tracking.js) — not the
 // static/formula-based numbers the frontend used to show before tracking
@@ -102,10 +114,13 @@ const SEND_KINDS = ["BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"];
 // tell "no data" apart from "0% engagement."
 // Counts distinct leads, not raw event rows — a lead re-opening the same
 // email (common: preview panes, forwarding) writes another EMAIL_OPENED
-// row each time, which would otherwise push the rate above 100%.
+// row each time, which would otherwise push the rate above 100%. `kind` can
+// be a single kind or an array of kinds that all count as the same signal
+// (see OPEN_PROOF_KINDS above).
 async function distinctLeadCount(campaignId, kind) {
+  const kinds = Array.isArray(kind) ? kind : [kind];
   const rows = await prisma.emailActivityLog.findMany({
-    where: { kind, lead: { campaignId } },
+    where: { kind: { in: kinds }, lead: { campaignId } },
     distinct: ["leadId"],
     select: { leadId: true }
   });
@@ -115,7 +130,7 @@ async function distinctLeadCount(campaignId, kind) {
 async function withEngagementRates(campaign) {
   const [sent, opened, clicked, unsubscribed, bounced] = await Promise.all([
     prisma.emailActivityLog.count({ where: { kind: { in: SEND_KINDS }, lead: { campaignId: campaign.id } } }),
-    distinctLeadCount(campaign.id, "EMAIL_OPENED"),
+    distinctLeadCount(campaign.id, OPEN_PROOF_KINDS),
     distinctLeadCount(campaign.id, "LINK_CLICKED"),
     prisma.emailLead.count({ where: { campaignId: campaign.id, unsubscribed: true } }),
     // Every real bounce (routes/bounces.js), soft included — not just the
@@ -202,7 +217,7 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
 
   const [sentRows, openedRows, totalLeads, repliedLeads, interestedLeads, ndaSignedLeads, recentActivity, mailboxes] = await Promise.all([
     prisma.emailActivityLog.findMany({ where: { kind: { in: SEND_KINDS }, createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
-    prisma.emailActivityLog.findMany({ where: { kind: "EMAIL_OPENED", createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
+    prisma.emailActivityLog.findMany({ where: { kind: { in: OPEN_PROOF_KINDS }, createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
     prisma.emailLead.count({ where: { campaign: campaignFilter } }),
     prisma.emailLead.count({ where: { replyType: { not: "NO_REPLY" }, campaign: campaignFilter } }),
     prisma.emailLead.count({ where: { replyType: "INTERESTED", campaign: campaignFilter } }),
@@ -249,9 +264,9 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
 }));
 
 const ENGAGEMENT_DETAIL_ACTIVITY_KINDS = {
-  opened: "EMAIL_OPENED",
-  clicked: "LINK_CLICKED",
-  bounced: "BOUNCED"
+  opened: OPEN_PROOF_KINDS,
+  clicked: ["LINK_CLICKED"],
+  bounced: ["BOUNCED"]
 };
 
 // Backs the Dashboard's Emails Sent/Opened/Clicked/Bounced/Unsubscribed
@@ -292,15 +307,17 @@ emailCampaignsRouter.get("/engagement-detail/:kind", asyncHandler(async (req, re
 
   // Every kind from here on (opened/clicked/bounced) uses the same
   // distinct-lead semantics withEngagementRates' own counts use (one row
-  // per lead, their most recent event) — so the list length always
-  // matches the number the card showed.
-  const activityKind = ENGAGEMENT_DETAIL_ACTIVITY_KINDS[req.params.kind];
-  if (!activityKind) {
+  // per lead, their most recent qualifying event) — so the list length
+  // always matches the number the card showed. "opened" can match more
+  // than one real kind (see OPEN_PROOF_KINDS) — a click or reply proves an
+  // open just as much as the pixel firing.
+  const activityKinds = ENGAGEMENT_DETAIL_ACTIVITY_KINDS[req.params.kind];
+  if (!activityKinds) {
     return res.status(400).json({ error: `Unknown engagement kind "${req.params.kind}"` });
   }
 
   const rows = await prisma.emailActivityLog.findMany({
-    where: { kind: activityKind, lead: { campaign: campaignFilter } },
+    where: { kind: { in: activityKinds }, lead: { campaign: campaignFilter } },
     orderBy: { createdAt: "desc" },
     distinct: ["leadId"],
     include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } } }
@@ -310,10 +327,14 @@ emailCampaignsRouter.get("/engagement-detail/:kind", asyncHandler(async (req, re
     leadEmail: r.lead.email,
     campaignName: r.lead.campaign.name,
     at: r.createdAt,
-    // Real detail worth surfacing for these two — the bounce kind/reason,
-    // or which link got clicked — unlike unsubscribed (nothing more to say
-    // than "they unsubscribed") or opened (the pixel firing IS the event).
-    detail: activityKind === "BOUNCED" || activityKind === "LINK_CLICKED" ? r.detail : undefined
+    // Real detail worth surfacing for all three — the bounce kind/reason,
+    // which link got clicked, or (for "opened") whatever the underlying
+    // pixel/click/reply event's own detail says.
+    detail: r.detail,
+    // Only meaningful (and only present) for "opened" — which of the three
+    // real signals actually proved this lead opened it, since the pixel
+    // itself often never fires (see OPEN_PROOF_KINDS above).
+    via: req.params.kind === "opened" ? r.kind : undefined
   })));
 }));
 

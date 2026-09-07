@@ -3,6 +3,13 @@ import { ActionButton } from "../ui.jsx";
 import { MailIcon, TagIcon, UsersIcon, InboxIcon, XIcon } from "../Icons.jsx";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
 
+// "Opened" now counts a click or a reply as proof of opening, not just the
+// tracking pixel firing (most mail clients only fetch the pixel if remote
+// images are allowed, which systematically undercounts real opens) — this
+// labels which of the three real signals actually proved a given row, since
+// it's genuinely useful to know it wasn't necessarily the pixel.
+const OPEN_VIA_LABEL = { EMAIL_OPENED: "pixel", LINK_CLICKED: "a click", REPLY_RECEIVED: "a reply" };
+
 function MetricCard({ label, value, icon: Icon, iconClass }) {
   return (
     <div className="rounded-[18px] border border-[#d6deea] bg-white px-5 py-3.5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
@@ -226,6 +233,7 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
                     </p>
                     <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
                       {row.campaignName} · {new Date(row.at).toLocaleString()}
+                      {row.via ? ` · via ${OPEN_VIA_LABEL[row.via] ?? row.via}` : ""}
                     </p>
                     {row.detail ? <p className="mt-1 text-[12px] leading-4 text-[#8592ab]">{row.detail}</p> : null}
                   </div>

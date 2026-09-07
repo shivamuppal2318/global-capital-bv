@@ -20,6 +20,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // counting it here would credit a DOE with "emails sent" for leads that
 // were only ever imported/added, never delivered to.
 const SEND_KINDS = new Set(["BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"]);
+// A tracking-pixel image load alone systematically undercounts real opens
+// (most mail clients only fetch it if remote images are allowed) — see the
+// matching comment in routes/emailCampaigns.js's own OPEN_PROOF_KINDS. A
+// click or reply proves an open just as validly as the pixel firing.
+const OPEN_PROOF_KINDS = new Set(["EMAIL_OPENED", "LINK_CLICKED", "REPLY_RECEIVED"]);
 
 function round(n, places = 1) {
   const f = 10 ** places;
@@ -50,7 +55,7 @@ function attributableMetrics(leads, activityLogs) {
   const activity = activityLogs.filter((a) => leadIds.has(a.leadId));
 
   const sent = activity.filter((a) => SEND_KINDS.has(a.kind));
-  const opened = new Set(activity.filter((a) => a.kind === "EMAIL_OPENED").map((a) => a.leadId));
+  const opened = new Set(activity.filter((a) => OPEN_PROOF_KINDS.has(a.kind)).map((a) => a.leadId));
   const positive = leads.filter((l) => ["INTERESTED", "ZOOM_REQUEST"].includes(l.replyType));
 
   const outreachSent = leads.length;
