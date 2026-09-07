@@ -292,7 +292,15 @@ const bulkCreateLeadSchema = z.object({
       })
     )
     .min(1)
-    .max(500) // sanity cap — a bad CSV paste shouldn't be able to create thousands of rows in one call
+    .max(500), // sanity cap — a bad CSV paste shouldn't be able to create thousands of rows in one call
+  // Defaults to false (unchanged CSV-import behavior: enrolled in the
+  // campaign's cadence immediately, which really does send a real email
+  // within seconds for any step configured with delayDays 0). CRM
+  // Workspace's "Add to List" action sets this true — filing existing CRM
+  // leads into a List is expected to be a passive "add them for later"
+  // action, not something that fires real outreach the instant a rep
+  // clicks it with no chance to review first.
+  skipCadence: z.boolean().optional().default(false)
 });
 
 // CSV import — the frontend parses the pasted CSV into structured rows
@@ -351,16 +359,18 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
       }
 
       const lead = await prisma.emailLead.create({ data: { ...leadInput, campaignId: campaign.id } });
-      const scheduledCount = await scheduleCadenceSteps(lead, campaign.cadenceSteps);
+      const scheduledCount = parsed.data.skipCadence ? 0 : await scheduleCadenceSteps(lead, campaign.cadenceSteps);
 
       await prisma.emailActivityLog.create({
         data: {
           leadId: lead.id,
           kind: "BULK_INTRO_SENT",
-          title: "Added to campaign (CSV import)",
-          detail: scheduledCount > 0
-            ? `Enrolled in "${campaign.name}" via bulk CSV import — ${scheduledCount} cadence step(s) scheduled.`
-            : `Enrolled in "${campaign.name}" via bulk CSV import — no cadence steps scheduled.`
+          title: parsed.data.skipCadence ? "Added to list" : "Added to campaign (CSV import)",
+          detail: parsed.data.skipCadence
+            ? `Added to "${campaign.name}" — not enrolled in automatic follow-ups yet; send a campaign to them from there when ready.`
+            : scheduledCount > 0
+              ? `Enrolled in "${campaign.name}" via bulk CSV import — ${scheduledCount} cadence step(s) scheduled.`
+              : `Enrolled in "${campaign.name}" via bulk CSV import — no cadence steps scheduled.`
         }
       });
 

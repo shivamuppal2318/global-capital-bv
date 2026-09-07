@@ -13,7 +13,12 @@ export const emailLeadsApi = {
   // `leads` is already-parsed structured rows (see lib/csvLeads.js) — posts
   // them as JSON rather than raw CSV text, so validation/preview happens
   // client-side before anything reaches the database.
-  bulkCreate: (campaignId, leads) => request("/bulk", { method: "POST", body: { campaignId, leads } }),
+  // skipCadence: true is CRM Workspace's "Add to List" — files leads into a
+  // List without immediately enrolling them in its cadence (a Day-0 step
+  // would otherwise send a real email within seconds of clicking Add).
+  // Omit/false for CSV import, which is meant to start outreach right away.
+  bulkCreate: (campaignId, leads, { skipCadence } = {}) =>
+    request("/bulk", { method: "POST", body: { campaignId, leads, skipCadence } }),
   // Real DNS-based deliverability check (MX/A/AAAA records) — the frontend
   // can't do DNS lookups itself, so CSV preview calls this once for the
   // whole batch rather than trusting format-only validation.

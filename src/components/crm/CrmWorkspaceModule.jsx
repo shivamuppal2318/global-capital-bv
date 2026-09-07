@@ -1081,7 +1081,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
         email: l.email,
         owner: l.owner || l.doe || "Unassigned"
       }));
-      const result = await emailLeadsApi.bulkCreate(addToListCampaignId, rows);
+      const result = await emailLeadsApi.bulkCreate(addToListCampaignId, rows, { skipCadence: true });
       const listName = addToListCampaigns.find((c) => c.id === addToListCampaignId)?.name ?? "the list";
       const parts = [`${result.createdCount} added to "${listName}"`];
       if (result.duplicateCount) parts.push(`${result.duplicateCount} already there`);
