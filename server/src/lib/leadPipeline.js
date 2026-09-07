@@ -20,9 +20,10 @@ import { REQUIRED_DOCUMENT_LABELS } from "./requiredDocuments.js";
 // clientPortalStages.js's PORTAL_STAGES comment): the second call is the
 // deeper due-diligence conversation that happens once a lead has actually
 // committed to an IOI, not a generic "second meeting of any kind".
-export const STAGES = ["OUTREACH", "NDA", "ZOOM_CALL", "DATA_ROOM", "IOI", "ZOOM_CALL_2", "FIELD_VISIT", "TERM_SHEET"];
+export const STAGES = ["OUTREACH", "INTERESTED", "NDA", "ZOOM_CALL", "DATA_ROOM", "IOI", "ZOOM_CALL_2", "FIELD_VISIT", "TERM_SHEET"];
 export const STAGE_LABELS = {
   OUTREACH: "Outreach",
+  INTERESTED: "Interested",
   NDA: "NDA",
   ZOOM_CALL: "Zoom Call",
   DATA_ROOM: "Data Room",
@@ -31,6 +32,17 @@ export const STAGE_LABELS = {
   FIELD_VISIT: "Field Visit",
   TERM_SHEET: "Term Sheet"
 };
+
+// Same approximation Outreach itself uses (status is the only signal cold
+// outreach leaves on this Lead — see the Outreach comment above): status
+// INTERESTED or anything further along the positive funnel counts as this
+// stage being reached, whether it got there via the automatic
+// reply-classified-INTERESTED conversion (see lib/emailLeadConversion.js)
+// or a rep manually setting it. LOST is deliberately excluded — a lead
+// marked lost may never have shown real interest at all, and this is a
+// live snapshot of current status, not a history of every status it ever
+// passed through.
+const INTEREST_REACHED_STATUSES = new Set(["INTERESTED", "QUALIFIED", "NEGOTIATION", "CONVERTED"]);
 
 export async function computeLeadPipeline(leadId) {
   const [lead, nda, meetings, dataRoomDocs, ioi, fieldVisitRecord, termSheetRecord] = await Promise.all([
@@ -52,6 +64,11 @@ export async function computeLeadPipeline(leadId) {
   if (!lead) return null;
 
   const outreach = { status: lead.status === "NEW" ? "not_started" : "done", detail: lead.status === "NEW" ? "Not yet contacted" : "Contact made" };
+
+  const interested = {
+    status: INTEREST_REACHED_STATUSES.has(lead.status) ? "done" : "not_started",
+    detail: INTEREST_REACHED_STATUSES.has(lead.status) ? "Replied interested" : "No interested reply yet"
+  };
 
   const nda_ = (() => {
     if (!nda) return { status: "not_started", detail: "No NDA record" };
@@ -112,6 +129,7 @@ export async function computeLeadPipeline(leadId) {
 
   const summaries = {
     OUTREACH: outreach,
+    INTERESTED: interested,
     NDA: nda_,
     ZOOM_CALL: zoomCall,
     DATA_ROOM: dataRoom,
