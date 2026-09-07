@@ -36,13 +36,15 @@ const TARGETS = {
 outreachDoeRouter.get("/facets", blockChannelPartner, asyncHandler(async (_req, res) => {
   const leads = await prisma.emailLead.findMany({ select: { owner: true, country: true } });
 
-  // A real employee (Admin Panel -> Employees) should be pickable here even
-  // before they've been set as the owner on any EmailLead -- same reasoning
-  // and pattern as Universal Filters' own DOE facet (routes/universalFilters.js).
-  // blockChannelPartner above already refuses this whole route for a
-  // Channel Partner, so no extra guard is needed here.
+  // Real employees only (Admin Panel -> Employees) -- EmailLead.owner is
+  // free text (CSV imports, "Add to List", the inbound webhook can all set
+  // it to anything, including leftover demo/seed values), so unioning it in
+  // here used to let the dropdown fill up with names that were never a real
+  // person on this team at all, several times longer than the actual
+  // employee roster. blockChannelPartner above already refuses this whole
+  // route for a Channel Partner, so no extra guard is needed here.
   const employees = await prisma.user.findMany({ select: { name: true } });
-  const does = [...new Set([...leads.map((l) => l.owner).filter(Boolean), ...employees.map((e) => e.name)])].sort();
+  const does = [...new Set(employees.map((e) => e.name))].sort();
 
   res.json({
     does,
@@ -100,7 +102,15 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   const activity = allActivity.filter((a) => leadIds.has(a.leadId));
 
   const top = outreachMetrics(leads);
-  const scorecard = doeScorecard(leads, activity);
+  // The per-row breakdown only makes sense for real people -- EmailLead.owner
+  // is free text (see /facets' own comment above), so grouping by every
+  // distinct value here would give a "DOE" row to leftover demo/seed owner
+  // names that were never a real employee. overall (the "All DOEs" combined
+  // total) below is intentionally still computed over every real lead
+  // regardless of owner, since that total is meant to be everyone's
+  // combined activity, not just the named employees'.
+  const employeeNames = new Set((await prisma.user.findMany({ select: { name: true } })).map((e) => e.name));
+  const scorecard = doeScorecard(leads.filter((l) => employeeNames.has(l.owner)), activity);
   const overall = doeOverallMetrics(leads, activity);
   const callsBooked = leads.filter((l) => l.callBookedAt).length;
 
