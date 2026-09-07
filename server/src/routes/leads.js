@@ -1,6 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { prisma } from "../db.js";
+import { buildLeadCreateData } from "../lib/leadCreation.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
 import { signStaffPreviewToken } from "../lib/staffPreviewToken.js";
 import { hashPassword } from "../lib/auth.js";
@@ -442,39 +443,6 @@ function pickField(flatBody, aliases) {
     }
   }
   return null;
-}
-
-function toInitials(name) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-const TONES = ["blue", "amber", "green", "violet", "sky"];
-
-// Shared by every path that creates a Lead (the external webhook below, and
-// the authenticated create/bulk-import routes) so the same defaults
-// (status, tone, engagementStage, initials) can never drift apart between
-// them.
-function buildLeadCreateData({ name, company, email, mobile, capitalAsk, owner, leadSource, territory, notes, rawPayload }) {
-  return {
-    initials: toInitials(name),
-    name,
-    company: company || "—",
-    email: email || null,
-    mobile: mobile || null,
-    capitalAsk: capitalAsk || "Not specified",
-    owner: owner || null,
-    leadSource: leadSource || "Manual entry",
-    territory: territory || null,
-    notes: notes || null,
-    status: "NEW",
-    qualified: false,
-    tone: TONES[Math.floor(Math.random() * TONES.length)],
-    engagementStage: "Initial outreach",
-    rawPayload: rawPayload ?? {}
-  };
 }
 
 // Any external platform (a website form, ad platform, Zapier, another CRM, a

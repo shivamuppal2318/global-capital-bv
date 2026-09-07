@@ -1,6 +1,7 @@
 import { prisma } from "./prisma.js";
 import { matchReplyRule, classifyReply } from "./replyClassifier.js";
 import { autoRespondToReply } from "./autoRespond.js";
+import { autoTrackInterestedEmailLead } from "./emailLeadConversion.js";
 
 // Shared by the inbound-email webhook (external mail provider, gated by
 // INBOUND_WEBHOOK_SECRET), the IMAP poller (imapPoller.js — real replies
@@ -59,5 +60,13 @@ export async function recordReply(lead, textBody, emailAccountId = null) {
 
   const autoResponse = await autoRespondToReply(lead.id, replyType);
 
-  return { replyType, matchedRule, autoResponse };
+  // This message's own real classification, not the guarded
+  // nextLeadReplyType above — a lead that was already INTERESTED from an
+  // earlier reply and is auto-tracked shouldn't get re-processed just
+  // because a later, less-clear reply (e.g. OTHER) came in after it;
+  // autoTrackInterestedEmailLead's own convertedToLeadId check would skip
+  // it anyway, but there's no reason to even attempt it.
+  const trackedLead = replyType === "INTERESTED" ? await autoTrackInterestedEmailLead(lead) : null;
+
+  return { replyType, matchedRule, autoResponse, trackedLead };
 }

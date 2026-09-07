@@ -26,7 +26,7 @@ const avatarToneClass = {
   sky: "bg-[#def1ff] text-[#2b94da]"
 };
 
-const STATUS_LABEL = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified", NEGOTIATION: "Negotiation", CONVERTED: "Converted", LOST: "Lost" };
+const STATUS_LABEL = { NEW: "New", CONTACTED: "Contacted", INTERESTED: "Interested", QUALIFIED: "Qualified", NEGOTIATION: "Negotiation", CONVERTED: "Converted", LOST: "Lost" };
 
 // Same status->color mapping Universal Filters already uses for the same
 // statuses — the status badge below used to be colored by lead.tone (a
@@ -34,9 +34,13 @@ const STATUS_LABEL = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified
 // avatars visual variety, see leads.js's TONES array), which had nothing to
 // do with the lead's actual status: a LOST lead could show green, a
 // CONVERTED lead could show red, entirely by chance.
+// INTERESTED gets its own tone, distinct from QUALIFIED's green — it means
+// a cold-outreach reply was auto-classified as interested (see
+// replyRecorder.js), not that a rep has actually reviewed the opportunity.
 const STATUS_TONE = {
   NEW: "blue",
   CONTACTED: "amber",
+  INTERESTED: "sky",
   QUALIFIED: "green",
   NEGOTIATION: "violet",
   CONVERTED: "green",
@@ -1747,6 +1751,7 @@ const VIEW_OPTIONS = [
   { value: "ALL", label: "All statuses" },
   { value: "NEW", label: "New" },
   { value: "CONTACTED", label: "Contacted" },
+  { value: "INTERESTED", label: "Interested" },
   { value: "QUALIFIED", label: "Qualified" },
   { value: "NEGOTIATION", label: "Negotiation" },
   { value: "CONVERTED", label: "Converted" },

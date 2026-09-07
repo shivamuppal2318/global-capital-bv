@@ -17,6 +17,12 @@ enum ConversationStatus {
 enum LeadStatus {
   NEW
   CONTACTED
+  // Auto-set when a cold-outreach EmailLead's reply is classified
+  // INTERESTED (see lib/replyRecorder.js) and it's auto-converted into a
+  // tracked CRM Lead — distinct from QUALIFIED, which still means a rep
+  // has actually reviewed the opportunity, not just that the prospect
+  // replied positively.
+  INTERESTED
   QUALIFIED
   NEGOTIATION
   CONVERTED

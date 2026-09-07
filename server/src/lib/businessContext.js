@@ -5,6 +5,7 @@ import { ndaMetrics, callMetrics, visitMetrics, ioiMetrics } from "./relationshi
 const LEAD_STATUS_LABEL = {
   NEW: "New",
   CONTACTED: "Contacted",
+  INTERESTED: "Interested",
   QUALIFIED: "Qualified",
   NEGOTIATION: "Negotiation",
   CONVERTED: "Converted",
