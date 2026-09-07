@@ -145,6 +145,7 @@ export function MarketIntelligenceModule() {
         setSignals((current) => current.map((s) => (s.id === signal.id ? result.signal : s)));
         const parts = [];
         if (result.companyMatched) parts.push("company profile");
+        if (result.contactMatched) parts.push("a contact");
         if (result.scoopsMatched) parts.push("recent activity");
         setEnrichNotices((current) => ({ ...current, [signal.id]: `Enriched ${parts.join(" and ")} from ZoomInfo.` }));
       } else {
@@ -488,6 +489,26 @@ export function MarketIntelligenceModule() {
                       {signal.zoomInfoCompanyData.description ? (
                         <p className="mt-3 text-[13px] leading-6 text-[#435471]">{signal.zoomInfoCompanyData.description}</p>
                       ) : null}
+                    </div>
+                  ) : null}
+
+                  {signal.zoomInfoContactData ? (
+                    <div className="mt-3 rounded-[14px] border border-[#e7edf5] bg-[#fbfcfe] px-4 py-3">
+                      <p className="text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Contact Info (ZoomInfo)</p>
+                      <p className="mt-2 text-[14px] font-semibold text-[#102246]">
+                        {[signal.zoomInfoContactData.firstName, signal.zoomInfoContactData.lastName].filter(Boolean).join(" ")}
+                        {signal.zoomInfoContactData.jobTitle ? (
+                          <span className="ml-2 text-[12px] font-normal text-[#8592ab]">{signal.zoomInfoContactData.jobTitle}</span>
+                        ) : null}
+                      </p>
+                      <div className="mt-2 grid gap-x-6 gap-y-2 text-[13px] text-[#334463] sm:grid-cols-2">
+                        {signal.zoomInfoContactData.email ? <p><span className="text-[#8592ab]">Email</span> — {signal.zoomInfoContactData.email}</p> : null}
+                        {signal.zoomInfoContactData.mobilePhone ? <p><span className="text-[#8592ab]">Mobile</span> — {signal.zoomInfoContactData.mobilePhone}</p> : null}
+                        {signal.zoomInfoContactData.directPhoneAlt ? <p><span className="text-[#8592ab]">Direct phone</span> — {signal.zoomInfoContactData.directPhoneAlt}</p> : null}
+                      </div>
+                      <p className="mt-2 text-[11px] leading-4 text-[#9aa6ba]">
+                        Best real contact ZoomInfo's own search found for this company — not necessarily the one mentioned in the article.
+                      </p>
                     </div>
                   ) : null}
 

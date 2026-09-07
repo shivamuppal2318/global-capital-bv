@@ -1,4 +1,4 @@
-import { enrichCompanyByName, enrichContactByName, searchScoopsByCompany } from "./zoominfoClient.js";
+import { enrichCompanyByName, enrichContactByName, searchContacts, searchScoopsByCompany } from "./zoominfoClient.js";
 
 // Shared by the single-lead "Enrich" route and the leads-table "Bulk
 // enrich" action, so the two can never quietly drift apart on what counts
@@ -22,17 +22,32 @@ export function hasAnyZoomInfoMatch({ companyAttributes, contactAttributes, scoo
   return Boolean(companyAttributes || contactAttributes || scoops.length);
 }
 
-// Company + Scoops only, no contact lookup — for a Market Intelligence
-// signal, whose entityName is a company, not a person (see
-// routes/marketIntelligence.js's POST /signals/:id/enrich). Returns the
-// same shape hasAnyZoomInfoMatch above already accepts (contactAttributes
-// simply omitted, which its `||` check already tolerates).
-export async function lookupCompanyInZoomInfo({ token, companyName }) {
-  const [companyAttributes, scoops] = await Promise.all([
+// Company + Scoops + a real contact — for a Market Intelligence signal,
+// whose entityName is a company, not a person (see
+// routes/marketIntelligence.js's POST /signals/:id/enrich), so there's no
+// name to enrich directly the way lookupLeadInZoomInfo above can. Finds a
+// contact by searching ZoomInfo's own contact index for this company
+// first, then enriches whichever one comes back to get their real email —
+// the Search endpoint never returns the address itself, only a hasEmail
+// flag (see zoominfoClient.js's own note on enrichContactByName). Only the
+// first search result with a usable name is tried, not every candidate —
+// one extra real API call is already the point of this action; retrying
+// across several candidates would multiply the credit cost for a
+// best-effort "who might we reach" contact, not a specific person being
+// looked up on purpose.
+export async function lookupCompanyAndContactInZoomInfo({ token, companyName }) {
+  const [companyAttributes, scoops, contactSearch] = await Promise.all([
     enrichCompanyByName({ token, companyName }),
-    searchScoopsByCompany({ token, companyName }).catch(() => [])
+    searchScoopsByCompany({ token, companyName }).catch(() => []),
+    searchContacts({ token, filters: { companyName }, pageSize: 3 }).catch(() => ({ results: [] }))
   ]);
-  return { companyAttributes, scoops };
+
+  const candidate = contactSearch.results.find((r) => r.firstName && r.lastName);
+  const contactAttributes = candidate
+    ? await enrichContactByName({ token, fullName: `${candidate.firstName} ${candidate.lastName}`, companyName }).catch(() => null)
+    : null;
+
+  return { companyAttributes, contactAttributes, scoops };
 }
 
 // Only fills industry/territory if they're still empty (never overwrites a

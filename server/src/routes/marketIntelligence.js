@@ -12,7 +12,7 @@ import { isAiProcessorConfigured } from "../lib/marketIntelligence/aiProcessor.j
 import { askChatAssistant, isChatAssistantConfigured } from "../lib/marketIntelligence/chatAssistant.js";
 import { getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
 import { getAccessToken } from "../lib/zoominfoClient.js";
-import { lookupCompanyInZoomInfo, hasAnyZoomInfoMatch } from "../lib/zoominfoEnrichment.js";
+import { lookupCompanyAndContactInZoomInfo, hasAnyZoomInfoMatch } from "../lib/zoominfoEnrichment.js";
 
 export const marketIntelligenceRouter = Router();
 
@@ -80,12 +80,12 @@ marketIntelligenceRouter.get("/signals", asyncHandler(async (req, res) => {
   res.json(signals);
 }));
 
-// Real ZoomInfo company profile + recent buying-trigger activity for one
-// captured signal, looked up by its entityName directly — independent of
-// whether it ever matched/created an EmailLead (plenty of real signals,
-// e.g. IGNORED with no default campaign to route into, never get one).
-// Mirrors leads.js's POST /:id/enrich: check credentials configured, mint
-// one token, look up, persist on a match.
+// Real ZoomInfo company profile + recent buying-trigger activity + a real
+// contact for one captured signal, looked up by its entityName directly —
+// independent of whether it ever matched/created an EmailLead (plenty of
+// real signals, e.g. IGNORED with no default campaign to route into, never
+// get one). Mirrors leads.js's POST /:id/enrich: check credentials
+// configured, mint one token, look up, persist on a match.
 marketIntelligenceRouter.post("/signals/:id/enrich", blockChannelPartner, asyncHandler(async (req, res) => {
   const signal = await prisma.marketSignal.findUnique({ where: { id: req.params.id } });
   if (!signal) return res.status(404).json({ error: "Signal not found" });
@@ -100,9 +100,9 @@ marketIntelligenceRouter.post("/signals/:id/enrich", blockChannelPartner, asyncH
   }
 
   const token = await getAccessToken(credentials);
-  const result = await lookupCompanyInZoomInfo({ token, companyName: signal.entityName });
+  const result = await lookupCompanyAndContactInZoomInfo({ token, companyName: signal.entityName });
 
-  if (!hasAnyZoomInfoMatch({ ...result, contactAttributes: undefined })) {
+  if (!hasAnyZoomInfoMatch(result)) {
     return res.json({ matched: false, message: `No confident ZoomInfo match found for "${signal.entityName}".` });
   }
 
@@ -110,6 +110,7 @@ marketIntelligenceRouter.post("/signals/:id/enrich", blockChannelPartner, asyncH
     where: { id: signal.id },
     data: {
       ...(result.companyAttributes ? { zoomInfoCompanyData: result.companyAttributes } : {}),
+      ...(result.contactAttributes ? { zoomInfoContactData: result.contactAttributes } : {}),
       ...(result.scoops.length ? { zoomInfoScoops: result.scoops } : {}),
       zoomInfoEnrichedAt: new Date()
     }
@@ -118,6 +119,7 @@ marketIntelligenceRouter.post("/signals/:id/enrich", blockChannelPartner, asyncH
   res.json({
     matched: true,
     companyMatched: Boolean(result.companyAttributes),
+    contactMatched: Boolean(result.contactAttributes),
     scoopsMatched: result.scoops.length > 0,
     signal: updated
   });
