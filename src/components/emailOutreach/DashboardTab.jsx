@@ -60,6 +60,7 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
   const opened = campaigns.reduce((sum, campaign) => sum + (campaign.openedCount ?? 0), 0);
   const clicked = campaigns.reduce((sum, campaign) => sum + (campaign.clickedCount ?? 0), 0);
   const unsubscribed = campaigns.reduce((sum, campaign) => sum + (campaign.unsubscribedCount ?? 0), 0);
+  const bounced = campaigns.reduce((sum, campaign) => sum + (campaign.bouncedCount ?? 0), 0);
   const topCampaigns = [...campaigns].slice(0, 5);
 
   // Which lead actually makes up the Opened/Clicked/Unsubscribed number on
@@ -96,10 +97,11 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
           <MetricCard label="Unread Mail" value={unreadMail} icon={InboxIcon} iconClass="text-[#e0483f]" />
         </div>
 
-        <div className="mt-3 grid gap-3 lg:grid-cols-4">
+        <div className="mt-3 grid gap-3 lg:grid-cols-5">
           <SummaryCard label="Emails Sent" value={emailsSent} toneClass="text-[#2995db]" />
           <SummaryCard label="Opened" value={opened} toneClass="text-[#2b9b60]" onClick={() => openEngagementDetail("opened", "Opened")} />
           <SummaryCard label="Clicked" value={clicked} toneClass="text-[#f29c38]" onClick={() => openEngagementDetail("clicked", "Clicked")} />
+          <SummaryCard label="Bounced" value={bounced} toneClass="text-[#c47f1a]" onClick={() => openEngagementDetail("bounced", "Bounced")} />
           <SummaryCard label="Unsubscribed" value={unsubscribed} toneClass="text-[#e0483f]" onClick={() => openEngagementDetail("unsubscribed", "Unsubscribed")} />
         </div>
 
@@ -224,6 +226,7 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
                     <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
                       {row.campaignName} · {new Date(row.at).toLocaleString()}
                     </p>
+                    {row.detail ? <p className="mt-1 text-[12px] leading-4 text-[#8592ab]">{row.detail}</p> : null}
                   </div>
                 ))}
               </div>

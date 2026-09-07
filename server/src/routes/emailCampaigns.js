@@ -101,11 +101,16 @@ async function distinctLeadCount(campaignId, kind) {
 }
 
 async function withEngagementRates(campaign) {
-  const [sent, opened, clicked, unsubscribed] = await Promise.all([
+  const [sent, opened, clicked, unsubscribed, bounced] = await Promise.all([
     prisma.emailActivityLog.count({ where: { kind: { in: SEND_KINDS }, lead: { campaignId: campaign.id } } }),
     distinctLeadCount(campaign.id, "EMAIL_OPENED"),
     distinctLeadCount(campaign.id, "LINK_CLICKED"),
-    prisma.emailLead.count({ where: { campaignId: campaign.id, unsubscribed: true } })
+    prisma.emailLead.count({ where: { campaignId: campaign.id, unsubscribed: true } }),
+    // Every real bounce (routes/bounces.js), soft included — not just the
+    // hard/complaint ones that actually flip EmailLead.bounced and suppress
+    // future sends. A soft bounce doesn't stop sending, but it's still real
+    // signal worth seeing, and had zero visibility anywhere before this.
+    distinctLeadCount(campaign.id, "BOUNCED")
   ]);
   return {
     ...campaign,
@@ -114,6 +119,7 @@ async function withEngagementRates(campaign) {
       opened,
       clicked,
       unsubscribed,
+      bounced,
       openRate: sent > 0 ? Math.round((opened / sent) * 100) : null,
       clickRate: sent > 0 ? Math.round((clicked / sent) * 100) : null
     }
@@ -232,15 +238,16 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
 
 const ENGAGEMENT_DETAIL_ACTIVITY_KINDS = {
   opened: "EMAIL_OPENED",
-  clicked: "LINK_CLICKED"
+  clicked: "LINK_CLICKED",
+  bounced: "BOUNCED"
 };
 
-// Backs the Dashboard's Opened/Clicked/Unsubscribed stat cards — clicking
-// one shows exactly which leads make up that number instead of just the
-// count. Same owner scoping as GET / and dashboard-summary, and the same
-// distinct-lead semantics withEngagementRates' own opened/clicked counts
-// use (one row per lead, their most recent event) — so the list length
-// always matches the number the card showed.
+// Backs the Dashboard's Opened/Clicked/Bounced/Unsubscribed stat cards —
+// clicking one shows exactly which leads make up that number instead of
+// just the count. Same owner scoping as GET / and dashboard-summary, and
+// the same distinct-lead semantics withEngagementRates' own opened/
+// clicked/bounced counts use (one row per lead, their most recent event)
+// — so the list length always matches the number the card showed.
 emailCampaignsRouter.get("/engagement-detail/:kind", asyncHandler(async (req, res) => {
   const campaignFilter = ownerWhereClause(req);
 
@@ -264,7 +271,16 @@ emailCampaignsRouter.get("/engagement-detail/:kind", asyncHandler(async (req, re
     distinct: ["leadId"],
     include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } } }
   });
-  res.json(rows.map((r) => ({ leadName: r.lead.name, leadEmail: r.lead.email, campaignName: r.lead.campaign.name, at: r.createdAt })));
+  res.json(rows.map((r) => ({
+    leadName: r.lead.name,
+    leadEmail: r.lead.email,
+    campaignName: r.lead.campaign.name,
+    at: r.createdAt,
+    // Real detail worth surfacing for these two — the bounce kind/reason,
+    // or which link got clicked — unlike unsubscribed (nothing more to say
+    // than "they unsubscribed") or opened (the pixel firing IS the event).
+    detail: activityKind === "BOUNCED" || activityKind === "LINK_CLICKED" ? r.detail : undefined
+  })));
 }));
 
 emailCampaignsRouter.post("/", asyncHandler(async (req, res) => {
