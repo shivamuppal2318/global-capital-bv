@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { channelPartnersApi } from "../../lib/relationshipsApi";
+import { documentsApi } from "../../lib/documentsApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
 import { CheckCircleIcon, CopyIcon, LinkIcon, PlusIcon, SearchIcon, XIcon } from "../Icons";
 
@@ -172,6 +173,30 @@ export function ChannelPartnerModule() {
 
   async function handleCopyAgreementLink() {
     setLinkCopied(await copyToClipboard(agreementLinkUrl));
+  }
+
+  // Two real paths to a downloadable copy: a partner who uploaded their own
+  // scanned/signed file has a real agreementDocumentId (see
+  // routes/channelPartnerAgreement.js's upload route) -- downloaded via the
+  // documents API like any other Document. One who signed via "fill in the
+  // blanks online" has no separate file at all; the server instead renders
+  // the template text with their recorded field values (same pattern
+  // NDA/IOI already use — server/src/routes/channelPartners.js's own
+  // /:id/signed-document).
+  async function handleDownloadAgreementDocument(partner) {
+    try {
+      if (partner.agreementDocumentId) {
+        await documentsApi.open(
+          { id: partner.agreementDocumentId, originalName: `${partner.name} - Signed Channel Partner Agreement` },
+          { download: true }
+        );
+      } else {
+        await channelPartnersApi.downloadSignedDocument(partner.id);
+      }
+    } catch (err) {
+      setAgreementNotice(err.message);
+      setAgreementNoticeId(partner.id);
+    }
   }
 
   useEffect(() => {
@@ -489,6 +514,9 @@ export function ChannelPartnerModule() {
                   onClick={() => handleGetAgreementLink(p)}
                   disabled={agreementBusyId === p.id}
                 />
+                {p.agreementSignedAt ? (
+                  <ActionButton small label="Download signed copy" onClick={() => handleDownloadAgreementDocument(p)} />
+                ) : null}
                 <ActionButton small label={activityOpenId === p.id ? "Hide portal activity" : "Portal activity"} onClick={() => toggleActivity(p)} />
                 <ActionButton small label="Delete" onClick={() => remove(p)} disabled={busyId === p.id} />
               </div>

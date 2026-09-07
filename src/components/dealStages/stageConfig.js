@@ -39,7 +39,7 @@ export const STAGE_CONFIG = {
     blurb: "The visits themselves and what came out of them.",
     scheduledLabel: "Visit date",
     completedLabel: "Report filed",
-    fields: ["location", "attendees", "scheduledAt", "completedAt", "owner", "document", "clientRating", "notes"],
+    fields: ["location", "attendees", "scheduledAt", "completedAt", "owner", "document", "notes"],
     emptyHint: "Record a visit once it's happened, with findings in the notes.",
     // A visit only really has two real states — hasn't happened yet, or
     // has — unlike NDA/IOI/Term Sheet, which can genuinely be declined or

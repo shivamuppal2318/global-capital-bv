@@ -17,6 +17,12 @@ enum ConversationStatus {
 enum LeadStatus {
   NEW
   CONTACTED
+  // Auto-set when a cold-outreach EmailLead's reply is classified
+  // INTERESTED (see lib/replyRecorder.js) and it's auto-converted into a
+  // tracked CRM Lead — distinct from QUALIFIED, which still means a rep
+  // has actually reviewed the opportunity, not just that the prospect
+  // replied positively.
+  INTERESTED
   QUALIFIED
   NEGOTIATION
   CONVERTED
@@ -280,10 +286,11 @@ model Document {
   verifiedBy   User?     @relation("DocumentVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
   verifiedById String?
 
-  dealStages   DealStageRecord[]
-  ndaDocuments NdaRecord[] @relation("NdaDocument")
-  visitReports VisitPlan[] @relation("VisitReport")
-  ioiDocuments IoiRecord[] @relation("IoiDocument")
+  dealStages              DealStageRecord[]
+  ndaDocuments            NdaRecord[]      @relation("NdaDocument")
+  visitReports            VisitPlan[]      @relation("VisitReport")
+  ioiDocuments            IoiRecord[]      @relation("IoiDocument")
+  channelPartnerAgreement ChannelPartner[] @relation("ChannelPartnerAgreementDocument")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -589,6 +596,13 @@ model ChannelPartner {
   // that.
   agreementAddress         String?
   agreementPaymentSchedule String?
+
+  // Set only when the partner chose "upload your own signed copy" instead
+  // of filling in the blanks online (see routes/channelPartnerAgreement.js's
+  // upload route) — null for the fill-in-the-blanks path, same as
+  // NdaRecord.documentId's own null-means-clickwrap-not-upload convention.
+  agreementDocument   Document? @relation("ChannelPartnerAgreementDocument", fields: [agreementDocumentId], references: [id], onDelete: SetNull)
+  agreementDocumentId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1195,6 +1209,7 @@ model EmailAccount {
 
   campaigns EmailCampaign[]
   sentActivity EmailActivityLog[]
+  replyEvents  ReplyEvent[]
 
   @@index([ownerId])
   @@index([ownerChannelPartnerId])
@@ -1277,6 +1292,17 @@ model ReplyEvent {
   matchedRule String?
   replyType   ReplyType
   receivedAt  DateTime  @default(now())
+
+  // Which mailbox's real inbox this reply was actually fetched from (see
+  // imapPoller.js's pollAccount) — null for a reply recorded via the
+  // inbound webhook or "Simulate reply" test action, neither of which polls
+  // a specific mailbox. Backs the Mailbox tab's per-account inbox filter:
+  // without this, there was no way to know which of several configured
+  // mailboxes a given real reply belonged to.
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  emailAccountId String?
+
+  @@index([emailAccountId])
 }
 
 model EmailActivityLog {

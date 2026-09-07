@@ -81,7 +81,31 @@ const createCampaignSchema = z.object({
 // dashboard-summary's own SEND_KINDS-based one), which would have made a
 // campaign's own Sent count silently ignore its real CAMPAIGN_BLAST_SENT
 // sends — the very metric this feature needs to show correctly.
-const SEND_KINDS = ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"];
+//
+// Deliberately excludes BULK_INTRO_SENT — despite its name, that kind is
+// logged the moment a lead is merely ADDED to a campaign (see
+// routes/emailLeads.js's POST / and POST /bulk), regardless of whether a
+// real email ever went out for them: with no CadenceStep configured (the
+// common case today) or the queue disabled, scheduleCadenceSteps schedules
+// nothing, yet this row got created and counted as "sent" anyway. That
+// made Emails Sent jump the instant leads were bulk-added/imported/added
+// to a List — before any real delivery attempt — which is exactly what
+// made "Add to List" look like it silently sent mail. A real send is
+// always BRANCH_EMAIL_SENT (the cadence worker) or CAMPAIGN_BLAST_SENT
+// (Send Now) — both created only once an actual provider send happens.
+const SEND_KINDS = ["BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"];
+
+// A tracking-pixel image load is the weakest possible open signal — most
+// real mail clients (Gmail included) only fetch it if the recipient has
+// remote images turned on, or don't fetch it at all for some accounts, so
+// EMAIL_OPENED alone systematically undercounts real opens. But a lead who
+// clicked a link/button IN the email, or replied to it, definitely opened
+// it first — there's no way to click or reply to an email without reading
+// it — so those two are just as valid proof of an open as the pixel firing,
+// confirmed live: a lead who replied "interested" had zero EMAIL_OPENED
+// rows (their client never loaded the pixel) and was invisibly missing
+// from Opened despite obviously having read the email.
+const OPEN_PROOF_KINDS = ["EMAIL_OPENED", "LINK_CLICKED", "REPLY_RECEIVED"];
 
 // Real open/click rates, computed from ActivityLog rows the tracking pixel
 // and click-redirect actually write (see routes/tracking.js) — not the
@@ -90,10 +114,13 @@ const SEND_KINDS = ["BULK_INTRO_SENT", "BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT
 // tell "no data" apart from "0% engagement."
 // Counts distinct leads, not raw event rows — a lead re-opening the same
 // email (common: preview panes, forwarding) writes another EMAIL_OPENED
-// row each time, which would otherwise push the rate above 100%.
+// row each time, which would otherwise push the rate above 100%. `kind` can
+// be a single kind or an array of kinds that all count as the same signal
+// (see OPEN_PROOF_KINDS above).
 async function distinctLeadCount(campaignId, kind) {
+  const kinds = Array.isArray(kind) ? kind : [kind];
   const rows = await prisma.emailActivityLog.findMany({
-    where: { kind, lead: { campaignId } },
+    where: { kind: { in: kinds }, lead: { campaignId } },
     distinct: ["leadId"],
     select: { leadId: true }
   });
@@ -101,10 +128,16 @@ async function distinctLeadCount(campaignId, kind) {
 }
 
 async function withEngagementRates(campaign) {
-  const [sent, opened, clicked] = await Promise.all([
+  const [sent, opened, clicked, unsubscribed, bounced] = await Promise.all([
     prisma.emailActivityLog.count({ where: { kind: { in: SEND_KINDS }, lead: { campaignId: campaign.id } } }),
-    distinctLeadCount(campaign.id, "EMAIL_OPENED"),
-    distinctLeadCount(campaign.id, "LINK_CLICKED")
+    distinctLeadCount(campaign.id, OPEN_PROOF_KINDS),
+    distinctLeadCount(campaign.id, "LINK_CLICKED"),
+    prisma.emailLead.count({ where: { campaignId: campaign.id, unsubscribed: true } }),
+    // Every real bounce (routes/bounces.js), soft included — not just the
+    // hard/complaint ones that actually flip EmailLead.bounced and suppress
+    // future sends. A soft bounce doesn't stop sending, but it's still real
+    // signal worth seeing, and had zero visibility anywhere before this.
+    distinctLeadCount(campaign.id, "BOUNCED")
   ]);
   return {
     ...campaign,
@@ -112,6 +145,8 @@ async function withEngagementRates(campaign) {
       sent,
       opened,
       clicked,
+      unsubscribed,
+      bounced,
       openRate: sent > 0 ? Math.round((opened / sent) * 100) : null,
       clickRate: sent > 0 ? Math.round((clicked / sent) * 100) : null
     }
@@ -182,7 +217,7 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
 
   const [sentRows, openedRows, totalLeads, repliedLeads, interestedLeads, ndaSignedLeads, recentActivity, mailboxes] = await Promise.all([
     prisma.emailActivityLog.findMany({ where: { kind: { in: SEND_KINDS }, createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
-    prisma.emailActivityLog.findMany({ where: { kind: "EMAIL_OPENED", createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
+    prisma.emailActivityLog.findMany({ where: { kind: { in: OPEN_PROOF_KINDS }, createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
     prisma.emailLead.count({ where: { campaign: campaignFilter } }),
     prisma.emailLead.count({ where: { replyType: { not: "NO_REPLY" }, campaign: campaignFilter } }),
     prisma.emailLead.count({ where: { replyType: "INTERESTED", campaign: campaignFilter } }),
@@ -226,6 +261,81 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
     })),
     mailboxPerformance
   });
+}));
+
+const ENGAGEMENT_DETAIL_ACTIVITY_KINDS = {
+  opened: OPEN_PROOF_KINDS,
+  clicked: ["LINK_CLICKED"],
+  bounced: ["BOUNCED"]
+};
+
+// Backs the Dashboard's Emails Sent/Opened/Clicked/Bounced/Unsubscribed
+// stat cards — clicking one shows exactly which leads (or, for Sent,
+// which individual sends) make up that number instead of just the count.
+// Same owner scoping as GET / and dashboard-summary.
+emailCampaignsRouter.get("/engagement-detail/:kind", asyncHandler(async (req, res) => {
+  const campaignFilter = ownerWhereClause(req);
+
+  if (req.params.kind === "unsubscribed") {
+    const leads = await prisma.emailLead.findMany({
+      where: { unsubscribed: true, campaign: campaignFilter },
+      orderBy: { updatedAt: "desc" },
+      select: { name: true, email: true, updatedAt: true, campaign: { select: { name: true } } }
+    });
+    return res.json(leads.map((l) => ({ leadName: l.name, leadEmail: l.email, campaignName: l.campaign.name, at: l.updatedAt })));
+  }
+
+  // Emails Sent deliberately counts every real send (SEND_KINDS), not
+  // distinct leads — a lead getting an intro plus 2 follow-up cadence
+  // steps is 3 real sends, and the card's own number (withEngagementRates'
+  // `sent`) already counts it that way. Distinct-by-lead here would make
+  // the list shorter than the number the card showed.
+  if (req.params.kind === "sent") {
+    const rows = await prisma.emailActivityLog.findMany({
+      where: { kind: { in: SEND_KINDS }, lead: { campaign: campaignFilter } },
+      orderBy: { createdAt: "desc" },
+      include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } } }
+    });
+    return res.json(rows.map((r) => ({
+      leadName: r.lead.name,
+      leadEmail: r.lead.email,
+      campaignName: r.lead.campaign.name,
+      at: r.createdAt,
+      detail: r.detail
+    })));
+  }
+
+  // Every kind from here on (opened/clicked/bounced) uses the same
+  // distinct-lead semantics withEngagementRates' own counts use (one row
+  // per lead, their most recent qualifying event) — so the list length
+  // always matches the number the card showed. "opened" can match more
+  // than one real kind (see OPEN_PROOF_KINDS) — a click or reply proves an
+  // open just as much as the pixel firing.
+  const activityKinds = ENGAGEMENT_DETAIL_ACTIVITY_KINDS[req.params.kind];
+  if (!activityKinds) {
+    return res.status(400).json({ error: `Unknown engagement kind "${req.params.kind}"` });
+  }
+
+  const rows = await prisma.emailActivityLog.findMany({
+    where: { kind: { in: activityKinds }, lead: { campaign: campaignFilter } },
+    orderBy: { createdAt: "desc" },
+    distinct: ["leadId"],
+    include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } } }
+  });
+  res.json(rows.map((r) => ({
+    leadName: r.lead.name,
+    leadEmail: r.lead.email,
+    campaignName: r.lead.campaign.name,
+    at: r.createdAt,
+    // Real detail worth surfacing for all three — the bounce kind/reason,
+    // which link got clicked, or (for "opened") whatever the underlying
+    // pixel/click/reply event's own detail says.
+    detail: r.detail,
+    // Only meaningful (and only present) for "opened" — which of the three
+    // real signals actually proved this lead opened it, since the pixel
+    // itself often never fires (see OPEN_PROOF_KINDS above).
+    via: req.params.kind === "opened" ? r.kind : undefined
+  })));
 }));
 
 emailCampaignsRouter.post("/", asyncHandler(async (req, res) => {
@@ -488,13 +598,14 @@ emailCampaignsRouter.post("/:id/send-now", asyncHandler(async (req, res) => {
     leadsCampaignId = targetCampaign.id;
   }
 
-  let leads = await prisma.emailLead.findMany({
+  const sendableLeads = await prisma.emailLead.findMany({
     where: { campaignId: leadsCampaignId, unsubscribed: false, bounced: false }
   });
+  let leads = sendableLeads;
 
   if (parsed.data.leadIds?.length) {
     const idSet = new Set(parsed.data.leadIds);
-    leads = leads.filter((lead) => idSet.has(lead.id));
+    leads = sendableLeads.filter((lead) => idSet.has(lead.id));
   } else if (parsed.data.segmentId) {
     const segment = await prisma.emailSegment.findFirst({
       where: {
@@ -505,11 +616,26 @@ emailCampaignsRouter.post("/:id/send-now", asyncHandler(async (req, res) => {
     if (!segment) {
       return res.status(404).json({ error: "Segment not found" });
     }
-    leads = filterMatchingLeads(leads, segment);
+    leads = filterMatchingLeads(sendableLeads, segment);
   }
 
   if (leads.length === 0) {
-    return res.json({ queued: 0, sentImmediately: 0, failed: 0, message: "No matching leads to send to — nothing was sent." });
+    // A specifically-checked lead can still resolve to zero here even
+    // though it visibly exists in this campaign — sendableLeads already
+    // excludes anyone unsubscribed/bounced before the leadIds filter runs,
+    // so picking only a suppressed lead lands here too. Said explicitly
+    // instead of a generic "no matching leads", which read as if the
+    // picked lead had vanished rather than being correctly held back.
+    const pickedSuppressed = parsed.data.leadIds?.length
+      ? await prisma.emailLead.findMany({
+          where: { id: { in: parsed.data.leadIds }, campaignId: leadsCampaignId, OR: [{ unsubscribed: true }, { bounced: true }] },
+          select: { unsubscribed: true, bounced: true }
+        })
+      : [];
+    const message = pickedSuppressed.length
+      ? `${pickedSuppressed.length} of the picked lead(s) can't be sent to (${pickedSuppressed.some((l) => l.unsubscribed) ? "unsubscribed" : "bounced"}) — nothing was sent.`
+      : "No matching leads to send to — nothing was sent.";
+    return res.json({ queued: 0, sentImmediately: 0, failed: 0, message });
   }
 
   const delayBetweenMs = (parsed.data.delayBetweenMinutes || 0) * 60_000;
@@ -557,6 +683,36 @@ emailCampaignsRouter.get("/:id/recent-sends", asyncHandler(async (req, res) => {
     where: { kind: "CAMPAIGN_BLAST_SENT", lead: { campaignId: campaign.id } },
     orderBy: { createdAt: "desc" },
     take: 20,
+    include: { lead: { select: { name: true, email: true } } }
+  });
+
+  res.json(
+    rows.map((r) => ({
+      id: r.id,
+      leadName: r.lead.name,
+      leadEmail: r.lead.email,
+      detail: r.detail,
+      createdAt: r.createdAt,
+      status: r.detail.startsWith("Sending") ? "pending" : r.detail.startsWith("Failed") ? "failed" : "sent"
+    }))
+  );
+}));
+
+// Every real send this campaign has ever made -- unlike /recent-sends above
+// (deliberately scoped to just the composer's own "last Send Now" blasts),
+// this is every SEND_KINDS row (bulk CSV imports and cadence follow-ups
+// included), matching exactly what the campaigns list's own "Emails Sent"
+// count (withEngagementRates' `sent`) already counts. Backs the list view's
+// "who did this campaign actually send to" popup, reachable without first
+// opening the campaign.
+emailCampaignsRouter.get("/:id/sent-activity", asyncHandler(async (req, res) => {
+  const campaign = await loadOwnedCampaignOr404(req, res, req.params.id);
+  if (!campaign) return;
+
+  const rows = await prisma.emailActivityLog.findMany({
+    where: { kind: { in: SEND_KINDS }, lead: { campaignId: campaign.id } },
+    orderBy: { createdAt: "desc" },
+    take: 100,
     include: { lead: { select: { name: true, email: true } } }
   });
 

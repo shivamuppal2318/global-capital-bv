@@ -27,6 +27,22 @@ test("buildReplyDraftPrompt truncates very long reply text to 2000 chars", () =>
   assert.ok(xRunLength <= 2000);
 });
 
+test("buildReplyDraftPrompt includes the admin-written company profile when set", () => {
+  const prompt = buildReplyDraftPrompt({
+    leadName: "Jane Doe",
+    company: "Acme Corp",
+    replyType: "INTERESTED",
+    rawReplyText: "Tell me more.",
+    companyProfile: "Global Capital BV focuses on growth-stage renewable energy deals in the DACH region."
+  });
+  assert.match(prompt, /growth-stage renewable energy deals in the DACH region/);
+});
+
+test("buildReplyDraftPrompt omits the company background section when no profile is set", () => {
+  const prompt = buildReplyDraftPrompt({ leadName: "Jane Doe", company: "Acme Corp", replyType: "INTERESTED", rawReplyText: "Tell me more." });
+  assert.doesNotMatch(prompt, /Company background/);
+});
+
 test("buildReplyDraftPrompt asks for JSON with a subject and body field", () => {
   const prompt = buildReplyDraftPrompt({ leadName: "N", company: "C", replyType: "ZOOM_REQUEST", rawReplyText: "Can we do a call?" });
   assert.match(prompt, /"subject"/);

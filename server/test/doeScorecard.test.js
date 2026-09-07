@@ -52,9 +52,9 @@ test("doeScorecard: cold email open rate is measured against leads actually SENT
     { id: "3", owner: "Rahul R", replyType: "NO_REPLY", createdAt: daysAgo(1) } // queued, never sent
   ];
   const activity = [
-    { leadId: "1", kind: "BULK_INTRO_SENT" },
+    { leadId: "1", kind: "BRANCH_EMAIL_SENT" },
     { leadId: "1", kind: "EMAIL_OPENED" },
-    { leadId: "2", kind: "BULK_INTRO_SENT" }
+    { leadId: "2", kind: "BRANCH_EMAIL_SENT" }
     // lead 3 has no send activity at all
   ];
   const [row] = doeScorecard(leads, activity);
@@ -69,8 +69,8 @@ test("doeScorecard: a rep's activity never leaks into another rep's row", () => 
     { id: "2", owner: "Meera S", replyType: "NO_REPLY", createdAt: daysAgo(1) }
   ];
   const activity = [
-    { leadId: "1", kind: "BULK_INTRO_SENT" },
-    { leadId: "2", kind: "BULK_INTRO_SENT" },
+    { leadId: "1", kind: "BRANCH_EMAIL_SENT" },
+    { leadId: "2", kind: "BRANCH_EMAIL_SENT" },
     { leadId: "2", kind: "EMAIL_OPENED" }
   ];
   const rows = doeScorecard(leads, activity);

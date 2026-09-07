@@ -24,11 +24,16 @@ function deriveCallStatus(lead) {
 // scalar fields — same signals a human would look at, just counted instead
 // of read one by one. activityLog itself is left off the response; only the
 // derived score/qualification are returned, so payload size doesn't grow
-// with a lead's history.
+// with a lead's history. Also collapses replyEvents (loaded just for its
+// latest emailAccountId, see the include below) down to a single
+// lastReplyEmailAccountId — which real mailbox's inbox this lead's most
+// recent reply was actually fetched from, null if it arrived via the
+// inbound webhook/simulate-reply instead of a real IMAP poll. Backs the
+// Mailbox tab's per-account inbox filter.
 function attachScore(lead) {
   const openCount = lead.activityLog.filter((entry) => entry.kind === "EMAIL_OPENED").length;
   const clickCount = lead.activityLog.filter((entry) => entry.kind === "LINK_CLICKED").length;
-  const { activityLog, ...rest } = lead;
+  const { activityLog, replyEvents, ...rest } = lead;
   const { score, band, reasons } = calculateLeadScore({
     replyType: lead.replyType,
     bounced: lead.bounced,
@@ -39,7 +44,14 @@ function attachScore(lead) {
     openCount,
     clickCount
   });
-  return { ...rest, leadScore: score, leadScoreBand: band, leadScoreReasons: reasons, qualification: deriveQualification(band) };
+  return {
+    ...rest,
+    leadScore: score,
+    leadScoreBand: band,
+    leadScoreReasons: reasons,
+    qualification: deriveQualification(band),
+    lastReplyEmailAccountId: replyEvents?.[0]?.emailAccountId ?? null
+  };
 }
 
 // List endpoint the frontend needs before it can stop hardcoding
@@ -56,7 +68,8 @@ emailLeadsRouter.get("/", asyncHandler(async (req, res) => {
     orderBy: { updatedAt: "desc" },
     include: {
       campaign: { select: { name: true } },
-      activityLog: { select: { kind: true } }
+      activityLog: { select: { kind: true } },
+      replyEvents: { orderBy: { receivedAt: "desc" }, take: 1, select: { emailAccountId: true } }
     }
   });
   res.json(leads.map(attachScore));
@@ -279,7 +292,15 @@ const bulkCreateLeadSchema = z.object({
       })
     )
     .min(1)
-    .max(500) // sanity cap — a bad CSV paste shouldn't be able to create thousands of rows in one call
+    .max(500), // sanity cap — a bad CSV paste shouldn't be able to create thousands of rows in one call
+  // Defaults to false (unchanged CSV-import behavior: enrolled in the
+  // campaign's cadence immediately, which really does send a real email
+  // within seconds for any step configured with delayDays 0). CRM
+  // Workspace's "Add to List" action sets this true — filing existing CRM
+  // leads into a List is expected to be a passive "add them for later"
+  // action, not something that fires real outreach the instant a rep
+  // clicks it with no chance to review first.
+  skipCadence: z.boolean().optional().default(false)
 });
 
 // CSV import — the frontend parses the pasted CSV into structured rows
@@ -308,6 +329,11 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
   const created = [];
   const failed = [];
   const duplicates = [];
+  // CSV import intentionally skips the deliverability (DNS MX/A/AAAA)
+  // gate that the single-add and inbound-webhook routes still enforce —
+  // a bulk paste is reviewed by the person importing it, and rejecting
+  // rows here just meant re-uploading the same file to get the rest in.
+  // Kept in the response shape as always-empty for frontend compatibility.
   const invalid = [];
   // Rows within the same CSV paste count against each other too (a pasted
   // list with the same email twice), not just against what's already in
@@ -315,17 +341,8 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
   // is caught without a redundant query.
   const seenInBatch = new Set();
 
-  // Validated up front, once per unique domain, rather than inline in the
-  // loop below — same reasoning as the /inbound and single-create routes:
-  // only real, deliverable-looking addresses should reach the campaign.
-  const deliverabilityResults = await verifyEmailsDeliverability(parsed.data.leads.map((lead) => lead.email));
-
   for (const [index, leadInput] of parsed.data.leads.entries()) {
     const rowNumber = index + 1;
-    if (!deliverabilityResults[index].valid) {
-      invalid.push({ row: rowNumber, email: leadInput.email, reason: deliverabilityResults[index].reason });
-      continue;
-    }
     if (seenInBatch.has(leadInput.email)) {
       duplicates.push({ row: rowNumber, email: leadInput.email, reason: "Duplicate email earlier in this same import." });
       continue;
@@ -342,16 +359,18 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
       }
 
       const lead = await prisma.emailLead.create({ data: { ...leadInput, campaignId: campaign.id } });
-      const scheduledCount = await scheduleCadenceSteps(lead, campaign.cadenceSteps);
+      const scheduledCount = parsed.data.skipCadence ? 0 : await scheduleCadenceSteps(lead, campaign.cadenceSteps);
 
       await prisma.emailActivityLog.create({
         data: {
           leadId: lead.id,
           kind: "BULK_INTRO_SENT",
-          title: "Added to campaign (CSV import)",
-          detail: scheduledCount > 0
-            ? `Enrolled in "${campaign.name}" via bulk CSV import — ${scheduledCount} cadence step(s) scheduled.`
-            : `Enrolled in "${campaign.name}" via bulk CSV import — no cadence steps scheduled.`
+          title: parsed.data.skipCadence ? "Added to list" : "Added to campaign (CSV import)",
+          detail: parsed.data.skipCadence
+            ? `Added to "${campaign.name}" — not enrolled in automatic follow-ups yet; send a campaign to them from there when ready.`
+            : scheduledCount > 0
+              ? `Enrolled in "${campaign.name}" via bulk CSV import — ${scheduledCount} cadence step(s) scheduled.`
+              : `Enrolled in "${campaign.name}" via bulk CSV import — no cadence steps scheduled.`
         }
       });
 

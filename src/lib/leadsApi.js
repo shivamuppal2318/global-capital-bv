@@ -49,5 +49,14 @@ export const leadsApi = {
   // Real ZoomInfo prospecting search — "Find Companies (ZoomInfo)" panel.
   // mode: "companies" | "contacts". Nothing is persisted server-side;
   // the caller pre-fills the New Record form from a chosen result.
-  zoomInfoSearch: ({ mode, filters, page }) => request("/zoominfo-search", { method: "POST", body: { mode, filters, page } })
+  zoomInfoSearch: ({ mode, filters, page }) => request("/zoominfo-search", { method: "POST", body: { mode, filters, page } }),
+  // A Contact search result only ever carries a hasEmail-style flag, never
+  // the real address — this fetches it via a real Enrich lookup, spent only
+  // for a result the rep actually picked ("Add as Lead"), not every row.
+  zoomInfoRevealContact: ({ firstName, lastName, companyName }) =>
+    request("/zoominfo-search/reveal-contact", { method: "POST", body: { firstName, lastName, companyName } }),
+  // Country/state search filters only accept exact values from ZoomInfo's
+  // own controlled vocabulary (confirmed live) — this backs a real dropdown
+  // instead of a free-text field. field: "countries" | "states".
+  zoomInfoLookup: (field) => request(`/zoominfo-search/lookup/${field}`)
 };

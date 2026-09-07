@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { ActionButton, Field } from "../ui.jsx";
+import { ActionButton, Field, noteToneClass } from "../ui.jsx";
 import { SearchIcon } from "../Icons.jsx";
-import { buildLeadsCsv } from "../../lib/csvLeads.js";
 
 function downloadSampleLeadsCsv() {
-  const csv = buildLeadsCsv([{ name: "Jane Doe", company: "Acme Inc", email: "jane@acme.com", owner: "", country: "" }]);
+  const csv = "email,first name,last name,country,company\njane@acme.com,Jane,Doe,IN,Acme Inc";
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -19,8 +18,8 @@ export function LeadsTab({ mailing }) {
     campaigns, allLeads, automationForm, handleFormChange, handleSaveAutomation, automationNotice,
     selectedCampaign, selectedCampaignId, selectCampaign, startNewCampaign,
     leadsViewSignal, setLeadsViewSignal,
-    newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
-    csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, handleImportCsv, csvPreviewBusy, csvImportBusy
+    newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead, handleDeleteCampaign,
+    csvText, handleCsvTextChange, handleImportCsv, csvImportBusy
   } = mailing;
   const [viewMode, setViewMode] = useState("list");
 
@@ -229,10 +228,7 @@ export function LeadsTab({ mailing }) {
         handleDeleteLead={handleDeleteLead}
         csvText={csvText}
         handleCsvTextChange={handleCsvTextChange}
-        csvPreview={csvPreview}
-        handlePreviewCsv={handlePreviewCsv}
         handleImportCsv={handleImportCsv}
-        csvPreviewBusy={csvPreviewBusy}
         csvImportBusy={csvImportBusy}
         automationNotice={automationNotice}
         onBack={() => setViewMode("list")}
@@ -325,6 +321,17 @@ export function LeadsTab({ mailing }) {
                         >
                           Settings
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Delete "${row.name}"? This only works if it has no subscribers — otherwise pause it instead.`)) {
+                              handleDeleteCampaign(row);
+                            }
+                          }}
+                          className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#e0483f]"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -359,7 +366,7 @@ export function LeadsTab({ mailing }) {
 function SubscribersView({
   selectedCampaign, selectedCampaignId, allLeads,
   newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
-  csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, handleImportCsv, csvPreviewBusy, csvImportBusy,
+  csvText, handleCsvTextChange, handleImportCsv, csvImportBusy,
   automationNotice, onBack
 }) {
   const inputClass = "w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none";
@@ -399,10 +406,24 @@ function SubscribersView({
                 className={inputClass}
               />
             </Field>
-            <Field label="Name">
+            <Field label="First Name">
               <input
-                value={newLeadForm.name}
-                onChange={(event) => setNewLeadForm((current) => ({ ...current, name: event.target.value }))}
+                value={newLeadForm.firstName}
+                onChange={(event) => setNewLeadForm((current) => ({ ...current, firstName: event.target.value }))}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Last Name">
+              <input
+                value={newLeadForm.lastName}
+                onChange={(event) => setNewLeadForm((current) => ({ ...current, lastName: event.target.value }))}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Country">
+              <input
+                value={newLeadForm.country}
+                onChange={(event) => setNewLeadForm((current) => ({ ...current, country: event.target.value }))}
                 className={inputClass}
               />
             </Field>
@@ -420,24 +441,19 @@ function SubscribersView({
             <h3 className="text-[13px] font-semibold text-[#222347]">Import (CSV)</h3>
             <input type="file" accept=".csv,text/csv" onChange={handleCsvFileChange} className="mt-2 text-[13px] text-[#5d6286]" />
             <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
-              CSV columns: name, company, email, owner (optional), country (optional). A header row is required.
+              CSV columns: email, first name, last name, country (optional), company (optional), owner (optional). A header row is required.
             </p>
             <button type="button" onClick={downloadSampleLeadsCsv} className="mt-1 text-[12px] font-medium text-[#3046b2] hover:underline">
               Download sample CSV
             </button>
 
             {csvText ? (
-              <div className="mt-3 space-y-2">
-                {csvPreview ? (
-                  <p className="text-[12px] text-[#5d6286]">
-                    {csvPreview.readyCount} ready · {csvPreview.duplicateCount} duplicate(s) · {csvPreview.invalidCount} invalid
-                  </p>
-                ) : null}
+              <div className="mt-3">
                 <ActionButton
-                  label={csvPreviewBusy ? "Checking…" : csvImportBusy ? "Importing…" : csvPreview ? "Import CSV" : "Preview CSV"}
+                  label={csvImportBusy ? "Importing…" : "Import CSV"}
                   primary
-                  disabled={csvPreviewBusy || csvImportBusy || !selectedCampaignId}
-                  onClick={csvPreview ? handleImportCsv : handlePreviewCsv}
+                  disabled={csvImportBusy || !selectedCampaignId}
+                  onClick={handleImportCsv}
                 />
               </div>
             ) : null}
@@ -455,6 +471,7 @@ function SubscribersView({
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Company</th>
+                  <th className="px-4 py-3">Country</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Subscribed</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -467,8 +484,13 @@ function SubscribersView({
                       <td className="px-4 py-3 font-medium text-[#102246]">{lead.email}</td>
                       <td className="px-4 py-3">{lead.name}</td>
                       <td className="px-4 py-3">{lead.company}</td>
+                      <td className="px-4 py-3">{lead.country || "—"}</td>
                       <td className="px-4 py-3">{lead.stage}</td>
-                      <td className="px-4 py-3">{lead.unsubscribed ? "No" : "Yes"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${lead.unsubscribed ? noteToneClass.slate : noteToneClass.green}`}>
+                          {lead.unsubscribed ? "Unsubscribed" : "Subscribed"}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
@@ -482,7 +504,7 @@ function SubscribersView({
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="px-4 py-5 text-[13px] text-[#7a7d9c]">
+                    <td colSpan="7" className="px-4 py-5 text-[13px] text-[#7a7d9c]">
                       No subscribers yet — add one above or import a CSV.
                     </td>
                   </tr>

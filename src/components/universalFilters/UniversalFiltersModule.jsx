@@ -46,6 +46,7 @@ const TEMPERATURES = [
 const STATUSES = [
   { key: "NEW", label: "New" },
   { key: "CONTACTED", label: "Contacted" },
+  { key: "INTERESTED", label: "Interested" },
   { key: "QUALIFIED", label: "Qualified" },
   { key: "NEGOTIATION", label: "Negotiation" },
   { key: "CONVERTED", label: "Converted" },
@@ -63,6 +64,7 @@ const TEMPERATURE_TONE = { HOT: "red", WARM: "amber", COLD: "blue" };
 const STATUS_TONE = {
   NEW: "blue",
   CONTACTED: "amber",
+  INTERESTED: "sky",
   QUALIFIED: "green",
   NEGOTIATION: "violet",
   CONVERTED: "green",

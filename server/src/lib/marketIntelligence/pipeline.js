@@ -36,6 +36,12 @@ export async function runIntelligencePipeline({ query, firecrawlUrls = [], defau
     matched: 0,
     created: 0,
     ignored: 0,
+    // AI enrichment is best-effort, not required for a signal to be real —
+    // a raw headline/source/date is still genuinely useful. Counted apart
+    // from `failed` (which stays for actual bugs post-AI, e.g. a DB write
+    // failing) since a pending signal is still visible in the main feed,
+    // not hidden the way GET /signals deliberately hides FAILED rows.
+    pending: 0,
     failed: 0
   };
 
@@ -83,11 +89,25 @@ async function processOneSignal(raw, defaultCampaignId, summary) {
     }
   });
 
+  let processed;
   try {
     if (!(await isAiProcessorConfigured())) {
       throw new Error("AI processor not configured — add a Claude API key under Admin Panel → AI Assistant");
     }
-    const processed = await processSignalWithAi(raw);
+    processed = await processSignalWithAi(raw);
+  } catch (err) {
+    // AI enrichment failing (no key configured, no credits, a transient API
+    // error) is not a reason to hide a real, successfully-fetched signal —
+    // leaving it in its already-created PENDING state keeps the raw
+    // headline/source/date visible in the main feed (see GET /signals'
+    // status filter) instead of behind FAILED. Enrichment can still run for
+    // it later — nothing here prevents a future run from reprocessing it.
+    console.error(`[market-intelligence] AI enrichment skipped for "${raw.rawTitle}":`, err.message);
+    summary.pending += 1;
+    return;
+  }
+
+  try {
     const matchedLead = await findExistingLeadByCompany(processed.entityName);
 
     if (matchedLead) {

@@ -82,13 +82,17 @@ export async function enrichCompanyByName({ token, companyName }) {
   return match.attributes;
 }
 
-const CONTACT_ENRICH_OUTPUT_FIELDS = ["firstName", "lastName", "jobTitle", "managementLevel", "mobilePhone", "directPhoneAlt"];
+const CONTACT_ENRICH_OUTPUT_FIELDS = ["firstName", "lastName", "email", "jobTitle", "managementLevel", "mobilePhone", "directPhoneAlt"];
 
 // ZoomInfo's contact match only accepts firstName+lastName+companyName (or
 // personId) — confirmed live: an email-based matchPersonInput is rejected
-// with a 400, even though email is a valid *output* field. So a lead's full
-// name has to be split; a single-word name (can't tell first from last)
-// isn't enough to match on and returns null rather than guessing.
+// with a 400, even though email is a valid *output* field (and, confirmed
+// live, actually comes back as a real address like "name@company.com" when
+// requested this way — unlike the Search endpoint, see searchContacts,
+// which only ever returns a hasEmail true/false flag, never the address
+// itself). So a lead's full name has to be split; a single-word name
+// (can't tell first from last) isn't enough to match on and returns null
+// rather than guessing.
 export async function enrichContactByName({ token, fullName, companyName }) {
   const parts = fullName?.trim().split(/\s+/) ?? [];
   if (parts.length < 2) return null;
@@ -172,6 +176,16 @@ export async function searchScoopsByCompany({ token, companyName }) {
 // not numbers; managementLevel must be a comma-delimited string built
 // from exactly: "Board Member", "C Level Exec", "VP Level Exec",
 // "Director", "Manager", "Non Manager").
+//
+// Confirmed live: unlike Enrich, this endpoint rejects an explicit
+// outputFields list (400 "Invalid field requested") and always returns its
+// own fixed default field set regardless — for a contact result, that's
+// hasEmail/hasDirectPhone/hasMobilePhone/hasSupplementalEmail booleans, not
+// the actual address/number. Getting a real email for a specific person
+// found this way means a follow-up Enrich call by name (see
+// enrichContactByName below) — see routes/leads.js's
+// POST /zoominfo-search/reveal-contact, which does exactly that when a rep
+// picks a search result to add as a lead.
 async function runZoomInfoSearch({ token, url, type, filters, page, pageSize }) {
   const query = new URLSearchParams({ "page[number]": String(page ?? 1), "page[size]": String(pageSize ?? 25) });
   const response = await fetch(`${url}?${query.toString()}`, {
@@ -192,6 +206,44 @@ async function runZoomInfoSearch({ token, url, type, filters, page, pageSize }) 
     totalResults: body?.meta?.totalResults ?? body?.meta?.page?.total ?? 0,
     page: page ?? 1
   };
+}
+
+// The country/state search filters (see runZoomInfoSearch above) reject
+// anything not drawn from ZoomInfo's own controlled vocabulary — confirmed
+// live: typing "africa" (a continent, not a country) into the country
+// filter 400s with "it must be a comma delimited string of Countries listed
+// in the endpoint: /lookup/countries" — this is exactly that endpoint.
+// Cached in memory (both lists are small — 216 countries, 69 states/
+// provinces — and effectively static) so picking a country/state doesn't
+// cost a real API call and a network round-trip on every panel open.
+const LOOKUP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const lookupCache = new Map();
+
+async function fetchZoomInfoLookup({ token, kind }) {
+  const cached = lookupCache.get(kind);
+  if (cached && Date.now() - cached.at < LOOKUP_CACHE_TTL_MS) {
+    return cached.values;
+  }
+
+  const response = await fetch(`https://api.zoominfo.com/gtm/data/v1/lookup/${kind}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.errors?.[0]?.detail ?? body?.detail ?? `ZoomInfo rejected the ${kind} lookup.`);
+  }
+
+  const values = (body?.data ?? []).map((item) => item.attributes?.name).filter(Boolean);
+  lookupCache.set(kind, { values, at: Date.now() });
+  return values;
+}
+
+export function getZoomInfoCountries({ token }) {
+  return fetchZoomInfoLookup({ token, kind: "countries" });
+}
+
+export function getZoomInfoStates({ token }) {
+  return fetchZoomInfoLookup({ token, kind: "states" });
 }
 
 export async function searchCompanies({ token, filters, page, pageSize }) {

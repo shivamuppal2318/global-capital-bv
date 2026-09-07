@@ -40,9 +40,9 @@ emailAccountsRouter.get("/", asyncHandler(async (req, res) => {
 // Backs the Mailbox tab's real "Fetch Diagnostics" info and its "Fetch Now"
 // button's result — registered before /:id so Express doesn't treat these
 // literal paths as an account id.
-emailAccountsRouter.get("/imap-status", (_req, res) => {
-  res.json(getImapStatus());
-});
+emailAccountsRouter.get("/imap-status", asyncHandler(async (_req, res) => {
+  res.json(await getImapStatus());
+}));
 
 emailAccountsRouter.post("/fetch-now", asyncHandler(async (_req, res) => {
   try {

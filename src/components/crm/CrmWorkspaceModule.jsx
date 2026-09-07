@@ -27,7 +27,26 @@ const avatarToneClass = {
   sky: "bg-[#def1ff] text-[#2b94da]"
 };
 
-const STATUS_LABEL = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified", NEGOTIATION: "Negotiation", CONVERTED: "Converted", LOST: "Lost" };
+const STATUS_LABEL = { NEW: "New", CONTACTED: "Contacted", INTERESTED: "Interested", QUALIFIED: "Qualified", NEGOTIATION: "Negotiation", CONVERTED: "Converted", LOST: "Lost" };
+
+// Same status->color mapping Universal Filters already uses for the same
+// statuses — the status badge below used to be colored by lead.tone (a
+// value assigned once at random when the lead was created purely to give
+// avatars visual variety, see leads.js's TONES array), which had nothing to
+// do with the lead's actual status: a LOST lead could show green, a
+// CONVERTED lead could show red, entirely by chance.
+// INTERESTED gets its own tone, distinct from QUALIFIED's green — it means
+// a cold-outreach reply was auto-classified as interested (see
+// replyRecorder.js), not that a rep has actually reviewed the opportunity.
+const STATUS_TONE = {
+  NEW: "blue",
+  CONTACTED: "amber",
+  INTERESTED: "sky",
+  QUALIFIED: "green",
+  NEGOTIATION: "violet",
+  CONVERTED: "green",
+  LOST: "red"
+};
 
 const TEMPERATURE_OPTIONS = ["HOT", "WARM", "COLD"];
 
@@ -107,7 +126,7 @@ function LeadDetailModal({
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`rounded-full px-3 py-1 text-[12px] font-semibold ${noteToneClass[lead.tone]}`}>{STATUS_LABEL[lead.status]}</span>
+            <span className={`rounded-full px-3 py-1 text-[12px] font-semibold ${noteToneClass[STATUS_TONE[lead.status]]}`}>{STATUS_LABEL[lead.status]}</span>
             <button
               type="button"
               onClick={onClose}
@@ -387,6 +406,7 @@ function LeadDetailModal({
                     <p className="text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Contact Info (ZoomInfo)</p>
                     <div className="mt-3 grid gap-x-6 gap-y-2 text-[13px] text-[#334463] sm:grid-cols-2">
                       {lead.zoomInfoContactData.jobTitle ? <p><span className="text-[#8592ab]">Title</span> — {lead.zoomInfoContactData.jobTitle}</p> : null}
+                      {lead.zoomInfoContactData.email ? <p><span className="text-[#8592ab]">Email</span> — {lead.zoomInfoContactData.email}</p> : null}
                       {lead.zoomInfoContactData.managementLevel?.length ? (
                         <p><span className="text-[#8592ab]">Level</span> — {lead.zoomInfoContactData.managementLevel.join(", ")}</p>
                       ) : null}
@@ -603,14 +623,30 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // silent Lead creation from a search result.
   const [zoomInfoPanelOpen, setZoomInfoPanelOpen] = useState(false);
   const [zoomInfoMode, setZoomInfoMode] = useState("companies");
-  const [zoomInfoCompanyFilters, setZoomInfoCompanyFilters] = useState({ companyName: "", industryKeywords: "", employeeRangeMin: "", employeeRangeMax: "" });
-  const [zoomInfoContactFilters, setZoomInfoContactFilters] = useState({ jobTitle: "", industryKeywords: "", managementLevel: [] });
+  const [zoomInfoCompanyFilters, setZoomInfoCompanyFilters] = useState({
+    companyName: "", industryKeywords: "", employeeRangeMin: "", employeeRangeMax: "",
+    revenueMin: "", revenueMax: "", state: "", country: ""
+  });
+  const [zoomInfoContactFilters, setZoomInfoContactFilters] = useState({
+    jobTitle: "", industryKeywords: "", managementLevel: [],
+    companyName: "", firstName: "", lastName: "", state: "", country: ""
+  });
   const [zoomInfoSearching, setZoomInfoSearching] = useState(false);
   const [zoomInfoError, setZoomInfoError] = useState(null);
   const [zoomInfoResults, setZoomInfoResults] = useState([]);
   const [zoomInfoTotalResults, setZoomInfoTotalResults] = useState(0);
   const [zoomInfoPage, setZoomInfoPage] = useState(1);
   const [zoomInfoHasSearched, setZoomInfoHasSearched] = useState(false);
+  // Country/state only accept exact values from ZoomInfo's own controlled
+  // vocabulary (confirmed live — free text like "africa" 400s naming
+  // GET /lookup/countries as the source of truth), so these back real
+  // dropdowns instead. Loaded once, lazily, the first time the panel opens.
+  const [zoomInfoCountries, setZoomInfoCountries] = useState([]);
+  const [zoomInfoStates, setZoomInfoStates] = useState([]);
+  // A Contact search result never carries the real email (ZoomInfo's Search
+  // API only returns a hasEmail true/false flag) — this tracks the
+  // real Enrich lookup fired when a rep picks a result to add as a lead.
+  const [revealingContactEmail, setRevealingContactEmail] = useState(false);
 
   // "Add to List" — sends the currently-selected (already status-filtered)
   // leads into a real Email Automation List (an EmailCampaign) as real
@@ -638,6 +674,14 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   useEffect(() => {
     universalFiltersApi.facets().then(setFacets).catch(() => {});
   }, []);
+
+  // Lazily, once — no point spending a ZoomInfo call before the panel is
+  // ever opened, and the lists are cached server-side afterward anyway.
+  useEffect(() => {
+    if (!zoomInfoPanelOpen || zoomInfoCountries.length || zoomInfoStates.length) return;
+    leadsApi.zoomInfoLookup("countries").then((r) => setZoomInfoCountries(r.values)).catch(() => {});
+    leadsApi.zoomInfoLookup("states").then((r) => setZoomInfoStates(r.values)).catch(() => {});
+  }, [zoomInfoPanelOpen, zoomInfoCountries.length, zoomInfoStates.length]);
 
   useEffect(() => {
     leadsApi.dealBoard().then(setDealBoard).catch(() => {});
@@ -696,23 +740,37 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // narrow the search to "" instead of "not set").
   function buildZoomInfoFilters() {
     if (zoomInfoMode === "companies") {
-      const { companyName, industryKeywords, employeeRangeMin, employeeRangeMax } = zoomInfoCompanyFilters;
+      const { companyName, industryKeywords, employeeRangeMin, employeeRangeMax, revenueMin, revenueMax, state, country } = zoomInfoCompanyFilters;
       return {
         ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
         ...(industryKeywords.trim() ? { industryKeywords: industryKeywords.trim() } : {}),
         // ZoomInfo's own API requires these as numeric STRINGS, not numbers
         // — confirmed live (a real number 400s with "Invalid field type").
         ...(employeeRangeMin.trim() ? { employeeRangeMin: employeeRangeMin.trim() } : {}),
-        ...(employeeRangeMax.trim() ? { employeeRangeMax: employeeRangeMax.trim() } : {})
+        ...(employeeRangeMax.trim() ? { employeeRangeMax: employeeRangeMax.trim() } : {}),
+        ...(revenueMin.trim() ? { revenueMin: revenueMin.trim() } : {}),
+        ...(revenueMax.trim() ? { revenueMax: revenueMax.trim() } : {}),
+        ...(state.trim() ? { state: state.trim() } : {}),
+        ...(country.trim() ? { country: country.trim() } : {})
       };
     }
-    const { jobTitle, industryKeywords, managementLevel } = zoomInfoContactFilters;
+    const { jobTitle, industryKeywords, managementLevel, companyName, firstName, lastName, state, country } = zoomInfoContactFilters;
     return {
       ...(jobTitle.trim() ? { jobTitle: jobTitle.trim() } : {}),
       ...(industryKeywords.trim() ? { industryKeywords: industryKeywords.trim() } : {}),
       // Comma-delimited from ZoomInfo's own controlled vocabulary — see
       // MANAGEMENT_LEVEL_OPTIONS below.
-      ...(managementLevel.length ? { managementLevel: managementLevel.join(",") } : {})
+      ...(managementLevel.length ? { managementLevel: managementLevel.join(",") } : {}),
+      // All four confirmed live against the real API before wiring in
+      // (same discipline as every other ZoomInfo filter in this file) —
+      // companyName narrows a contact search to people at one specific
+      // company instead of anywhere; firstName/lastName finds a specific
+      // named person.
+      ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
+      ...(firstName.trim() ? { firstName: firstName.trim() } : {}),
+      ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
+      ...(state.trim() ? { state: state.trim() } : {}),
+      ...(country.trim() ? { country: country.trim() } : {})
     };
   }
 
@@ -742,12 +800,38 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     if (zoomInfoMode === "companies") {
       const territory = [result.city, result.state, result.country].filter(Boolean).join(", ");
       setAddForm({ name: "", company: result.name ?? "", email: "", mobile: "", capitalAsk: "", owner: "", territory });
-    } else {
-      const name = [result.firstName, result.lastName].filter(Boolean).join(" ");
-      setAddForm({ name, company: result.company?.name ?? "", email: "", mobile: "", capitalAsk: "", owner: "", territory: "" });
+      setZoomInfoPanelOpen(false);
+      setAddModalOpen(true);
+      return;
     }
+
+    const name = [result.firstName, result.lastName].filter(Boolean).join(" ");
+    const company = result.company?.name ?? "";
+    setAddForm({ name, company, email: "", mobile: "", capitalAsk: "", owner: "", territory: "" });
     setZoomInfoPanelOpen(false);
     setAddModalOpen(true);
+
+    // The search result only ever indicated hasEmail — this fetches the
+    // real address via a real Enrich lookup, spent only for the specific
+    // contact just picked (not every row in the results list), and only
+    // worth trying if ZoomInfo indicated one exists on file.
+    if (result.hasEmail && result.firstName && result.lastName) {
+      setRevealingContactEmail(true);
+      leadsApi
+        .zoomInfoRevealContact({ firstName: result.firstName, lastName: result.lastName, companyName: company })
+        .then(({ email, mobilePhone }) => {
+          setAddForm((current) => ({
+            ...current,
+            email: email ?? current.email,
+            mobile: mobilePhone ?? current.mobile
+          }));
+        })
+        .catch(() => {
+          // Non-fatal — the form already opened with name/company filled
+          // in; the rep can type the email by hand if this lookup fails.
+        })
+        .finally(() => setRevealingContactEmail(false));
+    }
   }
 
   async function handleImportLeads() {
@@ -1053,7 +1137,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
         email: l.email,
         owner: l.owner || l.doe || "Unassigned"
       }));
-      const result = await emailLeadsApi.bulkCreate(addToListCampaignId, rows);
+      const result = await emailLeadsApi.bulkCreate(addToListCampaignId, rows, { skipCadence: true });
       const listName = addToListCampaigns.find((c) => c.id === addToListCampaignId)?.name ?? "the list";
       const parts = [`${result.createdCount} added to "${listName}"`];
       if (result.duplicateCount) parts.push(`${result.duplicateCount} already there`);
@@ -1253,6 +1337,8 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
               hasSearched={zoomInfoHasSearched}
               onSearch={handleZoomInfoSearch}
               onAddAsLead={handleAddZoomInfoResultAsLead}
+              countries={zoomInfoCountries}
+              states={zoomInfoStates}
             />
           </div>
         ) : null}
@@ -1406,7 +1492,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                   <td className="px-4 py-4 align-top text-[#435471]">{lead.capitalAsk}</td>
                   <td className="px-4 py-4 align-top text-[#435471]">{lead.owner || "Unassigned"}</td>
                   <td className="px-4 py-4 align-top text-right">
-                    <span className={`inline-block rounded-full px-2 py-1 text-[10.5px] font-semibold leading-tight ${noteToneClass[lead.tone]}`}>
+                    <span className={`inline-block rounded-full px-2 py-1 text-[10.5px] font-semibold leading-tight ${noteToneClass[STATUS_TONE[lead.status]]}`}>
                       {STATUS_LABEL[lead.status]}
                     </span>
                   </td>
@@ -1497,6 +1583,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
           setForm={setAddForm}
           saving={addSaving}
           error={addError}
+          revealingContactEmail={revealingContactEmail}
           onClose={() => {
             setAddModalOpen(false);
             setAddError(null);
@@ -1530,9 +1617,32 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
 // the existing New Record modal for the rep to review and save.
 function ZoomInfoSearchPanel({
   mode, setMode, companyFilters, setCompanyFilters, contactFilters, setContactFilters,
-  searching, error, results, totalResults, page, hasSearched, onSearch, onAddAsLead
+  searching, error, results, totalResults, page, hasSearched, onSearch, onAddAsLead,
+  countries, states
 }) {
   const hasMore = page * 25 < totalResults;
+
+  // A plain <select> (not a free-text field) — ZoomInfo's own API rejects
+  // anything not drawn from its controlled vocabulary (confirmed live: a
+  // free-text "africa" 400s naming GET /lookup/countries as the source of
+  // truth), so only real values are ever offered.
+  function LookupSelect({ label, value, onChange, options, placeholder }) {
+    return (
+      <label className="block">
+        <p className="mb-1.5 text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">{label}</p>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] text-[#102246] outline-none"
+        >
+          <option value="">{placeholder ?? `Any ${label.toLowerCase()}`}</option>
+          {options.map((name) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+      </label>
+    );
+  }
 
   return (
     <div>
@@ -1565,12 +1675,21 @@ function ZoomInfoSearchPanel({
           <EditField label="Industry" value={companyFilters.industryKeywords} onChange={(v) => setCompanyFilters((c) => ({ ...c, industryKeywords: v }))} placeholder="e.g. Software" />
           <EditField label="Employees min" value={companyFilters.employeeRangeMin} onChange={(v) => setCompanyFilters((c) => ({ ...c, employeeRangeMin: v }))} placeholder="e.g. 50" />
           <EditField label="Employees max" value={companyFilters.employeeRangeMax} onChange={(v) => setCompanyFilters((c) => ({ ...c, employeeRangeMax: v }))} placeholder="e.g. 500" />
+          <EditField label="Revenue min (USD)" value={companyFilters.revenueMin} onChange={(v) => setCompanyFilters((c) => ({ ...c, revenueMin: v }))} placeholder="e.g. 1000000" />
+          <EditField label="Revenue max (USD)" value={companyFilters.revenueMax} onChange={(v) => setCompanyFilters((c) => ({ ...c, revenueMax: v }))} placeholder="e.g. 50000000" />
+          <LookupSelect label="State" value={companyFilters.state} onChange={(v) => setCompanyFilters((c) => ({ ...c, state: v }))} options={states} />
+          <LookupSelect label="Country" value={companyFilters.country} onChange={(v) => setCompanyFilters((c) => ({ ...c, country: v }))} options={countries} />
         </div>
       ) : (
         <div className="mt-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <EditField label="Job Title" value={contactFilters.jobTitle} onChange={(v) => setContactFilters((c) => ({ ...c, jobTitle: v }))} placeholder="e.g. Chief Executive Officer" />
             <EditField label="Industry" value={contactFilters.industryKeywords} onChange={(v) => setContactFilters((c) => ({ ...c, industryKeywords: v }))} placeholder="e.g. Software" />
+            <EditField label="Company Name" value={contactFilters.companyName} onChange={(v) => setContactFilters((c) => ({ ...c, companyName: v }))} placeholder="e.g. Salesforce" />
+            <EditField label="First Name" value={contactFilters.firstName} onChange={(v) => setContactFilters((c) => ({ ...c, firstName: v }))} placeholder="e.g. Marc" />
+            <EditField label="Last Name" value={contactFilters.lastName} onChange={(v) => setContactFilters((c) => ({ ...c, lastName: v }))} placeholder="e.g. Benioff" />
+            <LookupSelect label="State" value={contactFilters.state} onChange={(v) => setContactFilters((c) => ({ ...c, state: v }))} options={states} />
+            <LookupSelect label="Country" value={contactFilters.country} onChange={(v) => setContactFilters((c) => ({ ...c, country: v }))} options={countries} />
           </div>
           <div>
             <p className="mb-1.5 text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Management Level</p>
@@ -1630,6 +1749,13 @@ function ZoomInfoSearchPanel({
                     {result.jobTitle ? `${result.jobTitle} — ` : ""}
                     {result.company?.name ?? "Company unknown"}
                   </p>
+                  <p className="mt-1 text-[11px] text-[#9aa6ba]">
+                    {/* Search never returns the real address/number, only
+                        whether ZoomInfo has one on file — "Add as Lead"
+                        fetches the real email via a separate lookup. */}
+                    {result.hasEmail ? "✉ Email on file" : "No email on file"}
+                    {result.hasDirectPhone || result.hasMobilePhone ? " · ☎ Phone on file" : ""}
+                  </p>
                 </div>
                 <ActionButton label="Add as Lead" small onClick={() => onAddAsLead(result)} />
               </div>
@@ -1683,6 +1809,7 @@ const VIEW_OPTIONS = [
   { value: "ALL", label: "All statuses" },
   { value: "NEW", label: "New" },
   { value: "CONTACTED", label: "Contacted" },
+  { value: "INTERESTED", label: "Interested" },
   { value: "QUALIFIED", label: "Qualified" },
   { value: "NEGOTIATION", label: "Negotiation" },
   { value: "CONVERTED", label: "Converted" },
@@ -1743,7 +1870,7 @@ function Header({ stats, onNewRecord, onImport, viewsOpen, setViewsOpen, statusF
   );
 }
 
-function AddLeadModal({ form, setForm, saving, error, onClose, onSave }) {
+function AddLeadModal({ form, setForm, saving, error, revealingContactEmail, onClose, onSave }) {
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === "Escape") onClose();
@@ -1774,6 +1901,9 @@ function AddLeadModal({ form, setForm, saving, error, onClose, onSave }) {
           <EditField label="Name" value={form.name} onChange={(v) => setForm((c) => ({ ...c, name: v }))} placeholder="Full name" />
           <EditField label="Company" value={form.company} onChange={(v) => setForm((c) => ({ ...c, company: v }))} />
           <EditField label="Email" value={form.email} onChange={(v) => setForm((c) => ({ ...c, email: v }))} placeholder="name@company.com" />
+          {revealingContactEmail ? (
+            <p className="text-[12px] text-[#8592ab]">Fetching this contact's real email from ZoomInfo…</p>
+          ) : null}
           <EditField label="Mobile" value={form.mobile} onChange={(v) => setForm((c) => ({ ...c, mobile: v }))} />
           <EditField label="Capital Ask" value={form.capitalAsk} onChange={(v) => setForm((c) => ({ ...c, capitalAsk: v }))} placeholder="EUR 3M" />
           <EditField label="Owner" value={form.owner} onChange={(v) => setForm((c) => ({ ...c, owner: v }))} />

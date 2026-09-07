@@ -102,6 +102,15 @@ router.post("/chat", async (req, res, next) => {
     if (err.status === 401) {
       return res.json({ reply: "The Anthropic API rejected the configured key — an admin can check it under Admin Panel → AI Assistant." });
     }
+    // A 400 here is Anthropic itself refusing the request, not a bug in
+    // this app's own validation — most commonly an exhausted credit
+    // balance. Surfaced as a normal chat reply (not a raw error) with
+    // Anthropic's own message included, same as the 401 case above, rather
+    // than falling through to next(err)'s generic 500.
+    if (err.status === 400) {
+      const detail = err.error?.error?.message ?? err.message;
+      return res.json({ reply: `The AI assistant couldn't reach Anthropic: ${detail} — an admin can check Admin Panel → AI Assistant.` });
+    }
     next(err);
   }
 });

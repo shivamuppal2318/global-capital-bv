@@ -392,7 +392,9 @@ export function useEmailOutreachState({ demoData = true } = {}) {
           leadCount: campaign._count?.leads ?? 0,
           sentCount: campaign.engagement?.sent ?? 0,
           openedCount: campaign.engagement?.opened ?? 0,
-          clickedCount: campaign.engagement?.clicked ?? 0
+          clickedCount: campaign.engagement?.clicked ?? 0,
+          unsubscribedCount: campaign.engagement?.unsubscribed ?? 0,
+          bouncedCount: campaign.engagement?.bounced ?? 0
         }));
         setCampaigns(mapped);
         setSelectedCampaignId(mapped[0]?.id ?? null);
@@ -454,6 +456,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
             replyPreview: "Reply received — see activity timeline for the full message.",
             lastReplyAt: new Date(lead.updatedAt).toLocaleString(),
             owner: lead.owner,
+            emailAccountId: lead.lastReplyEmailAccountId,
             movedToWorkflow: true,
             stage: lead.stage,
             bounced: lead.bounced,
@@ -563,11 +566,9 @@ export function useEmailOutreachState({ demoData = true } = {}) {
   function handleChangeSendTarget(campaignId) {
     setAutomationForm((current) => ({ ...current, targetCampaignId: campaignId, selectedLeadIds: [] }));
   }
-  const [newLeadForm, setNewLeadForm] = useState({ name: "", company: "", email: "", country: "" });
+  const [newLeadForm, setNewLeadForm] = useState({ firstName: "", lastName: "", email: "", country: "", company: "" });
   const [csvText, setCsvText] = useState("");
-  const [csvPreview, setCsvPreview] = useState(null);
   const [csvImportBusy, setCsvImportBusy] = useState(false);
-  const [csvPreviewBusy, setCsvPreviewBusy] = useState(false);
   const [previewHtml, setPreviewHtml] = useState(null);
   const [emailAccounts, setEmailAccounts] = useState([]);
   const [newAccountForm, setNewAccountForm] = useState({
@@ -602,7 +603,16 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       });
   }, []);
 
-  const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedCampaignId) ?? campaigns[0];
+  // Deliberately no `?? campaigns[0]` fallback here — startNewCampaign()
+  // sets selectedCampaignId to null on purpose to mean "composing a brand
+  // new campaign, nothing selected", and every consumer of selectedCampaign
+  // already guards for that (optional chaining, `{selectedCampaign ? ... :
+  // null}`, or an explicit `if (!selectedCampaign) return`). A fallback to
+  // campaigns[0] used to silently defeat all of those guards: composing a
+  // new campaign would show "Editing <most recent campaign>", and its
+  // Pause/Resume and mailbox-assignment actions would act on that unrelated
+  // real campaign instead of doing nothing until the new one is saved.
+  const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedCampaignId) ?? null;
   const selectedLead = repliedLeads.find((lead) => lead.id === selectedLeadId) ?? repliedLeads[0];
   const selectedLeadTimeline = selectedLead ? leadActivity[selectedLead.id] ?? [] : [];
   const activeReplyRule = replyRules.find((rule) => rule.replyType === automationForm.replyType) ?? null;
@@ -643,6 +653,24 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       preferredPath: preferredPathForReplyType(lead.replyType)
     }));
     setAutomationNotice(`Loaded ${lead.name}'s reply into the follow-up panel.`);
+  }
+
+  // Only succeeds for an empty list (see emailCampaignsApi.remove ->
+  // DELETE /api/email/campaigns/:id) -- the backend refuses one with real
+  // leads/activity attached rather than cascading the delete through them,
+  // and surfaces that as a real error message here instead of a silent
+  // no-op, so a rep knows to pause it instead.
+  async function handleDeleteCampaign(campaign) {
+    try {
+      await emailCampaignsApi.remove(campaign.id);
+      setCampaigns((current) => current.filter((c) => c.id !== campaign.id));
+      if (selectedCampaignId === campaign.id) {
+        setSelectedCampaignId(null);
+      }
+      setAutomationNotice(`"${campaign.name}" deleted.`);
+    } catch (error) {
+      setAutomationNotice(`Could not delete "${campaign.name}" (${error.message}).`);
+    }
   }
 
   async function handleDeleteLead(lead) {
@@ -709,8 +737,9 @@ export function useEmailOutreachState({ demoData = true } = {}) {
   }
 
   async function handleAddLead() {
-    if (!newLeadForm.name || !newLeadForm.company || !newLeadForm.email) {
-      setAutomationNotice("Fill in name, company, and email before adding a lead.");
+    const name = `${newLeadForm.firstName} ${newLeadForm.lastName}`.trim();
+    if (!newLeadForm.firstName || !newLeadForm.email) {
+      setAutomationNotice("Fill in first name and email before adding a lead.");
       return;
     }
     // Same pattern as the CSV path (csvLeads.js) — catches a typo'd email
@@ -727,8 +756,11 @@ export function useEmailOutreachState({ demoData = true } = {}) {
 
     try {
       const result = await emailLeadsApi.create({
-        name: newLeadForm.name,
-        company: newLeadForm.company,
+        name,
+        // "—" mirrors the same fallback the inbound lead webhook already
+        // uses when company isn't provided (server/src/routes/emailLeads.js's
+        // POST /inbound) — company itself is optional on this form.
+        company: newLeadForm.company.trim() || "—",
         email: newLeadForm.email,
         owner: "Rahul R",
         campaignId: selectedCampaign.id,
@@ -736,10 +768,10 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       });
       setAutomationNotice(
         result.cadenceScheduled > 0
-          ? `${newLeadForm.name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`
-          : `${newLeadForm.name} added to "${selectedCampaign.name}". No follow-up emails scheduled yet (this campaign has none set up, or the sending queue isn't running) — the lead was still saved.`
+          ? `${name} added to "${selectedCampaign.name}" — ${result.cadenceScheduled} follow-up step(s) scheduled.`
+          : `${name} added to "${selectedCampaign.name}". No follow-up emails scheduled yet (this campaign has none set up, or the sending queue isn't running) — the lead was still saved.`
       );
-      setNewLeadForm({ name: "", company: "", email: "", country: "" });
+      setNewLeadForm({ firstName: "", lastName: "", email: "", country: "", company: "" });
       loadAllLeadsForCampaign(selectedCampaign.id);
     } catch (error) {
       // The backend 409s on a duplicate (same email already in this
@@ -756,14 +788,16 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     }
   }
 
-  // Shows what will happen BEFORE anything is sent to the backend: parses the
-  // pasted CSV client-side and cross-checks every row's email against leads
-  // already loaded for this campaign (allLeads) and against the rest of the
-  // pasted batch, so duplicates and bad rows are visible up front instead of
-  // only surfacing afterward in a single collapsed notice line.
-  async function handlePreviewCsv() {
+  // One click, straight to the backend: parses the pasted CSV client-side,
+  // cross-checks each row's email against leads already loaded for this
+  // campaign (allLeads) and the rest of the pasted batch to skip obvious
+  // duplicates without a wasted API call, then imports everything else
+  // immediately (no deliverability gate — see POST /bulk) — no separate
+  // "preview" click in between, so the Subscribers list on the right
+  // updates as soon as this finishes.
+  async function handleImportCsv() {
     if (!csvText.trim()) {
-      setAutomationNotice("Paste some CSV rows first.");
+      setAutomationNotice("Choose a CSV file first.");
       return;
     }
     if (!selectedCampaign) {
@@ -774,99 +808,41 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     const { rows, errors } = parseLeadsCsv(csvText);
     const existingEmails = new Set(allLeads.map((lead) => lead.email.toLowerCase()));
     const seenInFile = new Set();
-    const previewRows = [];
-
-    errors.forEach((message) => {
-      previewRows.push({ name: "", company: "", email: "", owner: "", status: "invalid", reason: message });
-    });
+    const candidateRows = [];
+    let duplicateCount = 0;
+    let invalidCount = errors.length;
 
     rows.forEach((row) => {
       const emailKey = row.email.toLowerCase();
-      let status = "ready";
-      let reason = "Ready to import";
-      if (seenInFile.has(emailKey)) {
-        status = "duplicate-in-file";
-        reason = "Duplicate email earlier in this same paste.";
-      } else if (existingEmails.has(emailKey)) {
-        status = "duplicate-existing";
-        reason = `Already in "${selectedCampaign.name}".`;
+      if (seenInFile.has(emailKey) || existingEmails.has(emailKey)) {
+        duplicateCount += 1;
+      } else {
+        candidateRows.push(row);
       }
       seenInFile.add(emailKey);
-      previewRows.push({ ...row, status, reason });
     });
-
-    // Format/duplicate checks above are instant and local; a real
-    // deliverability check (DNS MX/A/AAAA lookup) needs the backend, so it
-    // only runs for rows that passed those free checks — no point DNS
-    // -checking an email that's already going to be skipped as a duplicate.
-    setCsvPreviewBusy(true);
-    try {
-      const candidateRows = previewRows.filter((row) => row.status === "ready");
-      if (candidateRows.length > 0) {
-        const { results } = await emailLeadsApi.validateEmails(candidateRows.map((row) => row.email));
-        const deliverabilityByEmail = new Map(results.map((result) => [result.email.toLowerCase(), result]));
-        previewRows.forEach((row) => {
-          if (row.status !== "ready") return;
-          const deliverability = deliverabilityByEmail.get(row.email.toLowerCase());
-          if (deliverability && !deliverability.valid) {
-            row.status = "invalid";
-            row.reason = deliverability.reason;
-          }
-        });
-      }
-    } catch (error) {
-      setAutomationNotice(`Preview built, but the deliverability check failed (${error.message}) — showing format/duplicate checks only.`);
-    } finally {
-      setCsvPreviewBusy(false);
-    }
-
-    const readyCount = previewRows.filter((row) => row.status === "ready").length;
-    const duplicateCount = previewRows.filter((row) => row.status === "duplicate-in-file" || row.status === "duplicate-existing").length;
-    const invalidCount = previewRows.filter((row) => row.status === "invalid").length;
-
-    setCsvPreview({ rows: previewRows, readyCount, duplicateCount, invalidCount });
-    setAutomationNotice(
-      `Preview ready: ${readyCount} row(s) will be imported, ${duplicateCount} duplicate(s) and ${invalidCount} invalid row(s) will be skipped.`
-    );
-  }
-
-  async function handleImportCsv() {
-    if (!selectedCampaign) {
-      setAutomationNotice("Select a campaign first.");
-      return;
-    }
-
-    // If nothing's been previewed yet, build one first instead of importing
-    // blind — the user always sees the row-by-row breakdown before anything
-    // is created.
-    if (!csvPreview) {
-      handlePreviewCsv();
-      return;
-    }
-
-    const readyRows = csvPreview.rows
-      .filter((row) => row.status === "ready")
-      .map(({ name, company, email, owner, country }) => ({ name, company, email, owner, country: country || null }));
-    if (readyRows.length === 0) {
-      setAutomationNotice("Nothing to import — every row was a duplicate or invalid. Fix the CSV and preview again.");
-      return;
-    }
 
     setCsvImportBusy(true);
     try {
-      const result = await emailLeadsApi.bulkCreate(selectedCampaign.id, readyRows);
-      const duplicateNote = result.duplicateCount ? `, ${result.duplicateCount} already in this campaign (skipped)` : "";
-      // Should normally be 0 here — the preview step already DNS-checked
-      // every "ready" row — but the backend re-validates independently at
-      // import time regardless (see POST /bulk), so this stays honest if
-      // something changed between preview and import (e.g. a domain's DNS
-      // dropped its MX record in the meantime).
-      const invalidNote = result.invalidCount ? `, ${result.invalidCount} failed a deliverability re-check (skipped)` : "";
+      // No deliverability (DNS MX/A/AAAA) gate here or on the backend's
+      // POST /bulk — every syntactically-valid, non-duplicate row goes
+      // through. invalidCount below only ever counts rows the CSV parser
+      // itself couldn't read (missing a required column), not DNS lookups.
+      if (candidateRows.length === 0) {
+        setAutomationNotice(
+          `Nothing to import — ${duplicateCount} duplicate(s) and ${invalidCount} invalid row(s) out of ${rows.length + errors.length}.`
+        );
+        return;
+      }
+
+      const importRows = candidateRows.map(({ name, company, email, owner, country }) => ({ name, company, email, owner, country: country || null }));
+      const result = await emailLeadsApi.bulkCreate(selectedCampaign.id, importRows);
+      const duplicateNote = duplicateCount || result.duplicateCount ? `, ${duplicateCount + (result.duplicateCount ?? 0)} duplicate(s) skipped` : "";
+      const invalidNote = invalidCount ? `, ${invalidCount} invalid row(s) skipped` : "";
       setAutomationNotice(
-        `CSV import: ${result.createdCount} lead(s) added to "${selectedCampaign.name}"${duplicateNote}${invalidNote}, ${result.failedCount} failed on the backend.`
+        `CSV import: ${result.createdCount} lead(s) added to "${selectedCampaign.name}"${duplicateNote}${invalidNote}${result.failedCount ? `, ${result.failedCount} failed on the backend` : ""}.`
       );
       setCsvText("");
-      setCsvPreview(null);
       loadAllLeadsForCampaign(selectedCampaign.id);
     } catch (error) {
       setAutomationNotice(`CSV import failed via the backend (${error.message}). No local-only fallback for this action.`);
@@ -877,10 +853,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
 
   function handleCsvTextChange(value) {
     setCsvText(value);
-    // A preview describes an exact snapshot of the pasted text — once the
-    // text changes, that snapshot is stale and must be rebuilt before import.
-    setCsvPreview(null);
-    setAutomationNotice(value.trim() ? "CSV loaded. Click Preview CSV to check rows before import." : "");
+    setAutomationNotice(value.trim() ? "CSV loaded. Click Import CSV to add these subscribers." : "");
   }
 
   async function handleAddEmailAccount() {
@@ -1197,16 +1170,6 @@ export function useEmailOutreachState({ demoData = true } = {}) {
         ...(current[selectedLead.id] ?? [])
       ]
     }));
-    setCampaigns((current) =>
-      current.map((campaign) =>
-        campaign.name === selectedLead.campaign
-          ? {
-              ...campaign,
-              reply: `${Math.min(15, Number.parseInt(campaign.reply, 10) + 1)}%`
-            }
-          : campaign
-      )
-    );
   }
 
   async function handlePreviewTemplate() {
@@ -1273,12 +1236,12 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     campaigns, segments, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
     repliedLeads, allLeads, targetListLeads, handleChangeSendTarget, systemStatus, dashboardSummary, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
     automationForm, automationNotice, newLeadForm, setNewLeadForm,
-    csvText, handleCsvTextChange, csvPreview, handlePreviewCsv, csvImportBusy, csvPreviewBusy, previewHtml, setPreviewHtml,
+    csvText, handleCsvTextChange, csvImportBusy, previewHtml, setPreviewHtml,
     emailAccounts, newAccountForm, setNewAccountForm,
     selectedCampaign, selectedLead, selectedLeadTimeline, activeReplyRule,
     liveSteps, workflowSteps, replyAction,
     convertingLeadId, convertResults, handleConvertToLead,
-    handleFormChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead,
+    handleFormChange, handleApplyRule, loadLeadIntoWorkflow, handleDeleteLead, handleDeleteCampaign,
     handleToggleCampaignStatus, handleAddLead, handleImportCsv, handleAddEmailAccount,
     handleAssignAccountToCampaign, handleDeactivateAccount, handleSaveAutomation, handleSendNow, selectCampaign, startNewCampaign,
     startNewList, leadsViewSignal, setLeadsViewSignal,

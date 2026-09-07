@@ -19,6 +19,10 @@ export const emailCampaignsApi = {
   // creates two separate campaigns. Use update() to edit one already created.
   create: (body) => request("", { method: "POST", body }),
   update: (id, body) => request(`/${id}`, { method: "PATCH", body }),
+  // Only succeeds for an empty list/campaign (no leads ever enrolled) —
+  // the backend refuses one with real leads/activity attached (409, "pause
+  // it instead") rather than cascading the delete through their history.
+  remove: (id) => request(`/${id}`, { method: "DELETE" }),
   pause: (id) => request(`/${id}/pause`, { method: "POST" }),
   resume: (id) => request(`/${id}/resume`, { method: "POST" }),
   // Pass emailAccountId: null to clear the assignment and fall back to the
@@ -32,6 +36,14 @@ export const emailCampaignsApi = {
   // lets the composer show "did it actually go out" without digging into a
   // lead's own activity timeline.
   recentSends: (id) => request(`/${id}/recent-sends`),
+  // Every real send this campaign has ever made (bulk CSV imports and
+  // cadence follow-ups included, not just "last Send Now" blasts) --
+  // matches the campaigns list's own "Emails Sent" count. Backs the list
+  // view's per-campaign sent-leads popup.
+  sentActivity: (id) => request(`/${id}/sent-activity`),
+  // Which leads make up the Dashboard's Opened/Clicked/Unsubscribed stat
+  // cards. kind: "opened" | "clicked" | "unsubscribed".
+  engagementDetail: (kind) => request(`/engagement-detail/${kind}`),
   // A campaign's real follow-up sequence — see routes/emailLeads.js's
   // scheduleCadenceSteps, which is what actually reads these when a lead
   // is added. Add-to-end/edit/delete only; no reordering yet.

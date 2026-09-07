@@ -8,6 +8,12 @@ export function MailboxTab({ mailing, onNavigateTab }) {
   const { emailAccounts, repliedLeads, handleAddEmailAccount, newAccountForm, setNewAccountForm } = mailing;
   const [activeMailboxTab, setActiveMailboxTab] = useState("inbox");
   const [searchText, setSearchText] = useState("");
+  // Which mailbox's inbox to show — "" means all of them combined. Matched
+  // against each lead's lastReplyEmailAccountId (see emailLeads.js's
+  // attachScore), which is only set for a reply the IMAP poller actually
+  // fetched from a specific mailbox (null for a webhook/simulated reply, so
+  // those only show up under "All mailboxes").
+  const [selectedAccountId, setSelectedAccountId] = useState("");
   // Real IMAP poller status — replaces a client-side-only fake timestamp.
   // Both "Fetch Now" and "Fetch Diagnostics" below are driven by this.
   const [imapStatus, setImapStatus] = useState(null);
@@ -49,12 +55,17 @@ export function MailboxTab({ mailing, onNavigateTab }) {
         from: lead.name || lead.email || "Unknown sender",
         subject: lead.replySummary || `Reply from ${lead.company || lead.email || "lead"}`,
         received: lead.lastReplyAt || "Just now",
-        bounced: Boolean(lead.bounced)
+        bounced: Boolean(lead.bounced),
+        emailAccountId: lead.emailAccountId ?? null
       })),
     [repliedLeads]
   );
 
-  const visibleRows = inboxRows.filter((row) => {
+  const accountFilteredRows = selectedAccountId
+    ? inboxRows.filter((row) => row.emailAccountId === selectedAccountId)
+    : inboxRows;
+
+  const visibleRows = accountFilteredRows.filter((row) => {
     const haystack = `${row.from} ${row.subject} ${row.received}`.toLowerCase();
     return haystack.includes(searchText.trim().toLowerCase());
   });
@@ -102,17 +113,37 @@ export function MailboxTab({ mailing, onNavigateTab }) {
           {imapStatus ? (
             <>
               <p className={imapStatus.enabled ? "text-[#2b9b60]" : "text-[#c94b6b]"}>
-                IMAP: {imapStatus.enabled ? `configured — watching ${imapStatus.watching} on ${imapStatus.host}` : "not configured (IMAP_HOST/SMTP_USER/SMTP_PASS)"}
+                IMAP: {imapStatus.enabled
+                  ? `configured — watching ${imapStatus.accounts?.length ?? 0} mailbox${(imapStatus.accounts?.length ?? 0) === 1 ? "" : "es"}`
+                  : "not configured — add a mailbox in Settings, or set IMAP_HOST/SMTP_USER/SMTP_PASS"}
               </p>
+              {imapStatus.accounts?.length ? (
+                <ul className="mt-1.5 list-disc pl-4 text-[#5f6f89]">
+                  {imapStatus.accounts.map((account) => (
+                    <li key={account.user}>{account.user} on {account.host}</li>
+                  ))}
+                </ul>
+              ) : null}
               {imapStatus.lastPoll ? (
-                <p className="mt-1.5 text-[#5f6f89]">
-                  Last poll: {new Date(imapStatus.lastPoll.at).toLocaleString()} —{" "}
-                  {imapStatus.lastPoll.error ? (
-                    <span className="text-[#c94b6b]">failed: {imapStatus.lastPoll.error}</span>
-                  ) : (
-                    `${imapStatus.lastPoll.processedCount} real repl${imapStatus.lastPoll.processedCount === 1 ? "y" : "ies"} imported`
-                  )}
-                </p>
+                <>
+                  <p className="mt-1.5 text-[#5f6f89]">
+                    Last poll: {new Date(imapStatus.lastPoll.at).toLocaleString()} —{" "}
+                    {imapStatus.lastPoll.error ? (
+                      <span className="text-[#c94b6b]">failed: {imapStatus.lastPoll.error}</span>
+                    ) : (
+                      `${imapStatus.lastPoll.processedCount} real repl${imapStatus.lastPoll.processedCount === 1 ? "y" : "ies"} imported`
+                    )}
+                  </p>
+                  {imapStatus.lastPoll.perAccount?.length ? (
+                    <ul className="mt-1 list-disc pl-4 text-[#8592ab]">
+                      {imapStatus.lastPoll.perAccount.map((row) => (
+                        <li key={row.label}>
+                          {row.label}: {row.error ? <span className="text-[#c94b6b]">failed — {row.error}</span> : `${row.processedCount} imported`}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </>
               ) : (
                 <p className="mt-1.5 text-[#8592ab]">No poll has run yet since the backend started.</p>
               )}
@@ -132,7 +163,10 @@ export function MailboxTab({ mailing, onNavigateTab }) {
         </p>
         <div className="mt-3 space-y-1 text-[13px]">
           {emailAccounts.length ? (
-            emailAccounts.slice(0, 3).map((account) => (
+            // Respects the Choose Account filter below — picking "Vimal"
+            // there shouldn't leave every other mailbox still listed here
+            // as if all of them were still in view.
+            (selectedAccountId ? emailAccounts.filter((account) => account.id === selectedAccountId) : emailAccounts).map((account) => (
               <p key={account.id} className={account.isActive ? "text-[#3867e8]" : "text-[#ff5d5d]"}>
                 {account.label}: {account.isActive ? "ready for fetch" : "inactive - skipped"}
               </p>
@@ -158,12 +192,29 @@ export function MailboxTab({ mailing, onNavigateTab }) {
 
       <div className="rounded-[24px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[15px] text-[#6a7790]">
-            Mailbox Accounts:{" "}
-            <button type="button" onClick={() => onNavigateTab?.("settings")} className="font-medium text-[#5c6cff]">
-              {emailAccounts.length ? emailAccounts[0].label : "New Account"}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="text-[13px] font-medium text-[#6a7790]">Mailbox Accounts</span>
+            <select
+              value={selectedAccountId}
+              onChange={(event) => setSelectedAccountId(event.target.value)}
+              className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-medium text-[#102246] outline-none"
+            >
+              <option value="">All mailboxes</option>
+              {emailAccounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.label}
+                  {account.isActive ? "" : " (inactive)"}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => onNavigateTab?.("settings")}
+              className="text-[12px] font-semibold text-[#5c6cff] hover:underline"
+            >
+              Manage
             </button>
-          </p>
+          </div>
           <div className="flex items-center gap-2 rounded-[12px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] text-[#5f6f89]">
             <SearchIcon className="size-4" />
             <input
@@ -205,7 +256,7 @@ export function MailboxTab({ mailing, onNavigateTab }) {
         </div>
       </div>
 
-      <RepliesTab mailing={mailing} onNavigateTab={onNavigateTab} />
+      <RepliesTab mailing={mailing} onNavigateTab={onNavigateTab} selectedAccountId={selectedAccountId} />
 
       {!emailAccounts.length ? (
         <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">

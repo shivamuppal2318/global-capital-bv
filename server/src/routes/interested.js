@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { verifyInterestToken } from "../lib/interestToken.js";
 import { sendTemplateEmail } from "../lib/leadSender.js";
+import { autoTrackInterestedEmailLead } from "../lib/emailLeadConversion.js";
 import { LOGO_DATA_URI } from "../lib/brandLogo.js";
 
 export const interestedRouter = Router();
@@ -81,6 +82,25 @@ interestedRouter.get("/:leadId/:token", requireValidToken, asyncHandler(async (r
     })));
   }
 
+  // Idempotent — this link can genuinely get loaded more than once (a real
+  // double-click, a page refresh, or an email client's own link-safety
+  // prescanner silently fetching it before a person ever sees it), and none
+  // of those should trigger a second real "zoom-request" send to the same
+  // lead. Without this, every extra load resent the same email — confirmed
+  // happening in production (two real sends 7 seconds apart to one lead).
+  const alreadyClicked = await prisma.emailActivityLog.findFirst({
+    where: { leadId: lead.id, kind: "LINK_CLICKED", title: "Clicked \"I'm Interested\"" }
+  });
+  if (alreadyClicked) {
+    return res.send(pageShell(noticeCard({
+      icon: "✓",
+      iconBg: "#dff5e7",
+      iconColor: "#2b9b60",
+      title: "Already noted",
+      body: "We already have your interest on file — no need to click again. Check your inbox for the scheduling email we sent."
+    })));
+  }
+
   await prisma.emailActivityLog.create({
     data: { leadId: lead.id, kind: "LINK_CLICKED", title: "Clicked \"I'm Interested\"", detail: "Marked as interested via the one-click button." }
   });
@@ -90,6 +110,13 @@ interestedRouter.get("/:leadId/:token", requireValidToken, asyncHandler(async (r
   // for a lead who hasn't replied by any other channel yet.
   if (lead.replyType === "NO_REPLY") {
     await prisma.emailLead.update({ where: { id: lead.id }, data: { replyType: "INTERESTED" } });
+    // Same auto-track replyRecorder.js does for a text reply classified
+    // INTERESTED — this one-click button is if anything a MORE reliable
+    // interest signal (see the module comment above), so it should surface
+    // in CRM Workspace just as reliably. `lead` here is still the
+    // pre-update fetch, so its convertedToLeadId is accurate for the
+    // idempotency check inside.
+    await autoTrackInterestedEmailLead(lead);
   }
 
   // Same non-fatal pattern as autoRespond.js — a suppressed/capped send

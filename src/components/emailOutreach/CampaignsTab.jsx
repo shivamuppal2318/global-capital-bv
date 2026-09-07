@@ -1,7 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton, Field } from "../ui.jsx";
-import { FunnelIcon, SendIcon, MegaphoneIcon, SearchIcon } from "../Icons.jsx";
+import { FunnelIcon, SendIcon, MegaphoneIcon, SearchIcon, EyeIcon, XIcon } from "../Icons.jsx";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
+import { emailTemplatesApi } from "../../lib/emailTemplatesApi.js";
+import { RichTextEditor } from "../emailTemplates/RichTextEditor.jsx";
+
+function escapeHtmlForBody(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// A saved Template's plain-text body (most of the built-in templates have
+// no `html` at all — see emailTemplates.js) has real blank lines between
+// paragraphs, but nothing that means anything once it's dumped straight
+// into an HTML field: browsers collapse consecutive whitespace, so bare
+// "\n\n" renders as a single run-on paragraph, not the separated one shown
+// while typing it in a plain textarea. Converts it into real <p>/<br> tags
+// first — same conversion server-side renderTemplate.js/leadSender.js each
+// do their own version of for the same reason.
+function plainTextBodyToHtml(text) {
+  return text
+    .split(/\n{2,}/)
+    .filter((paragraph) => paragraph.trim())
+    .map((paragraph) => `<p>${paragraph.split("\n").map(escapeHtmlForBody).join("<br>")}</p>`)
+    .join("");
+}
 
 const campaignToneClass = {
   Sending: "bg-[#dff5e7] text-[#2b9b60]",
@@ -93,6 +115,28 @@ export function CampaignsTab({ mailing }) {
   const [searchText, setSearchText] = useState("");
   const [blastPreviewHtml, setBlastPreviewHtml] = useState(null);
 
+  // Real saved Templates (Templates tab, server/src/routes/emailTemplates.js)
+  // — loaded here so a rep can pick one and have its real subject/HTML
+  // dropped straight into this campaign's own Subject/Email Content fields,
+  // instead of retyping content that already exists in the Templates
+  // library. Not a persistent link: picking one just copies its current
+  // content in once, same as pasting.
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState("");
+
+  useEffect(() => {
+    emailTemplatesApi.list().then(setTemplates).catch(() => setTemplates([]));
+  }, []);
+
+  function handleSelectTemplate(key) {
+    setSelectedTemplateKey(key);
+    if (!key) return;
+    const template = templates.find((t) => t.key === key);
+    if (!template) return;
+    handleFormChange("subject", template.subject);
+    handleFormChange("bodyHtml", template.html || plainTextBodyToHtml(template.body));
+  }
+
   // Live warnings as the rep types — same heuristics the real send logs,
   // surfaced before Send Now instead of only discoverable afterward.
   const spamWarnings = useMemo(
@@ -106,6 +150,129 @@ export function CampaignsTab({ mailing }) {
   // process and finalize its activity row; a real send isn't synchronous).
   const [recentSends, setRecentSends] = useState([]);
   const [recentSendsLoading, setRecentSendsLoading] = useState(false);
+  // Which recent-send row's full detail (message id, deliverability
+  // warnings, etc.) is open in a popup -- that text is often too long to
+  // read truncated inline in the row itself. Shared by both the composer's
+  // own "Recent sends" panel and the list view's per-campaign popup below,
+  // so it's rendered once (activityDetailPopup) and referenced from both
+  // of this component's two early-return branches.
+  const [activityDetailRow, setActivityDetailRow] = useState(null);
+
+  // The list view's own "who did this campaign actually send to" popup --
+  // distinct from the composer's always-loaded Recent sends panel, since a
+  // campaign can be inspected this way straight from the list without
+  // opening it first. Fetched on demand per campaign, not preloaded for
+  // every row up front.
+  const [listActivityCampaign, setListActivityCampaign] = useState(null);
+  const [listActivityRows, setListActivityRows] = useState([]);
+  const [listActivityLoading, setListActivityLoading] = useState(false);
+
+  function openListActivity(campaign) {
+    setListActivityCampaign(campaign);
+    setListActivityRows([]);
+    setListActivityLoading(true);
+    emailCampaignsApi
+      .sentActivity(campaign.id)
+      .then(setListActivityRows)
+      .catch(() => setListActivityRows([]))
+      .finally(() => setListActivityLoading(false));
+  }
+
+  const activityDetailPopup = activityDetailRow ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" onClick={() => setActivityDetailRow(null)}>
+      <div
+        className="w-full max-w-[480px] rounded-[16px] border border-[#d6deea] bg-white p-5 shadow-[0_12px_36px_rgba(16,34,70,0.18)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-[14px] font-semibold text-[#102246]">{activityDetailRow.leadName}</p>
+            <p className="truncate text-[12px] text-[#8592ab]">{activityDetailRow.leadEmail}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActivityDetailRow(null)}
+            className="grid size-7 shrink-0 place-items-center rounded-[8px] text-[#8592ab] hover:bg-[#f0f3f9]"
+          >
+            <XIcon className="size-4" />
+          </button>
+        </div>
+        <span
+          className={`mt-3 inline-block rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+            activityDetailRow.status === "sent"
+              ? "bg-[#dff5e7] text-[#2b9b60]"
+              : activityDetailRow.status === "failed"
+                ? "bg-[#ffe4ee] text-[#ef5b8f]"
+                : "bg-[#fff4de] text-[#c47f1a]"
+          }`}
+        >
+          {activityDetailRow.status === "sent" ? "Sent" : activityDetailRow.status === "failed" ? "Failed" : "Sending…"}
+        </span>
+        <p className="mt-3 whitespace-pre-wrap break-words text-[13px] leading-6 text-[#334463]">{activityDetailRow.detail}</p>
+        {activityDetailRow.createdAt ? (
+          <p className="mt-3 text-[12px] text-[#9aa6ba]">{new Date(activityDetailRow.createdAt).toLocaleString()}</p>
+        ) : null}
+      </div>
+    </div>
+  ) : null;
+
+  const listActivityPopup = listActivityCampaign ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" onClick={() => setListActivityCampaign(null)}>
+      <div
+        className="max-h-[80vh] w-full max-w-[560px] overflow-y-auto rounded-[16px] border border-[#d6deea] bg-white p-5 shadow-[0_12px_36px_rgba(16,34,70,0.18)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-semibold text-[#102246]">{listActivityCampaign.name}</p>
+            <p className="text-[12px] text-[#8592ab]">Emails sent — click a lead for its full activity</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setListActivityCampaign(null)}
+            className="grid size-7 shrink-0 place-items-center rounded-[8px] text-[#8592ab] hover:bg-[#f0f3f9]"
+          >
+            <XIcon className="size-4" />
+          </button>
+        </div>
+
+        {listActivityLoading ? (
+          <p className="mt-4 text-[13px] text-[#9aa6ba]">Loading…</p>
+        ) : listActivityRows.length ? (
+          <div className="mt-4 space-y-2">
+            {listActivityRows.map((row) => (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => setActivityDetailRow(row)}
+                className="flex w-full items-center justify-between gap-4 rounded-[12px] border border-[#e7edf5] px-4 py-2.5 text-left hover:bg-[#f8faff]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[13.5px] font-semibold text-[#102246]">
+                    {row.leadName} <span className="font-normal text-[#8592ab]">— {row.leadEmail}</span>
+                  </p>
+                  <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">{row.detail}</p>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                    row.status === "sent"
+                      ? "bg-[#dff5e7] text-[#2b9b60]"
+                      : row.status === "failed"
+                        ? "bg-[#ffe4ee] text-[#ef5b8f]"
+                        : "bg-[#fff4de] text-[#c47f1a]"
+                  }`}
+                >
+                  {row.status === "sent" ? "Sent" : row.status === "failed" ? "Failed" : "Sending…"}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-[13px] text-[#9aa6ba]">No blast sends yet for this campaign.</p>
+        )}
+      </div>
+    </div>
+  ) : null;
   function loadRecentSends() {
     if (!selectedCampaignId) return;
     setRecentSendsLoading(true);
@@ -131,7 +298,17 @@ export function CampaignsTab({ mailing }) {
   // previewed instantly with sample data, without a save-then-fetch round
   // trip. The actual send always merges real lead data server-side.
   function fillSampleMergeFields(text) {
-    const sample = { leadName: "Sample Lead", company: "Sample Company Ltd", email: "sample@example.com", unsubscribeUrl: "#unsubscribe" };
+    const sample = {
+      leadName: "Sample Lead",
+      firstName: "Sample",
+      company: "Sample Company Ltd",
+      email: "sample@example.com",
+      // Fake stand-ins for preview only — the real send fills these with a
+      // genuine, unique, working per-lead URL (see unsubscribeUrlFor and
+      // ndaSignUrlFor in leadSender.js), never a bare "#" fragment.
+      unsubscribeUrl: "#unsubscribe",
+      ndaSignUrl: "#nda-sign"
+    };
     return (text ?? "").replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => (key in sample ? sample[key] : match));
   }
 
@@ -156,10 +333,19 @@ export function CampaignsTab({ mailing }) {
     );
   }
 
+  // Local UI state, not tied to any real campaign field — without this,
+  // picking a template in one campaign left the dropdown showing it as
+  // "selected" after switching to a different campaign that never had
+  // it applied, which read as if that campaign's content came from it.
+  // Deliberately does NOT also switch viewMode to "composer" here —
+  // selectedCampaignId defaults to (and gets reset to) the most recently
+  // created real campaign's id as soon as the backend list loads, even
+  // before the user has clicked anything, which used to jump straight
+  // into that campaign's editor instead of showing the list. openCampaign/
+  // openNewCampaign below already switch to "composer" themselves, exactly
+  // when the user actually asks to.
   useEffect(() => {
-    if (selectedCampaignId) {
-      setViewMode("composer");
-    }
+    setSelectedTemplateKey("");
   }, [selectedCampaignId]);
 
   const filteredCampaigns = campaigns.filter((campaign) => {
@@ -194,63 +380,49 @@ export function CampaignsTab({ mailing }) {
           </p>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[1.45fr_0.75fr] xl:items-start">
-          <div className="rounded-[24px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-            <div className="-mx-4 -mt-4 rounded-t-[24px] border-b border-[#e7edf5] px-4 py-4">
+        <div className="grid gap-5 xl:grid-cols-[1.45fr_0.75fr] xl:items-start">
+          <div className="rounded-[24px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+            <div className="-mx-5 -mt-5 rounded-t-[24px] border-b border-[#e7edf5] px-5 py-4">
               <h2 className="text-[17px] font-semibold text-[#222347]">{selectedCampaign ? "Campaign Editor" : "New Campaign"}</h2>
             </div>
 
-            <div className="mt-4 space-y-3">
+            <div className="mt-5 space-y-5">
               <Field label="Campaign Name">
                 <input
                   value={automationForm.campaignName}
                   onChange={(event) => handleFormChange("campaignName", event.target.value)}
-                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[14px] text-[#102246] outline-none focus:border-[#3046b2] focus:ring-1 focus:ring-[#3046b2]/20"
                 />
               </Field>
-
-              <Field label="Template Label">
-                <input
-                  value={automationForm.template}
-                  onChange={(event) => handleFormChange("template", event.target.value)}
-                  list="template-label-options"
-                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
-                />
-                <datalist id="template-label-options">
-                  <option value="Cold intro — Renewables founder" />
-                  <option value="Follow-up — Sector teaser" />
-                  <option value="Portfolio quarterly update" />
-                </datalist>
-              </Field>
-
-              <p className="rounded-[10px] bg-[#f7f9fc] px-4 py-3 text-[12px] leading-5 text-[#6a7790]">
-                A short descriptive name for this campaign's approach (not an email subject line, and not the email
-                body) — shown in campaign lists.
-              </p>
 
               <Field label="Subject">
                 <input
                   value={automationForm.subject}
                   onChange={(event) => handleFormChange("subject", event.target.value)}
                   placeholder="e.g. Q4 renewables mandate — quick intro"
-                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[14px] text-[#102246] outline-none focus:border-[#3046b2] focus:ring-1 focus:ring-[#3046b2]/20"
                 />
               </Field>
 
               <Field label="Email Content">
-                <textarea
-                  rows={9}
+                <RichTextEditor
                   value={automationForm.bodyHtml}
-                  onChange={(event) => handleFormChange("bodyHtml", event.target.value)}
-                  placeholder="<p>Hi {{leadName}},</p><p>...</p>"
-                  className="w-full resize-none rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-3 text-[13px] font-mono leading-5 text-[#435471] outline-none"
+                  onChange={(html) => handleFormChange("bodyHtml", html)}
+                  placeholder="Hi {{leadName}}, ..."
+                  unsubscribeLinkTag="{{unsubscribeUrl}}"
                 />
-                <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
-                  Raw HTML. Merge tags: <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{leadName}}"}</code>{" "}
+                <p className="mt-3 text-[11px] leading-5 text-[#8593ac]">
+                  Format with the toolbar, or click the HTML button to edit raw HTML. Use the sign-out-shaped button
+                  to insert a working Unsubscribe link in one click (select text first to relink it, e.g. the word
+                  "unsubscribe") — typing the merge tag itself into the regular link button's prompt makes a dead
+                  link, not a working one. Merge tags:{" "}
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{leadName}}"}</code>{" "}
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{firstName}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{company}}"}</code>{" "}
                   <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{email}}"}</code>{" "}
-                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{unsubscribeUrl}}"}</code>. This is the one-
-                  time campaign send below — reply-triggered follow-ups still come from the Templates tab, unchanged.
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{unsubscribeUrl}}"}</code>{" "}
+                  <code className="rounded bg-[#f0f3f9] px-1 py-0.5">{"{{ndaSignUrl}}"}</code>. This is the one-time
+                  campaign send below — reply-triggered follow-ups still come from the Templates tab, unchanged.
                 </p>
               </Field>
 
@@ -291,8 +463,45 @@ export function CampaignsTab({ mailing }) {
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-[#d6deea] bg-white px-4 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
-            <div className="space-y-3">
+          <div className="rounded-[24px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+            <div className="space-y-4">
+              <Field label="Select Template">
+                <select
+                  value={selectedTemplateKey}
+                  onChange={(event) => handleSelectTemplate(event.target.value)}
+                  className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                >
+                  <option value="">Choose a saved template to fill in Subject/Email Content…</option>
+                  {templates.map((template) => (
+                    <option key={template.key} value={template.key}>
+                      {template.key} — {template.subject}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                  Pulled from the Templates tab. Picking one copies its subject and HTML content into this campaign
+                  — edit freely afterward, it does not stay linked.
+                </p>
+              </Field>
+
+              <Field label="Template Label">
+                <input
+                  value={automationForm.template}
+                  onChange={(event) => handleFormChange("template", event.target.value)}
+                  list="template-label-options"
+                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                />
+                <datalist id="template-label-options">
+                  <option value="Cold intro — Renewables founder" />
+                  <option value="Follow-up — Sector teaser" />
+                  <option value="Portfolio quarterly update" />
+                </datalist>
+                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                  A short descriptive name for this campaign's approach (not an email subject line, and not the
+                  email body) — shown in campaign lists.
+                </p>
+              </Field>
+
               <Field label="From Email">
                 <input
                   value={resolvedFromAddress}
@@ -367,18 +576,36 @@ export function CampaignsTab({ mailing }) {
               <Field label={`Or pick specific leads (${(automationForm.selectedLeadIds ?? []).length} of ${specificLeadsSource.length} selected)`}>
                 <div className="max-h-[220px] overflow-y-auto rounded-[12px] border border-[#dfe5f1] bg-white">
                   {specificLeadsSource.length ? (
-                    specificLeadsSource.map((lead) => (
-                      <label key={lead.id} className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0">
-                        <input
-                          type="checkbox"
-                          checked={(automationForm.selectedLeadIds ?? []).includes(lead.id)}
-                          onChange={() => toggleLeadSelection(lead.id)}
-                          className="h-4 w-4 rounded border-[#b9c4d8]"
-                        />
-                        <span className="min-w-0 flex-1 truncate">{lead.name} — {lead.company}</span>
-                        <span className="shrink-0 truncate text-[12px] text-[#8593ac]">{lead.email}</span>
-                      </label>
-                    ))
+                    specificLeadsSource.map((lead) => {
+                      // A send-now would silently drop this lead regardless
+                      // of the checkbox — the backend hard-suppresses
+                      // unsubscribed/bounced addresses before it ever looks
+                      // at which ones were checked (protects sender
+                      // reputation) — so it's disabled here with the real
+                      // reason shown, instead of letting it get checked and
+                      // then reporting a generic "nothing was sent".
+                      const suppressed = lead.unsubscribed || lead.bounced;
+                      const reason = lead.unsubscribed ? "unsubscribed" : lead.bounced ? "bounced" : null;
+                      return (
+                        <label
+                          key={lead.id}
+                          className={`flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] last:border-b-0 ${suppressed ? "text-[#b9c0cf]" : "text-[#435471]"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={(automationForm.selectedLeadIds ?? []).includes(lead.id)}
+                            disabled={suppressed}
+                            onChange={() => toggleLeadSelection(lead.id)}
+                            className="h-4 w-4 rounded border-[#b9c4d8] disabled:cursor-not-allowed"
+                          />
+                          <span className="min-w-0 flex-1 truncate">
+                            {lead.name} — {lead.company}
+                            {reason ? <span className="ml-1.5 text-[11px] font-semibold">({reason})</span> : null}
+                          </span>
+                          <span className="shrink-0 truncate text-[12px] text-[#8593ac]">{lead.email}</span>
+                        </label>
+                      );
+                    })
                   ) : (
                     <p className="px-3 py-3 text-[12px] text-[#9aa6ba]">
                       {targetListName
@@ -527,17 +754,27 @@ export function CampaignsTab({ mailing }) {
                       </p>
                       <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">{row.detail}</p>
                     </div>
-                    <span
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                        row.status === "sent"
-                          ? "bg-[#dff5e7] text-[#2b9b60]"
-                          : row.status === "failed"
-                            ? "bg-[#ffe4ee] text-[#ef5b8f]"
-                            : "bg-[#fff4de] text-[#c47f1a]"
-                      }`}
-                    >
-                      {row.status === "sent" ? "Sent" : row.status === "failed" ? "Failed" : "Sending…"}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActivityDetailRow(row)}
+                        title="View full activity detail"
+                        className="grid size-7 place-items-center rounded-[8px] border border-[#d6deea] text-[#5f6f89] hover:bg-[#f0f3f9]"
+                      >
+                        <EyeIcon className="size-3.5" />
+                      </button>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          row.status === "sent"
+                            ? "bg-[#dff5e7] text-[#2b9b60]"
+                            : row.status === "failed"
+                              ? "bg-[#ffe4ee] text-[#ef5b8f]"
+                              : "bg-[#fff4de] text-[#c47f1a]"
+                        }`}
+                      >
+                        {row.status === "sent" ? "Sent" : row.status === "failed" ? "Failed" : "Sending…"}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -548,6 +785,8 @@ export function CampaignsTab({ mailing }) {
             )}
           </div>
         ) : null}
+
+        {activityDetailPopup}
       </section>
     );
   }
@@ -595,7 +834,19 @@ export function CampaignsTab({ mailing }) {
                       <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${campaignToneClass[campaign.status]}`}>{campaign.status}</span>
                     </td>
                     <td className="px-4 py-4 text-right">{campaign.leadCount ?? "—"}</td>
-                    <td className="px-4 py-4 text-right">{campaign.sentCount ?? campaign.sent}</td>
+                    <td className="px-4 py-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {campaign.sentCount ?? campaign.sent}
+                        <button
+                          type="button"
+                          onClick={() => openListActivity(campaign)}
+                          title="View who this campaign has sent to"
+                          className="grid size-6 place-items-center rounded-[6px] text-[#8592ab] hover:bg-[#f0f3f9] hover:text-[#3046b2]"
+                        >
+                          <EyeIcon className="size-3.5" />
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-4 py-4 text-right">{campaign.open}</td>
                     <td className="px-4 py-4 text-right">
                       <button
@@ -624,6 +875,9 @@ export function CampaignsTab({ mailing }) {
         <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#5f6f89]">Status</p>
         <p className="mt-2 text-[15px] font-medium text-[#102246]">{automationNotice}</p>
       </div>
+
+      {listActivityPopup}
+      {activityDetailPopup}
     </section>
   );
 }
