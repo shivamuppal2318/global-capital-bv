@@ -601,7 +601,16 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       });
   }, []);
 
-  const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedCampaignId) ?? campaigns[0];
+  // Deliberately no `?? campaigns[0]` fallback here — startNewCampaign()
+  // sets selectedCampaignId to null on purpose to mean "composing a brand
+  // new campaign, nothing selected", and every consumer of selectedCampaign
+  // already guards for that (optional chaining, `{selectedCampaign ? ... :
+  // null}`, or an explicit `if (!selectedCampaign) return`). A fallback to
+  // campaigns[0] used to silently defeat all of those guards: composing a
+  // new campaign would show "Editing <most recent campaign>", and its
+  // Pause/Resume and mailbox-assignment actions would act on that unrelated
+  // real campaign instead of doing nothing until the new one is saved.
+  const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedCampaignId) ?? null;
   const selectedLead = repliedLeads.find((lead) => lead.id === selectedLeadId) ?? repliedLeads[0];
   const selectedLeadTimeline = selectedLead ? leadActivity[selectedLead.id] ?? [] : [];
   const activeReplyRule = replyRules.find((rule) => rule.replyType === automationForm.replyType) ?? null;
