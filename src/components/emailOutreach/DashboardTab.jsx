@@ -24,11 +24,6 @@ function SummaryCard({ label, value, toneClass }) {
   );
 }
 
-function pctToNumber(value) {
-  const parsed = Number.parseInt(String(value ?? "").replace("%", ""), 10);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
   const { campaigns, segments, systemStatus, repliedLeads, startNewList } = mailing;
   const canOpenTab = (tab) => !availableTabs || availableTabs.includes(tab);
@@ -44,8 +39,14 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
   const totalSubscribers = campaigns.reduce((sum, campaign) => sum + (campaign.leadCount ?? (Number.parseInt(campaign.sent, 10) || 0)), 0);
   const unreadMail = repliedLeads.filter((lead) => !lead.movedToWorkflow).length;
   const emailsSent = campaigns.reduce((sum, campaign) => sum + (campaign.sentCount ?? (Number.parseInt(campaign.sent, 10) || 0)), 0);
-  const opened = campaigns.length ? Math.round(campaigns.reduce((sum, campaign) => sum + pctToNumber(campaign.open), 0) / campaigns.length) : 0;
-  const clicked = campaigns.length ? Math.round(campaigns.reduce((sum, campaign) => sum + pctToNumber(campaign.click), 0) / campaigns.length) : 0;
+  // Real cumulative counts (distinct leads who opened/clicked, summed
+  // across every campaign) — not an average of each campaign's own rate
+  // percentage, which is what this used to compute and display as a bare
+  // number right next to Emails Sent (a real count), reading as if "0
+  // opened, 7 clicked" were literal counts when it was actually "campaigns
+  // average a 0% open rate and a 7% click rate."
+  const opened = campaigns.reduce((sum, campaign) => sum + (campaign.openedCount ?? 0), 0);
+  const clicked = campaigns.reduce((sum, campaign) => sum + (campaign.clickedCount ?? 0), 0);
   const topCampaigns = [...campaigns].slice(0, 5);
 
   return (
