@@ -241,6 +241,20 @@ export async function computeDealBoard(where = {}) {
 
   leads.forEach((lead, leadIdx) => {
     const pipeline = pipelines[leadIdx];
+
+    // A lead nothing has actually happened for yet (still status NEW, so
+    // even Outreach itself reads not_started) doesn't belong on a board
+    // about deals actively moving through stages — currentIdx below
+    // defaults to 0 when nothing has been reached, which used to dump
+    // every freshly added/imported lead straight into the Outreach column
+    // whether or not real outreach (or anything else) had actually
+    // happened for them. Confirmed live: a batch of CSV-imported leads,
+    // status NEW, never emailed, was filling up Outreach for exactly this
+    // reason. They still show up in New Enquiries and everywhere else —
+    // only this board, which is about current stage progress, excludes them.
+    const everReached = pipeline.some((stageSummary) => stageSummary.status !== "not_started");
+    if (!everReached) return;
+
     // The deal's real current column is its earliest unresolved gate
     // (in_progress or blocked) — e.g. an NDA that's been sent but not
     // signed yet — not just whichever stage was touched most recently.
