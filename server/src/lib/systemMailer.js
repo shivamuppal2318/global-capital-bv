@@ -138,6 +138,32 @@ export function clientPortalInviteEmail({ contactName, company, registerUrl }) {
   };
 }
 
+// Fired the moment a deal stage completes (see lib/stageCompletionReports.js)
+// -- to the DOE (best-effort name match) and every admin. facts is the same
+// label/value list the stored report itself shows, so the email doesn't say
+// anything the report can't back up.
+export function stageCompletionReportEmail({ stageLabel, company, facts, reportUrl }) {
+  const factRows = facts
+    .filter((f) => f.value)
+    .map((f) => `<tr><td style="padding:6px 16px 6px 0;color:#8592ab">${f.label}</td><td><strong>${f.value}</strong></td></tr>`)
+    .join("");
+  const factLines = facts
+    .filter((f) => f.value)
+    .map((f) => `${f.label}: ${f.value}`)
+    .join("\n");
+  return {
+    subject: `${company} — ${stageLabel} completed`,
+    text: `${stageLabel} just completed for ${company}.\n\n${factLines}\n\nThe full report is saved to this lead's Data Room in the CRM: ${reportUrl}`,
+    html: shell(
+      `${stageLabel} completed`,
+      `<p style="font-size:15px;color:#334463;line-height:1.6">${stageLabel} just completed for <strong>${company}</strong>.</p>
+       <table style="font-size:15px;color:#334463;border-collapse:collapse;margin:18px 0">${factRows}</table>
+       <p style="margin:24px 0"><a href="${reportUrl}" style="background:#3046b2;color:#fff;text-decoration:none;padding:12px 22px;border-radius:12px;font-weight:600;display:inline-block">Open the CRM</a></p>
+       <p style="font-size:13px;color:#8592ab;line-height:1.6">The full report is saved to this lead's Data Room — look under CRM Workspace → this lead → Reports.</p>`
+    )
+  };
+}
+
 // isNewAccount picks the button's destination and wording — a client who
 // already has a portal account gets sent to sign in, not asked to
 // register again; one who doesn't gets an invite link that lands them on

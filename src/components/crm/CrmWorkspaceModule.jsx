@@ -13,6 +13,7 @@ import {
 } from "../Icons";
 import { ActionButton, Card, noteToneClass, SectionTitle, StatCard } from "../ui";
 import { leadsApi } from "../../lib/leadsApi";
+import { documentsApi } from "../../lib/documentsApi";
 import { universalFiltersApi } from "../../lib/universalFiltersApi";
 import { parseCrmLeadsCsv } from "../../lib/csvCrmLeads";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi";
@@ -61,6 +62,7 @@ function LeadDetailModal({
   onOpenSendMail,
   tagsEditing, tagsDraft, setTagsDraft, onOpenTags, onCloseTags, onSaveTags, savingTags, tagsError,
   timeline, timelineLoading, interactions, interactionsLoading,
+  reports, reportsLoading,
   onEnrich, enriching, enrichResult
 }) {
   useEffect(() => {
@@ -272,7 +274,7 @@ function LeadDetailModal({
 
           <div className="mt-6 border-t border-[#e7edf5] pt-6">
             <div className="inline-flex rounded-[14px] bg-[#edf2f7] p-1">
-              {["Overview", "Timeline", "Interactions"].map((tab) => (
+              {["Overview", "Timeline", "Interactions", "Reports"].map((tab) => (
                 <button
                   key={tab}
                   type="button"
@@ -420,12 +422,14 @@ function LeadDetailModal({
               </div>
             ) : activeTab === "Timeline" ? (
               <EventList loading={timelineLoading} events={timeline} emptyText="No deal-progression events recorded yet." />
-            ) : (
+            ) : activeTab === "Interactions" ? (
               <EventList
                 loading={interactionsLoading}
                 events={interactions?.map((a) => ({ at: a.createdAt, title: a.title, detail: a.detail }))}
                 emptyText="No emails sent or status changes recorded yet."
               />
+            ) : (
+              <ReportsList loading={reportsLoading} reports={reports} />
             )}
           </div>
         </div>
@@ -459,6 +463,44 @@ function EventList({ loading, events, emptyText }) {
               <span className="text-[12px] text-[#6a7790]">{new Date(event.at).toLocaleString()}</span>
             </div>
             {event.detail ? <p className="mt-1 text-[13px] leading-5 text-[#435471]">{event.detail}</p> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Reports tab — same dot-timeline shell as EventList, but each row needs a
+// real action (view the generated report) rather than just text, so it's
+// its own small component instead of overloading EventList's plain-text
+// `detail` slot.
+function ReportsList({ loading, reports }) {
+  if (loading) {
+    return <p className="mt-6 text-[14px] text-[#8592ab]">Loading…</p>;
+  }
+  if (!reports?.length) {
+    return <p className="mt-6 text-[14px] text-[#8592ab]">No stage completion reports generated yet.</p>;
+  }
+  return (
+    <div className="mt-6 space-y-4">
+      {reports.map((doc, index) => (
+        <div key={doc.id} className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[#2b9b60]" />
+            {index !== reports.length - 1 ? <span className="mt-2 h-full w-px bg-[#d9e2ef]" /> : null}
+          </div>
+          <div className="min-w-0 flex-1 pb-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[14px] font-semibold text-[#102246]">{doc.description?.replace(/^\[.*?\]\s*/, "") ?? doc.originalName}</p>
+              <span className="text-[12px] text-[#6a7790]">{new Date(doc.createdAt).toLocaleString()}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => documentsApi.open(doc)}
+              className="mt-1 text-[13px] font-semibold text-[#3046b2] hover:underline"
+            >
+              View report
+            </button>
           </div>
         </div>
       ))}
@@ -527,6 +569,12 @@ export function CrmWorkspaceModule() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [interactions, setInteractions] = useState(null);
   const [interactionsLoading, setInteractionsLoading] = useState(false);
+  // Reports tab — auto-generated the moment a deal stage completes (NDA
+  // signed, IOI signed, etc. — see server/src/lib/stageCompletionReports.js),
+  // stored as a Document with category "Stage Completion Report" so it's
+  // fetched the same way as any other per-lead document.
+  const [reports, setReports] = useState(null);
+  const [reportsLoading, setReportsLoading] = useState(false);
   // Send Mail — a lightweight subject+body composer straight to the lead's
   // own email address, distinct from the cold-outreach campaign machinery in
   // Email Automation (no unsubscribe/bounce/daily-cap handling needed here).
@@ -736,6 +784,7 @@ export function CrmWorkspaceModule() {
     if (!selectedId) {
       setTimeline(null);
       setInteractions(null);
+      setReports(null);
       return;
     }
     setTimelineLoading(true);
@@ -751,6 +800,13 @@ export function CrmWorkspaceModule() {
       .then(setInteractions)
       .catch(() => setInteractions(null))
       .finally(() => setInteractionsLoading(false));
+
+    setReportsLoading(true);
+    documentsApi
+      .list({ leadId: selectedId, category: "Stage Completion Report" })
+      .then(setReports)
+      .catch(() => setReports(null))
+      .finally(() => setReportsLoading(false));
   }, [selectedId]);
 
   if (loading) {
@@ -1407,6 +1463,8 @@ export function CrmWorkspaceModule() {
           timelineLoading={timelineLoading}
           interactions={interactions}
           interactionsLoading={interactionsLoading}
+          reports={reports}
+          reportsLoading={reportsLoading}
           onEnrich={handleEnrich}
           enriching={enriching}
           enrichResult={enrichResult}

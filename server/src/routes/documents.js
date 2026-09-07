@@ -9,6 +9,7 @@ import { REQUIRED_DOCUMENTS, REQUIRED_DOCUMENT_LABELS } from "../lib/requiredDoc
 import { classifyDocumentCategory, runGapCheck } from "../lib/documentClassifier.js";
 import { recordAudit } from "../lib/auditLog.js";
 import { uploadDataRoomDocument, UPLOAD_DIR, MAX_FILE_BYTES, UnsupportedFileTypeError } from "../lib/fileUpload.js";
+import { generateStageReport } from "../lib/stageCompletionReports.js";
 import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const documentsRouter = Router();
@@ -148,8 +149,9 @@ documentsRouter.post("/", blockChannelPartner, uploadDataRoomDocument.single("fi
       : requestedCategory;
 
   const leadId = req.body?.leadId ? String(req.body.leadId).trim() : null;
+  let lead = null;
   if (leadId) {
-    const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { id: true } });
+    lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { id: true, owner: true } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
   }
 
@@ -169,6 +171,31 @@ documentsRouter.post("/", blockChannelPartner, uploadDataRoomDocument.single("fi
     include: { uploadedBy: { select: { id: true, name: true } }, verifiedBy: { select: { id: true, name: true } } }
   });
   await recordAudit({ req, action: "document.uploaded", entityType: "Document", entityId: doc.id, detail: `${doc.originalName} (${doc.category})` });
+
+  // Data Room has no single "completed" action to hook, the way NDA/IOI's
+  // sign step does -- it completes when whichever upload happens to be the
+  // last required category comes in. Recomputed fresh after every upload
+  // rather than tracked as a running counter, so it can never drift from
+  // what the checklist itself shows.
+  if (leadId && REQUIRED_DOCUMENT_LABELS.includes(category)) {
+    const received = await prisma.document.findMany({
+      where: { leadId, category: { in: REQUIRED_DOCUMENT_LABELS } },
+      select: { category: true },
+      distinct: ["category"]
+    });
+    if (received.length >= REQUIRED_DOCUMENT_LABELS.length) {
+      generateStageReport({
+        leadId,
+        dedupKey: "DATA_ROOM",
+        stageLabel: "Data Room",
+        ownerName: lead?.owner,
+        facts: [
+          { label: "Documents received", value: `${received.length} of ${REQUIRED_DOCUMENT_LABELS.length}` },
+          { label: "Categories", value: received.map((d) => d.category).join(", ") }
+        ]
+      }).catch(() => {});
+    }
+  }
 
   res.status(201).json(publicDocument(doc));
 }));

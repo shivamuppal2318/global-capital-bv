@@ -5,6 +5,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { dealFunnel, ioiMetrics } from "../lib/relationshipMetrics.js";
 import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { renderSignedIoi, slugify } from "../lib/signedDocumentRenderer.js";
+import { generateStageReport, fmtFactDate } from "../lib/stageCompletionReports.js";
 
 export const ioiRecordsRouter = Router();
 
@@ -195,6 +196,24 @@ ioiRecordsRouter.post("/:id/:action", blockChannelPartner, asyncHandler(async (r
     data: { [step.field]: new Date(), status: step.status },
     include
   });
+
+  if (req.params.action === "sign") {
+    generateStageReport({
+      leadId: existing.leadId,
+      dedupKey: "IOI",
+      stageLabel: "IOI",
+      ownerName: record.owner,
+      facts: [
+        { label: "Value", value: record.value ? `${record.valueCurrency} ${Number(record.value).toLocaleString("en-US")}` : null },
+        { label: "Signed on", value: fmtFactDate(record.signedAt) },
+        { label: "Industry", value: record.industry },
+        { label: "Geography", value: record.geography },
+        { label: "Counterparty", value: record.counterparty },
+        { label: "Owner", value: record.owner }
+      ]
+    }).catch(() => {});
+  }
+
   res.json(record);
 }));
 

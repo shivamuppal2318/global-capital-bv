@@ -19,6 +19,7 @@ import fs from "node:fs/promises";
 import { loginRateLimit, forgotPasswordRateLimit } from "../middleware/authRateLimit.js";
 import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
 import { ndaFillFormFragment, ioiFillFormFragment, renderSignedNda, renderSignedIoi, slugify } from "../lib/signedDocumentRenderer.js";
+import { STAGE_REPORT_CATEGORY } from "../lib/stageCompletionReports.js";
 
 // Same idiom as routes/leads.js and routes/ndaRecords.js — the client
 // portal is server-rendered by this API, not the frontend SPA, so its own
@@ -580,7 +581,7 @@ function dataRoomUploadFormHtml({ error, uploadedCategories }) {
 // computation — the only difference is how much of it gets rendered.
 // Kept in one place so the two routes can't quietly drift apart.
 async function loadPortalData(leadId) {
-  const [nda, meetings, ioi, visits, fieldVisit, termSheet, documentCategories] = await Promise.all([
+  const [nda, meetings, ioi, visits, fieldVisit, termSheet, documentCategories, stageReportDocs] = await Promise.all([
     prisma.ndaRecord.findUnique({ where: { leadId } }),
     prisma.meeting.findMany({ where: { leadId } }),
     prisma.ioiRecord.findUnique({ where: { leadId } }),
@@ -599,6 +600,14 @@ async function loadPortalData(leadId) {
       orderBy: { createdAt: "desc" },
       distinct: ["category"],
       select: { id: true, category: true, originalName: true, mimeType: true, verified: true }
+    }),
+    // Auto-generated the moment a stage completes (see
+    // lib/stageCompletionReports.js) -- newest first so reportDocFor below
+    // picks the latest one for Visit Planning, which can have several.
+    prisma.document.findMany({
+      where: { leadId, category: STAGE_REPORT_CATEGORY },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, description: true }
     })
   ]);
 
@@ -615,7 +624,28 @@ async function loadPortalData(leadId) {
     termSheet
   });
 
-  return { nda, ioi, stages, uploadedCategories };
+  return { nda, ioi, stages, uploadedCategories, stageReportDocs };
+}
+
+// Matches a stage key to its generated report, if one exists yet -- same
+// markers stageCompletionReports.js writes into Document.description.
+// Visit Planning can have several (one per completed visit); stageReportDocs
+// is newest-first, so the first match is the latest one.
+const STAGE_KEY_TO_REPORT_MARKER = {
+  nda: "[NDA]",
+  dataRoom: "[DATA_ROOM]",
+  ioi: "[IOI]",
+  fieldVisit: "[FIELD_VISIT]",
+  termSheet: "[TERM_SHEET]"
+};
+function reportDocFor(stageKey, stageReportDocs) {
+  if (stageKey === "visitPlanning") return stageReportDocs.find((d) => d.description?.startsWith("[VISIT:"));
+  const marker = STAGE_KEY_TO_REPORT_MARKER[stageKey];
+  return marker ? stageReportDocs.find((d) => d.description?.startsWith(marker)) : null;
+}
+
+function reportLinkHtml(doc) {
+  return `<p style="margin:10px 0 0;font-size:13px;"><a href="/api/client-portal/documents/${doc.id}/preview" style="color:#3046b2;font-weight:600;text-decoration:none;">View your completion report →</a></p>`;
 }
 
 function sidebarStagesFrom(stages) {
@@ -631,7 +661,7 @@ clientPortalRouter.get(
   requireClientAuth,
   asyncHandler(async (req, res) => {
     const leadId = req.clientUser.leadId;
-    const { nda, ioi, stages, uploadedCategories } = await loadPortalData(leadId);
+    const { nda, ioi, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
 
     const completedCount = stages.filter((s) => s.status === "completed").length;
 
@@ -730,6 +760,10 @@ clientPortalRouter.get(
                   } else if (s.key === "dataRoom") {
                     extraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
                   }
+                  if (s.status === "completed") {
+                    const report = reportDocFor(s.key, stageReportDocs);
+                    if (report) extraHtml += reportLinkHtml(report);
+                  }
                   return stageRowHtml(s, extraHtml);
                 })
                 .join("")}
@@ -752,7 +786,7 @@ clientPortalRouter.get(
     if (!stageMeta) return res.redirect("/api/client-portal/dashboard");
 
     const leadId = req.clientUser.leadId;
-    const { nda, ioi, stages, uploadedCategories } = await loadPortalData(leadId);
+    const { nda, ioi, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
     const stage = stages.find((s) => s.key === stageMeta.key);
 
     const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
@@ -782,6 +816,10 @@ clientPortalRouter.get(
       });
     } else if (stage.key === "dataRoom") {
       stageExtraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
+    }
+    if (stage.status === "completed") {
+      const report = reportDocFor(stage.key, stageReportDocs);
+      if (report) stageExtraHtml += reportLinkHtml(report);
     }
 
     res.send(

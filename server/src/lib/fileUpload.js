@@ -2,6 +2,7 @@ import multer from "multer";
 import path from "node:path";
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
+import { prisma } from "../db.js";
 
 // Shared by every upload route (Data Room documents, client-portal NDA
 // uploads) so there's exactly one place that decides where files live and
@@ -57,3 +58,30 @@ function dataRoomDocumentFileFilter(_req, file, cb) {
 }
 
 export const uploadDataRoomDocument = multer({ storage, limits: { fileSize: MAX_FILE_BYTES }, fileFilter: dataRoomDocumentFileFilter });
+
+// Every existing Document row comes from a real multipart upload via one of
+// the multer instances above -- this is for the one case that isn't a
+// human uploading a file: a report generated in-process (see
+// lib/stageCompletionReports.js). Writes to the same UPLOAD_DIR under the
+// same random-hex-name convention as multer's own storage.filename above,
+// then creates the Document row directly, so a generated report is
+// indistinguishable from a real upload everywhere else in the app (Data
+// Room search, download, the client portal) -- it just has no uploadedBy.
+export async function saveGeneratedDocument(buffer, { originalName, mimeType, category, leadId, description }) {
+  const ext = path.extname(originalName).slice(0, 12);
+  const storedName = `${crypto.randomBytes(16).toString("hex")}${ext}`;
+  await fs.writeFile(path.join(UPLOAD_DIR, storedName), buffer);
+
+  return prisma.document.create({
+    data: {
+      originalName,
+      storedName,
+      mimeType,
+      sizeBytes: buffer.length,
+      category,
+      description: description ?? null,
+      uploadedById: null,
+      leadId: leadId ?? null
+    }
+  });
+}

@@ -5,6 +5,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { DEAL_STAGES, DEAL_STAGE_IDS, DEAL_STAGE_STATUSES } from "../lib/dealStages.js";
 import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { hasChannelPartnerModule } from "../lib/channelPartnerPermissions.js";
+import { generateStageReport, fmtFactDate } from "../lib/stageCompletionReports.js";
 
 export const dealStagesRouter = Router();
 
@@ -49,6 +50,52 @@ const include = {
   lead: { select: { id: true, name: true, company: true, status: true, leadSource: true } },
   document: { select: { id: true, originalName: true } }
 };
+
+// Only Field Visit and Term Sheet trigger a report from this shared table --
+// NDA/IOI/Visit Planning have their own dedicated routers and models (see
+// ndaRecords.js, ioiRecords.js, visitPlans.js), and Data Room isn't a
+// DealStageRecord at all.
+const STAGE_REPORT_LABEL = { FIELD_VISIT: "Field Visit", TERM_SHEET: "Term Sheet" };
+
+function stageReportFacts(record) {
+  if (record.stage === "FIELD_VISIT") {
+    return [
+      { label: "Location", value: record.location },
+      { label: "Attendees", value: record.attendees },
+      { label: "Visit date", value: fmtFactDate(record.scheduledAt) },
+      { label: "Completed on", value: fmtFactDate(record.completedAt) },
+      { label: "Client rating", value: record.clientRating != null ? `${record.clientRating}/5` : null },
+      { label: "Owner", value: record.owner }
+    ];
+  }
+  if (record.stage === "TERM_SHEET") {
+    return [
+      { label: "Amount", value: record.amount },
+      { label: "Valuation", value: record.valuation },
+      { label: "Counterparty", value: record.counterparty },
+      { label: "Issued on", value: fmtFactDate(record.scheduledAt) },
+      { label: "Signed on", value: fmtFactDate(record.completedAt) },
+      { label: "Owner", value: record.owner }
+    ];
+  }
+  return null;
+}
+
+// `wasCompleted` is the status BEFORE this write -- callers fetch that
+// themselves before the create/update, so a re-save of an already-completed
+// record (or a POST upsert that only touched other fields) never re-fires.
+function maybeGenerateStageReport(record, wasCompleted) {
+  if (wasCompleted || record.status !== "COMPLETED") return;
+  const facts = stageReportFacts(record);
+  if (!facts) return;
+  generateStageReport({
+    leadId: record.leadId,
+    dedupKey: record.stage,
+    stageLabel: STAGE_REPORT_LABEL[record.stage],
+    ownerName: record.owner,
+    facts
+  }).catch(() => {});
+}
 
 // The stage catalogue, served from the backend so the UI's field config and
 // the API's validation can't disagree about what a stage is.
@@ -161,12 +208,15 @@ dealStagesRouter.post("/", blockChannelPartner, asyncHandler(async (req, res) =>
   // Strip keys explicitly set to undefined so they don't clear stored values.
   for (const k of Object.keys(data)) if (data[k] === undefined) delete data[k];
 
+  const before = await prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage } }, select: { status: true } });
+
   const record = await prisma.dealStageRecord.upsert({
     where: { leadId_stage: { leadId, stage } },
     create: { leadId, stage, ...data },
     update: data,
     include
   });
+  maybeGenerateStageReport(record, before?.status === "COMPLETED");
 
   res.status(201).json(publicRecord(record));
 }));
@@ -188,8 +238,12 @@ dealStagesRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res
   if (rest.documentId !== undefined) data.documentId = rest.documentId || null;
   if (rest.clientRating !== undefined) data.clientRating = rest.clientRating;
 
+  const before = await prisma.dealStageRecord.findUnique({ where: { id: req.params.id }, select: { status: true } });
+
   const record = await prisma.dealStageRecord.update({ where: { id: req.params.id }, data, include }).catch(() => null);
   if (!record) return res.status(404).json({ error: "Stage record not found" });
+  maybeGenerateStageReport(record, before?.status === "COMPLETED");
+
   res.json(publicRecord(record));
 }));
 

@@ -115,6 +115,67 @@ function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
 </html>`;
 }
 
+// A short internal dossier for the moment a deal stage finishes (NDA
+// signed, IOI signed, Data Room complete, a visit completed, Field Visit or
+// Term Sheet completed) -- distinct from documentShell above, which renders
+// a long legal agreement. This is a label/value summary of what just
+// happened, generated automatically the moment it happens (see
+// lib/stageCompletionReports.js), not something anyone filled in or signed.
+export function renderStageCompletionReport({ stageLabel, lead, facts, generatedAt }) {
+  const logo = LOGO_DATA_URI;
+  const title = `${stageLabel} completed — ${lead.company}`;
+  const rows = facts
+    .filter((f) => f.value)
+    .map((f) => `<div class="fact"><dt>${escapeHtml(f.label)}</dt><dd>${escapeHtml(String(f.value))}</dd></div>`)
+    .join("");
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(title)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 16px; background: #eef1f6; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #16213e; line-height: 1.5; }
+  .doc-page { max-width: 640px; margin: 0 auto; background: #fff; border: 2px solid #21439b; border-radius: 6px; padding: 40px 48px; }
+  .header { text-align: center; border-bottom: 2px solid #21439b; padding-bottom: 16px; margin-bottom: 24px; }
+  .header img { height: 48px; width: auto; margin-bottom: 8px; }
+  .brand { display: block; font-weight: 800; font-size: 19px; color: #16213e; letter-spacing: 0.02em; }
+  .tag { display: block; font-weight: 700; font-size: 11px; color: #21439b; text-transform: uppercase; letter-spacing: 0.07em; margin-top: 3px; }
+  .stage-label { display: inline-block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #147a52; background: #e3f5ec; border-radius: 100px; padding: 4px 12px; margin-bottom: 10px; }
+  h1 { font-size: 19px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .subline { font-size: 13px; color: #5c6b87; margin: 0 0 24px; }
+  .facts { margin: 0; }
+  .fact { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-top: 1px solid #e7edf5; }
+  .fact:first-child { border-top: none; }
+  .fact dt { font-size: 12.5px; color: #5c6b87; margin: 0; }
+  .fact dd { font-size: 13.5px; font-weight: 600; color: #16213e; margin: 0; text-align: right; }
+  .doc-footer { margin-top: 32px; padding-top: 16px; border-top: 2px solid #21439b; text-align: center; }
+  .doc-footer p { text-align: center; font-size: 11px; color: #5c6b87; margin: 0 0 3px; }
+  .doc-footer .company { font-weight: 700; color: #21439b; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="doc-page">
+    <div class="header">
+      <img src="${logo}" alt="Global Capital BV" />
+      <span class="brand">GLOBAL CAPITAL BV</span>
+      <span class="tag">Building Financial Dreams Together</span>
+    </div>
+    <span class="stage-label">${escapeHtml(stageLabel)} &middot; completed</span>
+    <h1>${escapeHtml(lead.company)}</h1>
+    <p class="subline">Generated automatically on ${fmtDateTime(generatedAt)}</p>
+    <dl class="facts">${rows}</dl>
+    <div class="doc-footer">
+      <p class="company">Global Capital B.V.</p>
+      <p>Groen v Prinstererstraat 38, 3354 BD Papendrecht, Zuid Holland, Netherlands</p>
+      <p>www.globalcapitalbv.com&nbsp;|&nbsp;info@globalcapitalbv.com&nbsp;|&nbsp;CCI 96239735</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 export async function renderSignedNda(nda) {
   const raw = await fs.readFile(path.join(ASSETS_DIR, "nda-template-body.txt"), "utf8");
   const signerName = nda.signerName || nda.signatoryName || "the counterparty";

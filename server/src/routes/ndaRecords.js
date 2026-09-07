@@ -7,6 +7,7 @@ import { signClientInviteToken } from "../lib/clientPortalToken.js";
 import { sendSystemEmail, ndaReadyToSignEmail } from "../lib/systemMailer.js";
 import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { renderSignedNda, slugify } from "../lib/signedDocumentRenderer.js";
+import { generateStageReport, fmtFactDate } from "../lib/stageCompletionReports.js";
 
 export const ndaRecordsRouter = Router();
 
@@ -209,6 +210,22 @@ ndaRecordsRouter.post("/:id/:action", blockChannelPartner, asyncHandler(async (r
       const result = await sendSystemEmail({ to: lead.email, subject, html, text });
       emailResult = { emailed: result.sent, reason: result.sent ? undefined : result.reason, portalUrl };
     }
+  }
+
+  if (req.params.action === "sign") {
+    generateStageReport({
+      leadId: existing.leadId,
+      dedupKey: "NDA",
+      stageLabel: "NDA",
+      ownerName: record.owner,
+      facts: [
+        { label: "Signed by", value: record.signerName },
+        { label: "Signed on", value: fmtFactDate(record.signedAt) },
+        { label: "Agreement date", value: fmtFactDate(record.agreementDate) },
+        { label: "Counterparty country", value: record.counterpartyCountry },
+        { label: "Owner", value: record.owner }
+      ]
+    }).catch(() => {});
   }
 
   res.json({ ...record, emailResult });

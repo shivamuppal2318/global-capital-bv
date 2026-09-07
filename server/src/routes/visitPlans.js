@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { visitMetrics } from "../lib/relationshipMetrics.js";
 import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { generateStageReport, fmtFactDate } from "../lib/stageCompletionReports.js";
 
 export const visitPlansRouter = Router();
 
@@ -150,11 +151,35 @@ visitPlansRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res
   const parsed = upsertSchema.partial({ leadId: true }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
+  const before = await prisma.visitPlan.findUnique({ where: { id: req.params.id }, select: { status: true } });
+
   const { leadId, ...rest } = parsed.data;
   const plan = await prisma.visitPlan
     .update({ where: { id: req.params.id }, data: buildData(rest), include })
     .catch(() => null);
   if (!plan) return res.status(404).json({ error: "Visit plan not found" });
+
+  // Each visit is its own real event -- unlike NDA/IOI/Term Sheet, a lead
+  // can have several, so every one that reaches Completed gets its own
+  // report (dedup below is keyed by this specific visit's id).
+  if (before?.status !== "COMPLETED" && plan.status === "COMPLETED") {
+    generateStageReport({
+      leadId: plan.leadId,
+      dedupKey: `VISIT:${plan.id}`,
+      stageLabel: "Visit Planning",
+      ownerName: plan.owner,
+      facts: [
+        { label: "Location", value: plan.location },
+        { label: "Region / Country", value: [plan.region, plan.country].filter(Boolean).join(", ") },
+        { label: "Visit date", value: fmtFactDate(plan.plannedFor) },
+        { label: "Completed on", value: fmtFactDate(plan.completedAt) },
+        { label: "Cost", value: plan.costAmount ? `${plan.costCurrency} ${Number(plan.costAmount).toLocaleString("en-US")}` : null },
+        { label: "Travel mode", value: plan.travelMode },
+        { label: "Owner", value: plan.owner }
+      ]
+    }).catch(() => {});
+  }
+
   res.json(plan);
 }));
 
