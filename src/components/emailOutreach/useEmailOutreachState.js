@@ -392,7 +392,8 @@ export function useEmailOutreachState({ demoData = true } = {}) {
           leadCount: campaign._count?.leads ?? 0,
           sentCount: campaign.engagement?.sent ?? 0,
           openedCount: campaign.engagement?.opened ?? 0,
-          clickedCount: campaign.engagement?.clicked ?? 0
+          clickedCount: campaign.engagement?.clicked ?? 0,
+          unsubscribedCount: campaign.engagement?.unsubscribed ?? 0
         }));
         setCampaigns(mapped);
         setSelectedCampaignId(mapped[0]?.id ?? null);

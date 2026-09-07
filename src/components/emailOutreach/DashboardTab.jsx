@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { ActionButton } from "../ui.jsx";
-import { MailIcon, TagIcon, UsersIcon, InboxIcon } from "../Icons.jsx";
+import { MailIcon, TagIcon, UsersIcon, InboxIcon, XIcon } from "../Icons.jsx";
+import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
 
 function MetricCard({ label, value, icon: Icon, iconClass }) {
   return (
@@ -15,12 +17,22 @@ function MetricCard({ label, value, icon: Icon, iconClass }) {
   );
 }
 
-function SummaryCard({ label, value, toneClass }) {
+// onClick is only passed for the cards backed by a real per-lead breakdown
+// (Opened/Clicked/Unsubscribed) — Emails Sent counts raw send events, not
+// distinct leads, so there's no single matching "who" list for it the way
+// there is for the other three.
+function SummaryCard({ label, value, toneClass, onClick }) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="rounded-[20px] border border-[#d6deea] bg-white px-6 py-4 text-center shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+    <Tag
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={`rounded-[20px] border border-[#d6deea] bg-white px-6 py-4 text-center shadow-[0_4px_16px_rgba(30,48,87,0.06)] ${onClick ? "cursor-pointer transition hover:border-[#b9c4d8] hover:shadow-[0_6px_20px_rgba(30,48,87,0.1)]" : ""}`}
+    >
       <p className={`text-[2rem] font-semibold leading-none tracking-[-0.04em] ${toneClass}`}>{value}</p>
       <p className="mt-1.5 text-[14px] text-[#5f6f89]">{label}</p>
-    </div>
+      {onClick ? <p className="mt-1 text-[11px] font-medium text-[#8593ac]">Click to see who</p> : null}
+    </Tag>
   );
 }
 
@@ -47,7 +59,22 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
   // average a 0% open rate and a 7% click rate."
   const opened = campaigns.reduce((sum, campaign) => sum + (campaign.openedCount ?? 0), 0);
   const clicked = campaigns.reduce((sum, campaign) => sum + (campaign.clickedCount ?? 0), 0);
+  const unsubscribed = campaigns.reduce((sum, campaign) => sum + (campaign.unsubscribedCount ?? 0), 0);
   const topCampaigns = [...campaigns].slice(0, 5);
+
+  // Which lead actually makes up the Opened/Clicked/Unsubscribed number on
+  // the card just clicked — fetched on demand (not preloaded for all three
+  // up front, same lazy pattern CampaignsTab's own per-campaign sent-activity
+  // popup uses) since most visits never open one of these.
+  const [engagementDetail, setEngagementDetail] = useState(null);
+
+  function openEngagementDetail(kind, label) {
+    setEngagementDetail({ kind, label, rows: [], loading: true });
+    emailCampaignsApi
+      .engagementDetail(kind)
+      .then((rows) => setEngagementDetail({ kind, label, rows, loading: false }))
+      .catch(() => setEngagementDetail({ kind, label, rows: [], loading: false }));
+  }
 
   return (
     <section className="space-y-3">
@@ -69,10 +96,11 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
           <MetricCard label="Unread Mail" value={unreadMail} icon={InboxIcon} iconClass="text-[#e0483f]" />
         </div>
 
-        <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <div className="mt-3 grid gap-3 lg:grid-cols-4">
           <SummaryCard label="Emails Sent" value={emailsSent} toneClass="text-[#2995db]" />
-          <SummaryCard label="Opened" value={opened} toneClass="text-[#2b9b60]" />
-          <SummaryCard label="Clicked" value={clicked} toneClass="text-[#f29c38]" />
+          <SummaryCard label="Opened" value={opened} toneClass="text-[#2b9b60]" onClick={() => openEngagementDetail("opened", "Opened")} />
+          <SummaryCard label="Clicked" value={clicked} toneClass="text-[#f29c38]" onClick={() => openEngagementDetail("clicked", "Clicked")} />
+          <SummaryCard label="Unsubscribed" value={unsubscribed} toneClass="text-[#e0483f]" onClick={() => openEngagementDetail("unsubscribed", "Unsubscribed")} />
         </div>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[1.72fr_0.68fr]">
@@ -160,6 +188,51 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
           </div>
         </div>
       </div>
+
+      {engagementDetail ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
+          onClick={() => setEngagementDetail(null)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-[560px] overflow-y-auto rounded-[16px] border border-[#d6deea] bg-white p-5 shadow-[0_12px_36px_rgba(16,34,70,0.18)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-[#102246]">{engagementDetail.label}</p>
+                <p className="text-[12px] text-[#8592ab]">
+                  {engagementDetail.loading ? "Loading…" : `${engagementDetail.rows.length} lead(s) — across every campaign`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEngagementDetail(null)}
+                className="grid size-7 shrink-0 place-items-center rounded-[8px] text-[#8592ab] hover:bg-[#f0f3f9]"
+              >
+                <XIcon className="size-4" />
+              </button>
+            </div>
+
+            {engagementDetail.loading ? null : engagementDetail.rows.length ? (
+              <div className="mt-4 space-y-2">
+                {engagementDetail.rows.map((row, i) => (
+                  <div key={i} className="rounded-[12px] border border-[#e7edf5] px-4 py-2.5">
+                    <p className="truncate text-[13.5px] font-semibold text-[#102246]">
+                      {row.leadName} <span className="font-normal text-[#8592ab]">— {row.leadEmail}</span>
+                    </p>
+                    <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
+                      {row.campaignName} · {new Date(row.at).toLocaleString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-[13px] text-[#9aa6ba]">No leads yet.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

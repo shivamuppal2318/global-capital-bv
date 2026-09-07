@@ -101,10 +101,11 @@ async function distinctLeadCount(campaignId, kind) {
 }
 
 async function withEngagementRates(campaign) {
-  const [sent, opened, clicked] = await Promise.all([
+  const [sent, opened, clicked, unsubscribed] = await Promise.all([
     prisma.emailActivityLog.count({ where: { kind: { in: SEND_KINDS }, lead: { campaignId: campaign.id } } }),
     distinctLeadCount(campaign.id, "EMAIL_OPENED"),
-    distinctLeadCount(campaign.id, "LINK_CLICKED")
+    distinctLeadCount(campaign.id, "LINK_CLICKED"),
+    prisma.emailLead.count({ where: { campaignId: campaign.id, unsubscribed: true } })
   ]);
   return {
     ...campaign,
@@ -112,6 +113,7 @@ async function withEngagementRates(campaign) {
       sent,
       opened,
       clicked,
+      unsubscribed,
       openRate: sent > 0 ? Math.round((opened / sent) * 100) : null,
       clickRate: sent > 0 ? Math.round((clicked / sent) * 100) : null
     }
@@ -226,6 +228,43 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
     })),
     mailboxPerformance
   });
+}));
+
+const ENGAGEMENT_DETAIL_ACTIVITY_KINDS = {
+  opened: "EMAIL_OPENED",
+  clicked: "LINK_CLICKED"
+};
+
+// Backs the Dashboard's Opened/Clicked/Unsubscribed stat cards — clicking
+// one shows exactly which leads make up that number instead of just the
+// count. Same owner scoping as GET / and dashboard-summary, and the same
+// distinct-lead semantics withEngagementRates' own opened/clicked counts
+// use (one row per lead, their most recent event) — so the list length
+// always matches the number the card showed.
+emailCampaignsRouter.get("/engagement-detail/:kind", asyncHandler(async (req, res) => {
+  const campaignFilter = ownerWhereClause(req);
+
+  if (req.params.kind === "unsubscribed") {
+    const leads = await prisma.emailLead.findMany({
+      where: { unsubscribed: true, campaign: campaignFilter },
+      orderBy: { updatedAt: "desc" },
+      select: { name: true, email: true, updatedAt: true, campaign: { select: { name: true } } }
+    });
+    return res.json(leads.map((l) => ({ leadName: l.name, leadEmail: l.email, campaignName: l.campaign.name, at: l.updatedAt })));
+  }
+
+  const activityKind = ENGAGEMENT_DETAIL_ACTIVITY_KINDS[req.params.kind];
+  if (!activityKind) {
+    return res.status(400).json({ error: `Unknown engagement kind "${req.params.kind}"` });
+  }
+
+  const rows = await prisma.emailActivityLog.findMany({
+    where: { kind: activityKind, lead: { campaign: campaignFilter } },
+    orderBy: { createdAt: "desc" },
+    distinct: ["leadId"],
+    include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } } }
+  });
+  res.json(rows.map((r) => ({ leadName: r.lead.name, leadEmail: r.lead.email, campaignName: r.lead.campaign.name, at: r.createdAt })));
 }));
 
 emailCampaignsRouter.post("/", asyncHandler(async (req, res) => {

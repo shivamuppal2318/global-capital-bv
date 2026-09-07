@@ -37,6 +37,9 @@ export const emailCampaignsApi = {
   // matches the campaigns list's own "Emails Sent" count. Backs the list
   // view's per-campaign sent-leads popup.
   sentActivity: (id) => request(`/${id}/sent-activity`),
+  // Which leads make up the Dashboard's Opened/Clicked/Unsubscribed stat
+  // cards. kind: "opened" | "clicked" | "unsubscribed".
+  engagementDetail: (kind) => request(`/engagement-detail/${kind}`),
   // A campaign's real follow-up sequence — see routes/emailLeads.js's
   // scheduleCadenceSteps, which is what actually reads these when a lead
   // is added. Add-to-end/edit/delete only; no reordering yet.
