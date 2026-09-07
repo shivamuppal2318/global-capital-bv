@@ -651,6 +651,19 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // real Enrich lookup fired when a rep picks a result to add as a lead.
   const [revealingContactEmail, setRevealingContactEmail] = useState(false);
 
+  // "Add to List" straight from a ZoomInfo search result — skips CRM Lead
+  // creation entirely and sends the result directly into an Email
+  // Automation List as a real EmailLead (skipCadence: true, same reasoning
+  // as New Enquiries' own Add to List). Keyed by the result's own ZoomInfo
+  // id so only one result's picker is open at a time; a Companies-mode
+  // result has no email of its own, so this also spends a real ZoomInfo
+  // lookup (find-company-contact) finding a representative contact first.
+  const [zoomInfoAddToListTarget, setZoomInfoAddToListTarget] = useState(null);
+  const [zoomInfoAddToListCampaigns, setZoomInfoAddToListCampaigns] = useState([]);
+  const [zoomInfoAddToListCampaignId, setZoomInfoAddToListCampaignId] = useState("");
+  const [zoomInfoAddToListBusy, setZoomInfoAddToListBusy] = useState(false);
+  const [zoomInfoAddToListResult, setZoomInfoAddToListResult] = useState(null);
+
   // "Add to List" — sends the currently-selected (already status-filtered)
   // leads into a real Email Automation List (an EmailCampaign) as real
   // EmailLead rows, reusing the exact bulk-create route CSV import already
@@ -834,6 +847,74 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
           // in; the rep can type the email by hand if this lookup fails.
         })
         .finally(() => setRevealingContactEmail(false));
+    }
+  }
+
+  // Opens the inline "Add to List" picker under one ZoomInfo result — real
+  // Lists are fetched fresh each time (same cheap "no need to cache"
+  // reasoning openAddToList above uses), and any stale result text from a
+  // previously-picked result is cleared so it can't read as belonging to
+  // this one.
+  function openZoomInfoAddToList(result) {
+    setZoomInfoAddToListResult(null);
+    setZoomInfoAddToListCampaignId("");
+    setZoomInfoAddToListTarget(result);
+    emailCampaignsApi.list().then(setZoomInfoAddToListCampaigns).catch(() => setZoomInfoAddToListCampaigns([]));
+  }
+
+  async function handleZoomInfoAddToList() {
+    const result = zoomInfoAddToListTarget;
+    if (!result || !zoomInfoAddToListCampaignId) return;
+
+    setZoomInfoAddToListBusy(true);
+    setZoomInfoAddToListResult(null);
+    try {
+      let name;
+      let company;
+      let email;
+
+      if (zoomInfoMode === "companies") {
+        company = result.name ?? "";
+        const contact = await leadsApi.zoomInfoFindCompanyContact(company);
+        if (!contact.found || !contact.email) {
+          setZoomInfoAddToListResult({ ok: false, text: `No reachable contact found for "${company}" on ZoomInfo — nothing added.` });
+          return;
+        }
+        name = contact.name || "Unknown contact";
+        email = contact.email;
+      } else {
+        name = [result.firstName, result.lastName].filter(Boolean).join(" ") || "Unknown contact";
+        company = result.company?.name ?? "";
+        if (!result.hasEmail) {
+          setZoomInfoAddToListResult({ ok: false, text: `ZoomInfo has no email on file for ${name} — nothing added.` });
+          return;
+        }
+        const revealed = await leadsApi.zoomInfoRevealContact({ firstName: result.firstName, lastName: result.lastName, companyName: company });
+        if (!revealed.email) {
+          setZoomInfoAddToListResult({ ok: false, text: `Could not confirm a real email for ${name} on ZoomInfo — nothing added.` });
+          return;
+        }
+        email = revealed.email;
+      }
+
+      const listName = zoomInfoAddToListCampaigns.find((c) => c.id === zoomInfoAddToListCampaignId)?.name ?? "the list";
+      const bulkResult = await emailLeadsApi.bulkCreate(
+        zoomInfoAddToListCampaignId,
+        [{ name, company, email, owner: "Unassigned" }],
+        { skipCadence: true }
+      );
+
+      if (bulkResult.createdCount > 0) {
+        setZoomInfoAddToListResult({ ok: true, text: `${name} (${email}) added to "${listName}".` });
+      } else if (bulkResult.duplicateCount > 0) {
+        setZoomInfoAddToListResult({ ok: true, text: `${name} (${email}) is already in "${listName}".` });
+      } else {
+        setZoomInfoAddToListResult({ ok: false, text: `Could not add ${name} — ${bulkResult.invalid?.[0]?.reason ?? bulkResult.failed?.[0]?.reason ?? "unknown reason"}.` });
+      }
+    } catch (err) {
+      setZoomInfoAddToListResult({ ok: false, text: err.message });
+    } finally {
+      setZoomInfoAddToListBusy(false);
     }
   }
 
@@ -1342,6 +1423,15 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
               onAddAsLead={handleAddZoomInfoResultAsLead}
               countries={zoomInfoCountries}
               states={zoomInfoStates}
+              addToListTarget={zoomInfoAddToListTarget}
+              addToListCampaigns={zoomInfoAddToListCampaigns}
+              addToListCampaignId={zoomInfoAddToListCampaignId}
+              setAddToListCampaignId={setZoomInfoAddToListCampaignId}
+              addToListBusy={zoomInfoAddToListBusy}
+              addToListResult={zoomInfoAddToListResult}
+              onOpenAddToList={openZoomInfoAddToList}
+              onCloseAddToList={() => setZoomInfoAddToListTarget(null)}
+              onSubmitAddToList={handleZoomInfoAddToList}
             />
           </div>
         ) : null}
@@ -1621,7 +1711,9 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
 function ZoomInfoSearchPanel({
   mode, setMode, companyFilters, setCompanyFilters, contactFilters, setContactFilters,
   searching, error, results, totalResults, page, hasSearched, onSearch, onAddAsLead,
-  countries, states
+  countries, states,
+  addToListTarget, addToListCampaigns, addToListCampaignId, setAddToListCampaignId,
+  addToListBusy, addToListResult, onOpenAddToList, onCloseAddToList, onSubmitAddToList
 }) {
   const hasMore = page * 25 < totalResults;
 
@@ -1731,36 +1823,68 @@ function ZoomInfoSearchPanel({
         <div className="mt-4 space-y-2.5">
           {results.map((result) =>
             mode === "companies" ? (
-              <div key={result.id} className="flex items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[14px] font-semibold text-[#102246]">{result.name}</p>
-                  <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
-                    {[result.city, result.state, result.country].filter(Boolean).join(", ") || "Location unknown"}
-                    {result.employeeCount ? ` · ${result.employeeCount} employees` : ""}
-                    {result.website ? ` · ${result.website}` : ""}
-                  </p>
+              <div key={result.id} className="rounded-[14px] border border-[#e7edf5] px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] font-semibold text-[#102246]">{result.name}</p>
+                    <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
+                      {[result.city, result.state, result.country].filter(Boolean).join(", ") || "Location unknown"}
+                      {result.employeeCount ? ` · ${result.employeeCount} employees` : ""}
+                      {result.website ? ` · ${result.website}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <ActionButton label="Add as Lead" small onClick={() => onAddAsLead(result)} />
+                    <ActionButton label="Add to List" small onClick={() => onOpenAddToList(result)} />
+                  </div>
                 </div>
-                <ActionButton label="Add as Lead" small onClick={() => onAddAsLead(result)} />
+                {addToListTarget?.id === result.id ? (
+                  <ZoomInfoAddToListInline
+                    campaigns={addToListCampaigns}
+                    campaignId={addToListCampaignId}
+                    setCampaignId={setAddToListCampaignId}
+                    busy={addToListBusy}
+                    result={addToListResult}
+                    onSubmit={onSubmitAddToList}
+                    onClose={onCloseAddToList}
+                  />
+                ) : null}
               </div>
             ) : (
-              <div key={result.id} className="flex items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[14px] font-semibold text-[#102246]">
-                    {[result.firstName, result.lastName].filter(Boolean).join(" ") || "Unnamed contact"}
-                  </p>
-                  <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
-                    {result.jobTitle ? `${result.jobTitle} — ` : ""}
-                    {result.company?.name ?? "Company unknown"}
-                  </p>
-                  <p className="mt-1 text-[11px] text-[#9aa6ba]">
-                    {/* Search never returns the real address/number, only
-                        whether ZoomInfo has one on file — "Add as Lead"
-                        fetches the real email via a separate lookup. */}
-                    {result.hasEmail ? "✉ Email on file" : "No email on file"}
-                    {result.hasDirectPhone || result.hasMobilePhone ? " · ☎ Phone on file" : ""}
-                  </p>
+              <div key={result.id} className="rounded-[14px] border border-[#e7edf5] px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] font-semibold text-[#102246]">
+                      {[result.firstName, result.lastName].filter(Boolean).join(" ") || "Unnamed contact"}
+                    </p>
+                    <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
+                      {result.jobTitle ? `${result.jobTitle} — ` : ""}
+                      {result.company?.name ?? "Company unknown"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[#9aa6ba]">
+                      {/* Search never returns the real address/number, only
+                          whether ZoomInfo has one on file — "Add as Lead"
+                          fetches the real email via a separate lookup. */}
+                      {result.hasEmail ? "✉ Email on file" : "No email on file"}
+                      {result.hasDirectPhone || result.hasMobilePhone ? " · ☎ Phone on file" : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <ActionButton label="Add as Lead" small onClick={() => onAddAsLead(result)} />
+                    <ActionButton label="Add to List" small onClick={() => onOpenAddToList(result)} />
+                  </div>
                 </div>
-                <ActionButton label="Add as Lead" small onClick={() => onAddAsLead(result)} />
+                {addToListTarget?.id === result.id ? (
+                  <ZoomInfoAddToListInline
+                    campaigns={addToListCampaigns}
+                    campaignId={addToListCampaignId}
+                    setCampaignId={setAddToListCampaignId}
+                    busy={addToListBusy}
+                    result={addToListResult}
+                    onSubmit={onSubmitAddToList}
+                    onClose={onCloseAddToList}
+                  />
+                ) : null}
               </div>
             )
           )}
@@ -1775,6 +1899,46 @@ function ZoomInfoSearchPanel({
       ) : !searching && !error ? (
         <p className="mt-4 text-[13px] text-[#9aa6ba]">No search run yet — set some filters above and click Search.</p>
       ) : null}
+    </div>
+  );
+}
+
+// One ZoomInfo result's own "Add to List" picker — sends it straight into
+// a real Email Automation List as a real EmailLead, skipping CRM Lead
+// creation entirely. A Companies-mode result has no email of its own, so
+// picking a list here also spends a real ZoomInfo lookup finding a
+// representative contact at that company first (see
+// leadsApi.zoomInfoFindCompanyContact) — a Contacts-mode result reveals its
+// own specific person's email instead, same as "Add as Lead" already does.
+function ZoomInfoAddToListInline({ campaigns, campaignId, setCampaignId, busy, result, onSubmit, onClose }) {
+  return (
+    <div className="mt-3 rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-3">
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Add to List</p>
+      <div className="max-h-[160px] overflow-y-auto rounded-[10px] border border-[#d6deea] bg-white">
+        {campaigns.length ? (
+          campaigns.map((c) => (
+            <label key={c.id} className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0">
+              <input
+                type="radio"
+                name={`zoominfo-add-to-list-${c.id}`}
+                checked={campaignId === c.id}
+                onChange={() => setCampaignId(c.id)}
+                className="h-4 w-4 border-[#b9c4d8]"
+              />
+              <span className="min-w-0 flex-1 truncate">{c.name}</span>
+            </label>
+          ))
+        ) : (
+          <p className="px-3 py-3 text-[12px] text-[#9aa6ba]">No Lists yet — create one from Email Automation → Leads → New List.</p>
+        )}
+      </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-3">
+        <ActionButton label={busy ? "Adding…" : "Add"} primary small onClick={onSubmit} disabled={busy || !campaignId} />
+        <button type="button" onClick={onClose} className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#435471]">
+          Close
+        </button>
+      </div>
+      {result ? <p className={`mt-2 text-[13px] font-medium ${result.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>{result.text}</p> : null}
     </div>
   );
 }

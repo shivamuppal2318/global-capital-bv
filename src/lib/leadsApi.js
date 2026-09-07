@@ -55,6 +55,12 @@ export const leadsApi = {
   // for a result the rep actually picked ("Add as Lead"), not every row.
   zoomInfoRevealContact: ({ firstName, lastName, companyName }) =>
     request("/zoominfo-search/reveal-contact", { method: "POST", body: { firstName, lastName, companyName } }),
+  // For "Add to List" on a bare Companies-mode search result (no person to
+  // reveal an email for) — finds a real contact at that company first, then
+  // returns their real email. { found: false } when ZoomInfo has no contact
+  // on file for that company, rather than an error.
+  zoomInfoFindCompanyContact: (companyName) =>
+    request("/zoominfo-search/find-company-contact", { method: "POST", body: { companyName } }),
   // Country/state search filters only accept exact values from ZoomInfo's
   // own controlled vocabulary (confirmed live) — this backs a real dropdown
   // instead of a free-text field. field: "countries" | "states".
