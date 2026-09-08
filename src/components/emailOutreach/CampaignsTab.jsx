@@ -917,7 +917,6 @@ export function CampaignsTab({ mailing }) {
                 <th className="px-4 py-4 text-right">Recipients</th>
                 <th className="px-4 py-4 text-right">Emails Sent</th>
                 <th className="px-4 py-4 text-right">Open Rate</th>
-                <th className="px-4 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -943,20 +942,11 @@ export function CampaignsTab({ mailing }) {
                       </div>
                     </td>
                     <td className="px-4 py-4 text-right">{campaign.open}</td>
-                    <td className="px-4 py-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openCampaign(campaign)}
-                        className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#3046b2]"
-                      >
-                        Open
-                      </button>
-                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="6" className="px-4 py-5 text-[14px] text-[#7a7d9c]">
+                  <td colSpan="5" className="px-4 py-5 text-[14px] text-[#7a7d9c]">
                     No entries found
                   </td>
                 </tr>
