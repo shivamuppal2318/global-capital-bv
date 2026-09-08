@@ -233,7 +233,7 @@ export function DealStageModule({ stage, defaultOwner }) {
           // instead of the generic four-card one below.
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <StatCard card={{ label: stageStatusLabel.NOT_STARTED, value: String(stageSummary?.NOT_STARTED ?? 0), note: config.plannedNote ?? "Not started yet", noteTone: "amber" }} />
-            <StatCard card={{ label: stageStatusLabel.COMPLETED, value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
+            <StatCard card={{ label: stageStatusLabel.COMPLETED, value: String(stageSummary?.COMPLETED ?? 0), note: config.completedNote ?? "Done", noteTone: "green" }} />
           </div>
         ) : (
           <div className="mt-6 grid gap-4 sm:grid-cols-4">

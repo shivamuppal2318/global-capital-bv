@@ -251,13 +251,6 @@ export function LeadsTab({ mailing }) {
             >
               New List
             </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("sync")}
-              className="rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#435471]"
-            >
-              Sync CRM Leads
-            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">

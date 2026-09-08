@@ -63,8 +63,9 @@ export const STAGE_CONFIG = {
     // user's request — negotiation/decline are no longer tracked as
     // separate statuses for this stage, only whether it's signed yet.
     statuses: ["NOT_STARTED", "COMPLETED"],
-    statusLabels: { NOT_STARTED: "Planned", COMPLETED: "Signed" },
-    plannedNote: "Not yet issued"
+    statusLabels: { NOT_STARTED: "Visit Planned", COMPLETED: "Termsheet signed" },
+    plannedNote: "Visit planned",
+    completedNote: "Termsheet signed"
   }
 };
 
