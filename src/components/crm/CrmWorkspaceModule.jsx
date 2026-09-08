@@ -1,17 +1,14 @@
 import { useEffect, useState } from "react";
 import {
-  FunnelIcon,
   GlobeIcon,
   MailIcon,
   PencilIcon,
-  PlusIcon,
   RadarIcon,
   SendIcon,
   TagIcon,
-  UploadIcon,
   UserCheckIcon
 } from "../Icons";
-import { ActionButton, Card, noteToneClass, SectionTitle, StatCard } from "../ui";
+import { ActionButton, Card, noteToneClass, SectionTitle } from "../ui";
 import { leadsApi } from "../../lib/leadsApi";
 import { documentsApi } from "../../lib/documentsApi";
 import { universalFiltersApi } from "../../lib/universalFiltersApi";
@@ -329,7 +326,7 @@ function LeadDetailModal({
                       ))}
                     </select>
                   </div>
-                  <EditField label="Capital Ask" value={editForm.capitalAsk} onChange={(v) => setEditForm({ ...editForm, capitalAsk: v })} placeholder="EUR 3M" />
+                  <EditField label="Capital Ask" value={editForm.capitalAsk} onChange={(v) => setEditForm({ ...editForm, capitalAsk: v })} placeholder="$3M" />
                   <EditField label="Territory / Geography" value={editForm.territory} onChange={(v) => setEditForm({ ...editForm, territory: v })} />
                   <EditField label="Lead Source" value={editForm.leadSource} onChange={(v) => setEditForm({ ...editForm, leadSource: v })} />
                   <EditField label="Industry" value={editForm.industry} onChange={(v) => setEditForm({ ...editForm, industry: v })} list={facets?.industries} />
@@ -570,11 +567,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   const [importText, setImportText] = useState("");
   const [importBusy, setImportBusy] = useState(false);
   const [importResult, setImportResult] = useState(null);
-  // "Views" — a quick client-side status filter over the already-loaded
-  // leads list (New Enquiries table below); no new backend call needed
-  // since every lead's status is already in `leads`.
-  const [viewsOpen, setViewsOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [statusFilter] = useState("INTERESTED");
   // Convert: promotes a lead to CONVERTED — a single-field shortcut from the
   // action bar onto the same PATCH the Edit form already uses.
   const [converting, setConverting] = useState(false);
@@ -609,18 +602,11 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // lead creation) so every API credit spent is a rep's explicit choice.
   const [enriching, setEnriching] = useState(false);
   const [enrichResult, setEnrichResult] = useState(null);
-  // Bulk Enrich — same ZoomInfo lookup as the single-lead action, run
-  // across every lead still missing industry/territory. Confirms the real
-  // count with the rep first, since it's real API credits spent at once.
-  const [bulkEnriching, setBulkEnriching] = useState(false);
-  const [bulkEnrichResult, setBulkEnrichResult] = useState(null);
   // "Find Companies (ZoomInfo)" — real prospecting search (not enrich: no
   // existing lead needed), see server/src/lib/zoominfoClient.js's
   // searchCompanies/searchContacts. Search itself is explicit (a "Search"
-  // click, real API credits) same as Bulk Enrich's confirm-first
-  // convention; results are browse-only until a rep picks "Add as Lead",
-  // which just pre-fills the existing New Record form above — no direct,
-  // silent Lead creation from a search result.
+  // click, real API credits). Results can be sent straight into Email
+  // Automation lists, but they no longer pre-fill CRM Lead creation here.
   const [zoomInfoPanelOpen, setZoomInfoPanelOpen] = useState(false);
   const [zoomInfoMode, setZoomInfoMode] = useState("companies");
   const [zoomInfoCompanyFilters, setZoomInfoCompanyFilters] = useState({
@@ -643,10 +629,18 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // dropdowns instead. Loaded once, lazily, the first time the panel opens.
   const [zoomInfoCountries, setZoomInfoCountries] = useState([]);
   const [zoomInfoStates, setZoomInfoStates] = useState([]);
-  // A Contact search result never carries the real email (ZoomInfo's Search
-  // API only returns a hasEmail true/false flag) — this tracks the
-  // real Enrich lookup fired when a rep picks a result to add as a lead.
-  const [revealingContactEmail, setRevealingContactEmail] = useState(false);
+  // "Add to List" straight from a ZoomInfo search result — skips CRM Lead
+  // creation entirely and sends the result directly into an Email
+  // Automation List as a real EmailLead (skipCadence: true, same reasoning
+  // as New Enquiries' own Add to List). Keyed by the result's own ZoomInfo
+  // id so only one result's picker is open at a time; a Companies-mode
+  // result has no email of its own, so this also spends a real ZoomInfo
+  // lookup (find-company-contact) finding a representative contact first.
+  const [zoomInfoAddToListTarget, setZoomInfoAddToListTarget] = useState(null);
+  const [zoomInfoAddToListCampaigns, setZoomInfoAddToListCampaigns] = useState([]);
+  const [zoomInfoAddToListCampaignId, setZoomInfoAddToListCampaignId] = useState("");
+  const [zoomInfoAddToListBusy, setZoomInfoAddToListBusy] = useState(false);
+  const [zoomInfoAddToListResult, setZoomInfoAddToListResult] = useState(null);
 
   // "Add to List" — sends the currently-selected (already status-filtered)
   // leads into a real Email Automation List (an EmailCampaign) as real
@@ -792,45 +786,71 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     }
   }
 
-  // Pre-fills the existing "New Record" form from a chosen ZoomInfo
-  // result and opens the same modal — the rep still reviews/completes
-  // (capitalAsk especially, which ZoomInfo has no concept of) and saves
-  // through the unchanged handleAddLead above. No silent auto-create.
-  function handleAddZoomInfoResultAsLead(result) {
-    if (zoomInfoMode === "companies") {
-      const territory = [result.city, result.state, result.country].filter(Boolean).join(", ");
-      setAddForm({ name: "", company: result.name ?? "", email: "", mobile: "", capitalAsk: "", owner: "", territory });
-      setZoomInfoPanelOpen(false);
-      setAddModalOpen(true);
-      return;
-    }
+  // Opens the inline "Add to List" picker under one ZoomInfo result — real
+  // Lists are fetched fresh each time (same cheap "no need to cache"
+  // reasoning openAddToList above uses), and any stale result text from a
+  // previously-picked result is cleared so it can't read as belonging to
+  // this one.
+  function openZoomInfoAddToList(result) {
+    setZoomInfoAddToListResult(null);
+    setZoomInfoAddToListCampaignId("");
+    setZoomInfoAddToListTarget(result);
+    emailCampaignsApi.list().then(setZoomInfoAddToListCampaigns).catch(() => setZoomInfoAddToListCampaigns([]));
+  }
 
-    const name = [result.firstName, result.lastName].filter(Boolean).join(" ");
-    const company = result.company?.name ?? "";
-    setAddForm({ name, company, email: "", mobile: "", capitalAsk: "", owner: "", territory: "" });
-    setZoomInfoPanelOpen(false);
-    setAddModalOpen(true);
+  async function handleZoomInfoAddToList() {
+    const result = zoomInfoAddToListTarget;
+    if (!result || !zoomInfoAddToListCampaignId) return;
 
-    // The search result only ever indicated hasEmail — this fetches the
-    // real address via a real Enrich lookup, spent only for the specific
-    // contact just picked (not every row in the results list), and only
-    // worth trying if ZoomInfo indicated one exists on file.
-    if (result.hasEmail && result.firstName && result.lastName) {
-      setRevealingContactEmail(true);
-      leadsApi
-        .zoomInfoRevealContact({ firstName: result.firstName, lastName: result.lastName, companyName: company })
-        .then(({ email, mobilePhone }) => {
-          setAddForm((current) => ({
-            ...current,
-            email: email ?? current.email,
-            mobile: mobilePhone ?? current.mobile
-          }));
-        })
-        .catch(() => {
-          // Non-fatal — the form already opened with name/company filled
-          // in; the rep can type the email by hand if this lookup fails.
-        })
-        .finally(() => setRevealingContactEmail(false));
+    setZoomInfoAddToListBusy(true);
+    setZoomInfoAddToListResult(null);
+    try {
+      let name;
+      let company;
+      let email;
+
+      if (zoomInfoMode === "companies") {
+        company = result.name ?? "";
+        const contact = await leadsApi.zoomInfoFindCompanyContact(company);
+        if (!contact.found || !contact.email) {
+          setZoomInfoAddToListResult({ ok: false, text: `No reachable contact found for "${company}" on ZoomInfo — nothing added.` });
+          return;
+        }
+        name = contact.name || "Unknown contact";
+        email = contact.email;
+      } else {
+        name = [result.firstName, result.lastName].filter(Boolean).join(" ") || "Unknown contact";
+        company = result.company?.name ?? "";
+        if (!result.hasEmail) {
+          setZoomInfoAddToListResult({ ok: false, text: `ZoomInfo has no email on file for ${name} — nothing added.` });
+          return;
+        }
+        const revealed = await leadsApi.zoomInfoRevealContact({ firstName: result.firstName, lastName: result.lastName, companyName: company });
+        if (!revealed.email) {
+          setZoomInfoAddToListResult({ ok: false, text: `Could not confirm a real email for ${name} on ZoomInfo — nothing added.` });
+          return;
+        }
+        email = revealed.email;
+      }
+
+      const listName = zoomInfoAddToListCampaigns.find((c) => c.id === zoomInfoAddToListCampaignId)?.name ?? "the list";
+      const bulkResult = await emailLeadsApi.bulkCreate(
+        zoomInfoAddToListCampaignId,
+        [{ name, company, email, owner: "Unassigned" }],
+        { skipCadence: true }
+      );
+
+      if (bulkResult.createdCount > 0) {
+        setZoomInfoAddToListResult({ ok: true, text: `${name} (${email}) added to "${listName}".` });
+      } else if (bulkResult.duplicateCount > 0) {
+        setZoomInfoAddToListResult({ ok: true, text: `${name} (${email}) is already in "${listName}".` });
+      } else {
+        setZoomInfoAddToListResult({ ok: false, text: `Could not add ${name} — ${bulkResult.invalid?.[0]?.reason ?? bulkResult.failed?.[0]?.reason ?? "unknown reason"}.` });
+      }
+    } catch (err) {
+      setZoomInfoAddToListResult({ ok: false, text: err.message });
+    } finally {
+      setZoomInfoAddToListBusy(false);
     }
   }
 
@@ -1069,32 +1089,6 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     }
   };
 
-  const handleBulkEnrich = async () => {
-    setBulkEnrichResult(null);
-    try {
-      const { count } = await leadsApi.enrichCandidatesCount();
-      if (count === 0) {
-        setBulkEnrichResult({ ok: true, text: "Every lead already has industry and territory set — nothing to enrich." });
-        return;
-      }
-      if (!window.confirm(`Enrich ${count} lead(s) missing industry or territory via ZoomInfo? This uses ${count} real API lookup(s).`)) {
-        return;
-      }
-
-      setBulkEnriching(true);
-      const result = await leadsApi.bulkEnrich();
-      setBulkEnrichResult({
-        ok: true,
-        text: `Processed ${result.processed} — ${result.companyMatchedCount} company, ${result.contactMatchedCount} contact, ${result.scoopsMatchedCount} activity matches; ${result.noMatchCount} no match, ${result.failedCount} failed.`
-      });
-      await refreshLeads();
-    } catch (err) {
-      setBulkEnrichResult({ ok: false, text: err.message });
-    } finally {
-      setBulkEnriching(false);
-    }
-  };
-
   function toggleLeadSelection(leadId) {
     setSelectedLeadIds((current) => {
       const next = new Set(current);
@@ -1182,17 +1176,6 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     }
   }
 
-  const unassigned = leads.filter((l) => !l.owner).length;
-  const convertedPct = leads.length ? ((leads.filter((l) => l.status === "CONVERTED").length / leads.length) * 100).toFixed(1) : "0.0";
-  const qualifiedCount = leads.filter((l) => l.qualified).length;
-
-  const stats = [
-    { label: "Total records", value: String(leads.length), note: "Live from Postgres", noteTone: "blue" },
-    { label: "Unassigned", value: String(unassigned), note: "Assignment rules", noteTone: "amber" },
-    { label: "Converted", value: `${convertedPct}%`, note: "Lead → deal", noteTone: "green" },
-    { label: "Qualified", value: String(qualifiedCount), note: "Ready for outreach", noteTone: "cyan" }
-  ];
-
   const overview = selectedLead
     ? [
         ["Lead Owner", selectedLead.owner ?? "Unassigned"],
@@ -1215,24 +1198,29 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     : [];
 
   const visibleLeads = statusFilter === "ALL" ? leads : leads.filter((lead) => lead.status === statusFilter);
+  const dealStageCounts = dealBoard?.map((column) => ({
+    id: column.id,
+    label: column.label,
+    count: column.deals.length
+  })) ?? [];
 
   return (
     <div className="space-y-6">
-      <Header
-        stats={stats}
-        onNewRecord={() => setAddModalOpen(true)}
-        onImport={() => setImportModalOpen(true)}
-        viewsOpen={viewsOpen}
-        setViewsOpen={setViewsOpen}
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
-      />
+      <Header />
 
       {dealBoard ? (
         <Card className="px-5 py-5">
           <SectionTitle icon={RadarIcon} iconClass="text-[#2f96da]">
             Deal pipeline
           </SectionTitle>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+            {dealStageCounts.map((stage) => (
+              <div key={stage.id} className="rounded-[14px] border border-[#e7edf5] bg-[#f8faff] px-4 py-3">
+                <p className="truncate text-[12px] font-semibold text-[#435471]">{stage.label}</p>
+                <p className="mt-2 text-[24px] font-semibold leading-none text-[#102246]">{stage.count}</p>
+              </div>
+            ))}
+          </div>
           <div className="mt-5 overflow-x-auto">
             <div className="flex gap-4" style={{ minWidth: "max-content" }}>
               {dealBoard.map((column) => (
@@ -1302,21 +1290,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                 onClick={openAddToList}
                 disabled={selectedLeadIds.size === 0}
               />
-              {!partnerMode ? (
-                <ActionButton
-                  label={bulkEnriching ? "Enriching…" : "Bulk Enrich"}
-                  icon={GlobeIcon}
-                  small
-                  onClick={handleBulkEnrich}
-                  disabled={bulkEnriching}
-                />
-              ) : null}
             </div>
-            {bulkEnrichResult ? (
-              <p className={`mt-1.5 max-w-[280px] text-[12px] font-medium ${bulkEnrichResult.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>
-                {bulkEnrichResult.text}
-              </p>
-            ) : null}
           </div>
         </div>
 
@@ -1336,9 +1310,17 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
               page={zoomInfoPage}
               hasSearched={zoomInfoHasSearched}
               onSearch={handleZoomInfoSearch}
-              onAddAsLead={handleAddZoomInfoResultAsLead}
               countries={zoomInfoCountries}
               states={zoomInfoStates}
+              addToListTarget={zoomInfoAddToListTarget}
+              addToListCampaigns={zoomInfoAddToListCampaigns}
+              addToListCampaignId={zoomInfoAddToListCampaignId}
+              setAddToListCampaignId={setZoomInfoAddToListCampaignId}
+              addToListBusy={zoomInfoAddToListBusy}
+              addToListResult={zoomInfoAddToListResult}
+              onOpenAddToList={openZoomInfoAddToList}
+              onCloseAddToList={() => setZoomInfoAddToListTarget(null)}
+              onSubmitAddToList={handleZoomInfoAddToList}
             />
           </div>
         ) : null}
@@ -1502,7 +1484,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                 <tr>
                   <td colSpan={6} className="px-5 py-6 text-[14px] text-[#8592ab]">
                     {leads.length === 0
-                      ? "No leads yet — add one with \"New record\", import a CSV, send one in via the webhook (Settings → Integrations & API), or wait for one to arrive from WhatsApp."
+                      ? "No leads yet — send one in via the webhook (Settings → Integrations & API), or wait for one to arrive from WhatsApp."
                       : `No leads with status "${STATUS_LABEL[statusFilter]}".`}
                   </td>
                 </tr>
@@ -1577,48 +1559,19 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
         />
       ) : null}
 
-      {addModalOpen ? (
-        <AddLeadModal
-          form={addForm}
-          setForm={setAddForm}
-          saving={addSaving}
-          error={addError}
-          revealingContactEmail={revealingContactEmail}
-          onClose={() => {
-            setAddModalOpen(false);
-            setAddError(null);
-          }}
-          onSave={handleAddLead}
-        />
-      ) : null}
-
-      {importModalOpen ? (
-        <ImportLeadsModal
-          text={importText}
-          setText={setImportText}
-          busy={importBusy}
-          result={importResult}
-          onClose={() => {
-            setImportModalOpen(false);
-            setImportText("");
-            setImportResult(null);
-          }}
-          onImport={handleImportLeads}
-        />
-      ) : null}
     </div>
   );
 }
 
-// Real ZoomInfo prospecting search — finds NEW companies/people by
-// criteria (unlike the per-lead "Enrich" action, which needs a company/
-// contact name you already know). Browse-only: results never write
-// anything by themselves, "Add as Lead" just hands the chosen result to
-// the existing New Record modal for the rep to review and save.
+// Real ZoomInfo prospecting search — finds new companies/people by criteria.
+// Results can be added to Email Automation lists, but this panel does not
+// create CRM Lead records directly.
 function ZoomInfoSearchPanel({
   mode, setMode, companyFilters, setCompanyFilters, contactFilters, setContactFilters,
-  searching, error, results, totalResults, page, hasSearched, onSearch, onAddAsLead,
-  countries, states
+  searching, error, results, totalResults, page, hasSearched, onSearch,
+  countries, states,
+  addToListTarget, addToListCampaigns, addToListCampaignId, setAddToListCampaignId,
+  addToListBusy, addToListResult, onOpenAddToList, onCloseAddToList, onSubmitAddToList
 }) {
   const hasMore = page * 25 < totalResults;
 
@@ -1648,8 +1601,7 @@ function ZoomInfoSearchPanel({
     <div>
       <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Find Companies (ZoomInfo)</p>
       <p className="mt-1 text-[13px] text-[#6a7790]">
-        Real search against ZoomInfo's database — a genuine API lookup, not a preview. Results are browse-only until
-        you click "Add as Lead" on one.
+        Real search against ZoomInfo's database — a genuine API lookup, not a preview. Results can be added to a list.
       </p>
 
       <div className="mt-4 flex gap-2 rounded-[10px] bg-[#f0f3f9] p-1" style={{ width: "fit-content" }}>
@@ -1728,36 +1680,63 @@ function ZoomInfoSearchPanel({
         <div className="mt-4 space-y-2.5">
           {results.map((result) =>
             mode === "companies" ? (
-              <div key={result.id} className="flex items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[14px] font-semibold text-[#102246]">{result.name}</p>
-                  <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
-                    {[result.city, result.state, result.country].filter(Boolean).join(", ") || "Location unknown"}
-                    {result.employeeCount ? ` · ${result.employeeCount} employees` : ""}
-                    {result.website ? ` · ${result.website}` : ""}
-                  </p>
+              <div key={result.id} className="rounded-[14px] border border-[#e7edf5] px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] font-semibold text-[#102246]">{result.name}</p>
+                    <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
+                      {[result.city, result.state, result.country].filter(Boolean).join(", ") || "Location unknown"}
+                      {result.employeeCount ? ` · ${result.employeeCount} employees` : ""}
+                      {result.website ? ` · ${result.website}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <ActionButton label="Add to List" small onClick={() => onOpenAddToList(result)} />
+                  </div>
                 </div>
-                <ActionButton label="Add as Lead" small onClick={() => onAddAsLead(result)} />
+                {addToListTarget?.id === result.id ? (
+                  <ZoomInfoAddToListInline
+                    campaigns={addToListCampaigns}
+                    campaignId={addToListCampaignId}
+                    setCampaignId={setAddToListCampaignId}
+                    busy={addToListBusy}
+                    result={addToListResult}
+                    onSubmit={onSubmitAddToList}
+                    onClose={onCloseAddToList}
+                  />
+                ) : null}
               </div>
             ) : (
-              <div key={result.id} className="flex items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[14px] font-semibold text-[#102246]">
-                    {[result.firstName, result.lastName].filter(Boolean).join(" ") || "Unnamed contact"}
-                  </p>
-                  <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
-                    {result.jobTitle ? `${result.jobTitle} — ` : ""}
-                    {result.company?.name ?? "Company unknown"}
-                  </p>
-                  <p className="mt-1 text-[11px] text-[#9aa6ba]">
-                    {/* Search never returns the real address/number, only
-                        whether ZoomInfo has one on file — "Add as Lead"
-                        fetches the real email via a separate lookup. */}
-                    {result.hasEmail ? "✉ Email on file" : "No email on file"}
-                    {result.hasDirectPhone || result.hasMobilePhone ? " · ☎ Phone on file" : ""}
-                  </p>
+              <div key={result.id} className="rounded-[14px] border border-[#e7edf5] px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] font-semibold text-[#102246]">
+                      {[result.firstName, result.lastName].filter(Boolean).join(" ") || "Unnamed contact"}
+                    </p>
+                    <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
+                      {result.jobTitle ? `${result.jobTitle} — ` : ""}
+                      {result.company?.name ?? "Company unknown"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[#9aa6ba]">
+                      {result.hasEmail ? "✉ Email on file" : "No email on file"}
+                      {result.hasDirectPhone || result.hasMobilePhone ? " · ☎ Phone on file" : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <ActionButton label="Add to List" small onClick={() => onOpenAddToList(result)} />
+                  </div>
                 </div>
-                <ActionButton label="Add as Lead" small onClick={() => onAddAsLead(result)} />
+                {addToListTarget?.id === result.id ? (
+                  <ZoomInfoAddToListInline
+                    campaigns={addToListCampaigns}
+                    campaignId={addToListCampaignId}
+                    setCampaignId={setAddToListCampaignId}
+                    busy={addToListBusy}
+                    result={addToListResult}
+                    onSubmit={onSubmitAddToList}
+                    onClose={onCloseAddToList}
+                  />
+                ) : null}
               </div>
             )
           )}
@@ -1772,6 +1751,45 @@ function ZoomInfoSearchPanel({
       ) : !searching && !error ? (
         <p className="mt-4 text-[13px] text-[#9aa6ba]">No search run yet — set some filters above and click Search.</p>
       ) : null}
+    </div>
+  );
+}
+
+// One ZoomInfo result's own "Add to List" picker — sends it straight into
+// a real Email Automation List as a real EmailLead, skipping CRM Lead
+// creation entirely. A Companies-mode result has no email of its own, so
+// picking a list here also spends a real ZoomInfo lookup finding a
+// representative contact at that company first (see
+// leadsApi.zoomInfoFindCompanyContact).
+function ZoomInfoAddToListInline({ campaigns, campaignId, setCampaignId, busy, result, onSubmit, onClose }) {
+  return (
+    <div className="mt-3 rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-3">
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Add to List</p>
+      <div className="max-h-[160px] overflow-y-auto rounded-[10px] border border-[#d6deea] bg-white">
+        {campaigns.length ? (
+          campaigns.map((c) => (
+            <label key={c.id} className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0">
+              <input
+                type="radio"
+                name={`zoominfo-add-to-list-${c.id}`}
+                checked={campaignId === c.id}
+                onChange={() => setCampaignId(c.id)}
+                className="h-4 w-4 border-[#b9c4d8]"
+              />
+              <span className="min-w-0 flex-1 truncate">{c.name}</span>
+            </label>
+          ))
+        ) : (
+          <p className="px-3 py-3 text-[12px] text-[#9aa6ba]">No Lists yet — create one from Email Automation → Leads → New List.</p>
+        )}
+      </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-3">
+        <ActionButton label={busy ? "Adding…" : "Add"} primary small onClick={onSubmit} disabled={busy || !campaignId} />
+        <button type="button" onClick={onClose} className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#435471]">
+          Close
+        </button>
+      </div>
+      {result ? <p className={`mt-2 text-[13px] font-medium ${result.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>{result.text}</p> : null}
     </div>
   );
 }
@@ -1816,7 +1834,7 @@ const VIEW_OPTIONS = [
   { value: "LOST", label: "Lost" }
 ];
 
-function Header({ stats, onNewRecord, onImport, viewsOpen, setViewsOpen, statusFilter, setStatusFilter }) {
+function Header() {
   return (
     <section>
       <div className="flex items-start justify-between gap-4">
@@ -1826,51 +1844,12 @@ function Header({ stats, onNewRecord, onImport, viewsOpen, setViewsOpen, statusF
           </span>
           <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">CRM Workspace</h1>
         </div>
-        <div className="relative flex flex-wrap justify-end gap-3 pt-1">
-          <ActionButton label="New record" icon={PlusIcon} primary onClick={onNewRecord} />
-          <ActionButton label="Import" icon={UploadIcon} onClick={onImport} />
-          <ActionButton
-            label="Views"
-            icon={FunnelIcon}
-            active={Boolean(statusFilter && statusFilter !== "ALL")}
-            onClick={() => setViewsOpen?.((open) => !open)}
-          />
-
-          {viewsOpen ? (
-            <div className="absolute right-0 top-[52px] z-20 w-56 rounded-[14px] border border-[#d6deea] bg-white p-2 shadow-[0_12px_32px_rgba(15,31,61,0.14)]">
-              <p className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#8592ab]">Filter by status</p>
-              {VIEW_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    setStatusFilter?.(option.value);
-                    setViewsOpen?.(false);
-                  }}
-                  className={`block w-full rounded-[10px] px-3 py-2 text-left text-[13px] font-medium ${
-                    statusFilter === option.value ? "bg-[#eef2ff] text-[#3046b2]" : "text-[#435471] hover:bg-[#f7f9fc]"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
       </div>
-
-      {stats ? (
-        <div className="mt-7 grid gap-4 xl:grid-cols-4">
-          {stats.map((card) => (
-            <StatCard key={card.label} card={card} />
-          ))}
-        </div>
-      ) : null}
     </section>
   );
 }
 
-function AddLeadModal({ form, setForm, saving, error, revealingContactEmail, onClose, onSave }) {
+function AddLeadModal({ form, setForm, saving, error, onClose, onSave }) {
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === "Escape") onClose();
@@ -1901,11 +1880,8 @@ function AddLeadModal({ form, setForm, saving, error, revealingContactEmail, onC
           <EditField label="Name" value={form.name} onChange={(v) => setForm((c) => ({ ...c, name: v }))} placeholder="Full name" />
           <EditField label="Company" value={form.company} onChange={(v) => setForm((c) => ({ ...c, company: v }))} />
           <EditField label="Email" value={form.email} onChange={(v) => setForm((c) => ({ ...c, email: v }))} placeholder="name@company.com" />
-          {revealingContactEmail ? (
-            <p className="text-[12px] text-[#8592ab]">Fetching this contact's real email from ZoomInfo…</p>
-          ) : null}
           <EditField label="Mobile" value={form.mobile} onChange={(v) => setForm((c) => ({ ...c, mobile: v }))} />
-          <EditField label="Capital Ask" value={form.capitalAsk} onChange={(v) => setForm((c) => ({ ...c, capitalAsk: v }))} placeholder="EUR 3M" />
+          <EditField label="Capital Ask" value={form.capitalAsk} onChange={(v) => setForm((c) => ({ ...c, capitalAsk: v }))} placeholder="$3M" />
           <EditField label="Owner" value={form.owner} onChange={(v) => setForm((c) => ({ ...c, owner: v }))} />
           <EditField label="Territory / Geography" value={form.territory} onChange={(v) => setForm((c) => ({ ...c, territory: v }))} />
           <p className="text-[12px] text-[#8592ab]">At least one of Email or Mobile is required, along with Name.</p>

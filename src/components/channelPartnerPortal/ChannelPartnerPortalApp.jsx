@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context/ChannelPartnerAuthContext";
 import { channelPartnerPortalAuthApi } from "../../lib/channelPartnerPortalAuthApi";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
@@ -6,9 +6,14 @@ import { MarketIntelligenceModule } from "../marketIntelligence/MarketIntelligen
 import { UniversalFiltersModule } from "../universalFilters/UniversalFiltersModule.jsx";
 import { PartnerLeadsView } from "./PartnerLeadsView.jsx";
 import { PartnerDocumentsView } from "./PartnerDocumentsView.jsx";
-import { PartnerDealRecordsView } from "./PartnerDealRecordsView.jsx";
 import { PartnerAgeingReportView } from "./PartnerAgeingReportView.jsx";
 import { PartnerOutreachView } from "./PartnerOutreachView.jsx";
+import { ExecutiveDashboardModule } from "../executive/ExecutiveDashboardModule.jsx";
+import { NdaModule } from "../relationships/NdaModule.jsx";
+import { MeetingsModule } from "../meetings/MeetingsModule.jsx";
+import { IoiModule } from "../relationships/IoiModule.jsx";
+import { VisitPlanningModule } from "../relationships/VisitPlanningModule.jsx";
+import { DealStageModule } from "../dealStages/DealStageModule.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
 import logoUrl from "../../assets/global-capital-logo.png";
 import {
@@ -39,10 +44,10 @@ const primaryButtonClass =
 
 const partnerIconMap = {
   dashboard: GridIcon,
+  "command-center": GridIcon,
   "crm-workspace": UsersIcon,
   email: MailIcon,
   "cold-bulk-mailing": MailIcon,
-  "deal-records": FolderIcon,
   nda: ShieldIcon,
   meetings: PhoneIcon,
   "data-room": FolderIcon,
@@ -253,25 +258,21 @@ function PartnerResetPasswordView({ token, onDone }) {
   );
 }
 
-// Extra top-level sections beyond Email Automation (always shown) — each
-// is a separate top-level module in the staff app (App.jsx), not a tab
-// inside EmailOutreachModule like Segments/Templates/AI Agent are, so they
-// need their own nav entries here rather than more visibleTabs ids.
-// matchIds (instead of a single id) is for Deal Records, which folds NDA/
-// IOI/Visit Planning into one section with internal tabs rather than three
-// separate nav entries -- shown if ANY of the three is granted, and the
-// component itself (via the permissions prop below) only renders tabs for
-// the ones actually granted.
+// Extra top-level sections beyond Email Automation (always shown). These
+// mirror the staff sidebar's module split so a partner sees the same shape:
+// Intelligence, CRM & Outreach, then each relationship stage as its own
+// entry. Relationship entries now reuse the same staff modules where the
+// backend can scope writes to the partner's own referred leads.
 const EXTRA_SECTIONS = [
+  { id: "command-center", label: "Executive Dashboard", group: "Intelligence", Component: ExecutiveDashboardModule },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach", Component: PartnerLeadsView },
-  {
-    id: "deal-records",
-    label: "Deal Records",
-    group: "Relationships",
-    matchIds: ["nda", "ioi", "visit-planning", "meetings", "field-visit", "term-sheet"],
-    Component: PartnerDealRecordsView
-  },
+  { id: "nda", label: "NDA", group: "Relationships", Component: NdaModule },
+  { id: "meetings", label: "Zoom Call", group: "Relationships", Component: MeetingsModule },
   { id: "data-room", label: "Data Room", group: "Relationships", Component: PartnerDocumentsView },
+  { id: "ioi", label: "IOI", group: "Relationships", Component: IoiModule },
+  { id: "visit-planning", label: "Visit Planning", group: "Relationships", Component: VisitPlanningModule },
+  { id: "field-visit", label: "Field Visit", group: "Relationships", Component: DealStageModule, stage: "FIELD_VISIT" },
+  { id: "term-sheet", label: "Term Sheet", group: "Relationships", Component: DealStageModule, stage: "TERM_SHEET" },
   { id: "ageing-report", label: "Ageing Report", group: "Relationships", Component: PartnerAgeingReportView },
   { id: "leads", label: "Outreach / DOE", group: "Intelligence", Component: PartnerOutreachView },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence", Component: MarketIntelligenceModule },
@@ -389,16 +390,26 @@ function PartnerTopBar({ partnerUser, onLogout }) {
 
 function PartnerShell() {
   const { partnerUser, logout } = useChannelPartnerAuth();
-  const [section, setSection] = useState("email");
   const permissions = partnerUser.permissions ?? [];
-  const grantedExtraSections = EXTRA_SECTIONS.filter((s) => (s.matchIds ?? [s.id]).some((id) => permissions.includes(id)));
+  const grantedExtraSections = useMemo(
+    () => EXTRA_SECTIONS.filter((s) => permissions.includes(s.id)),
+    [permissions]
+  );
+  const [section, setSection] = useState(() =>
+    grantedExtraSections.some((s) => s.id === "command-center") ? "command-center" : "email"
+  );
   const activeSection = grantedExtraSections.find((s) => s.id === section);
   const ActiveExtraSection = activeSection?.Component ?? null;
   const navSections = [
-    { title: "CRM & Outreach", items: [{ id: "email", label: "Email Automation" }, ...grantedExtraSections.filter((s) => s.group === "CRM & Outreach")] },
     { title: "Intelligence", items: grantedExtraSections.filter((s) => s.group === "Intelligence") },
+    { title: "CRM & Outreach", items: [{ id: "email", label: "Email Automation" }, ...grantedExtraSections.filter((s) => s.group === "CRM & Outreach")] },
     { title: "Relationships", items: grantedExtraSections.filter((s) => s.group === "Relationships") }
   ].filter((navSection) => navSection.items.length);
+
+  useEffect(() => {
+    if (section === "email" || grantedExtraSections.some((s) => s.id === section)) return;
+    setSection(grantedExtraSections.some((s) => s.id === "command-center") ? "command-center" : "email");
+  }, [grantedExtraSections, section]);
 
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-[#12213a]">
@@ -410,12 +421,12 @@ function PartnerShell() {
 
           <div className="space-y-6 p-6">
             {ActiveExtraSection ? (
-              <ActiveExtraSection permissions={permissions} />
+              <ActiveExtraSection stage={activeSection.stage} section={section} permissions={permissions} />
             ) : (
               <EmailOutreachModule
                 initialTab="dashboard"
                 demoData={false}
-                visibleTabs={["dashboard", "campaigns", "leads", ...(permissions.includes("cold-bulk-mailing") ? ["templates"] : []), "mailbox", "settings"]}
+                visibleTabs={["dashboard", "campaigns", "leads", "templates", "mailbox", "settings"]}
               />
             )}
           </div>

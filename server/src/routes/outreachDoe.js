@@ -9,19 +9,6 @@ const TEMPERATURES = ["HOT", "WARM", "COLD"];
 
 export const outreachDoeRouter = Router();
 
-// A Channel Partner's Outreach/DOE access is read-only, scoped to their own
-// referred cold-outreach leads (via EmailCampaign.ownerChannelPartnerId,
-// same mechanism Email Automation itself already uses -- see
-// lib/channelPartnerScope.js). /facets lists every DOE's name/geography
-// company-wide with no scoping mechanism of its own, so it's refused
-// outright for this tier rather than leaking other DOEs' names.
-function blockChannelPartner(req, res, next) {
-  if (req.channelPartner) {
-    return res.status(403).json({ error: "Your account has read-only access to your own referred leads' outreach." });
-  }
-  next();
-}
-
 // Targets from the spec — not stored anywhere, just the fixed goals the
 // scorecard is measured against.
 const TARGETS = {
@@ -33,20 +20,20 @@ const TARGETS = {
   zoomCallsPerDay: 2
 };
 
-outreachDoeRouter.get("/facets", blockChannelPartner, asyncHandler(async (_req, res) => {
-  const leads = await prisma.emailLead.findMany({ select: { owner: true, country: true } });
+outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
+  const emailLeadWhere = req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {};
+  const crmLeadWhere = req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {};
+  const leads = await prisma.emailLead.findMany({ where: emailLeadWhere, select: { owner: true, country: true } });
 
-  // Real employees only (Admin Panel -> Employees) -- EmailLead.owner is
-  // free text (CSV imports, "Add to List", the inbound webhook can all set
-  // it to anything, including leftover demo/seed values), so unioning it in
-  // here used to let the dropdown fill up with names that were never a real
-  // person on this team at all, several times longer than the actual
-  // employee roster. blockChannelPartner above already refuses this whole
-  // route for a Channel Partner, so no extra guard is needed here.
-  // EMPLOYEE only -- an ADMIN account is a login role, not a deal
-  // originator, and shouldn't be pickable as a DOE.
-  const employees = await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } });
-  const does = [...new Set(employees.map((e) => e.name))].sort();
+  // A Channel Partner's own DOE list is just the real owners already on
+  // their own referred EmailLeads. Staff sees real employees only (Admin
+  // Panel -> Employees) -- EmailLead.owner is free text (CSV imports, "Add
+  // to List", the inbound webhook can all set it to anything, including
+  // leftover demo/seed values) and an ADMIN account is a login role, not a
+  // deal originator, so neither belongs in this dropdown.
+  const does = req.channelPartner
+    ? [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort()
+    : [...new Set((await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } })).map((e) => e.name))].sort();
 
   res.json({
     does,
@@ -54,7 +41,7 @@ outreachDoeRouter.get("/facets", blockChannelPartner, asyncHandler(async (_req, 
     // Real CRM Lead attributes (see the "/" handler's convertedLeadById
     // note), same fixed option lists Universal Filters already uses —
     // one source of truth for what "Industry" etc. even mean.
-    industries: [...new Set((await prisma.lead.findMany({ select: { industry: true } })).map((l) => l.industry).filter(Boolean))].sort(),
+    industries: [...new Set((await prisma.lead.findMany({ where: crmLeadWhere, select: { industry: true } })).map((l) => l.industry).filter(Boolean))].sort(),
     ticketSizeBands: TICKET_SIZE_BANDS.map((b) => ({ key: b.key, label: b.label })),
     temperatures: TEMPERATURES
   });
@@ -70,7 +57,10 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
     }),
     prisma.emailActivityLog.findMany({ select: { leadId: true, kind: true, createdAt: true } }),
     prisma.agent.findMany({ select: { assignedCount: true, resolvedCount: true } }),
-    prisma.meeting.findMany({ select: { createdAt: true } })
+    prisma.meeting.findMany({
+      where: req.channelPartner ? { lead: { channelPartner: req.channelPartner.businessName } } : {},
+      select: { createdAt: true }
+    })
   ]);
 
   // Industry/Ticket Size/Hot-Warm-Cold live on the CRM Lead this
@@ -118,26 +108,16 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   const overall = doeOverallMetrics(leads, activity);
   const callsBooked = leads.filter((l) => l.callBookedAt).length;
 
-  // WhatsApp and Zoom are reported company-wide, unfiltered by the leads
-  // query above — neither can be attributed to a DOE or a cold-outreach
-  // date range with the data this app links today (see doeScorecard.js).
-  // That's exactly why this section is nulled out for a Channel Partner:
-  // there's no scoping mechanism for it at all, unlike everything else in
-  // this response.
-  const companyWide = req.channelPartner
-    ? { linkedinAcceptanceRate: null, whatsappReplyRate: null, zoomCallsPerDay: null }
-    : {
-        linkedinAcceptanceRate: null, // no LinkedIn integration exists in this app
-        whatsappReplyRate: whatsappReplyRateMetrics(agents).replyRate,
-        zoomCallsPerDay: zoomBookingMetrics(allMeetings).perDay
-      };
+  // WhatsApp remains staff-only because Agent rows are not linked to a
+  // channel partner. Zoom can be scoped for partners through Meeting.lead,
+  // so their portal gets its own booked-call rate rather than nothing.
+  const companyWide = {
+    linkedinAcceptanceRate: null, // no LinkedIn integration exists in this app
+    whatsappReplyRate: req.channelPartner ? null : whatsappReplyRateMetrics(agents).replyRate,
+    zoomCallsPerDay: zoomBookingMetrics(allMeetings).perDay
+  };
 
-  // Same reasoning as companyWide above -- these are Executive Dashboard's
-  // own funnel-stage conversion rates (lib/executiveKpis.js), computed over
-  // every CRM lead company-wide with no per-DOE or per-Channel-Partner
-  // scoping mechanism, so a Channel Partner gets them nulled out rather
-  // than a number that isn't really theirs.
-  const pipelineKpis = req.channelPartner ? null : (await computeExecutiveKpis()).kpis;
+  const pipelineKpis = (await computeExecutiveKpis({ channelPartner: req.channelPartner })).kpis;
 
   res.json({
     targets: TARGETS,

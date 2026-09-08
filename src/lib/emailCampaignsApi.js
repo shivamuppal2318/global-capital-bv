@@ -41,6 +41,7 @@ export const emailCampaignsApi = {
   // matches the campaigns list's own "Emails Sent" count. Backs the list
   // view's per-campaign sent-leads popup.
   sentActivity: (id) => request(`/${id}/sent-activity`),
+  activityDetail: (id) => request(`/${id}/activity-detail`),
   // Which leads make up the Dashboard's Opened/Clicked/Unsubscribed stat
   // cards. kind: "opened" | "clicked" | "unsubscribed".
   engagementDetail: (kind) => request(`/engagement-detail/${kind}`),

@@ -208,6 +208,7 @@ export function DealStageModule({ stage }) {
 
   const stageSummary = summary?.byStage?.[stage];
   const uses = (f) => config.fields.includes(f);
+  const isTermSheet = stage === "TERM_SHEET";
 
   return (
     <div className="space-y-5">
@@ -245,7 +246,7 @@ export function DealStageModule({ stage }) {
           action={
             <div className="flex flex-wrap items-center justify-end gap-2">
               <ActionButton label={searchOpen ? "Close Search" : `Search ${config.label}`} icon={searchOpen ? XIcon : SearchIcon} small onClick={openSearch} />
-              <ActionButton label={editing ? "Cancel" : `Add ${config.label}`} icon={editing ? XIcon : PlusIcon} small onClick={() => (editing ? setEditing(null) : startNew())} />
+              <ActionButton label={editing ? "Cancel" : isTermSheet ? "Add the Term Sheet" : `Add ${config.label}`} icon={editing ? XIcon : PlusIcon} small onClick={() => (editing ? setEditing(null) : startNew())} />
             </div>
           }
         >
@@ -386,14 +387,16 @@ export function DealStageModule({ stage }) {
 
               {uses("document") ? (
                 <div className="md:col-span-2">
-                  <label className={labelClass}>Attach a document (optional)</label>
-                  <select className={inputClass} value={editing.documentId} onChange={(e) => setEditing({ ...editing, documentId: e.target.value })}>
-                    <option value="">None</option>
-                    {documents.map((d) => (
-                      <option key={d.id} value={d.id}>{d.originalName}</option>
-                    ))}
-                  </select>
-                  <div className="mt-2 flex items-center gap-2">
+                  <label className={labelClass}>{isTermSheet ? "Attach the Term Sheet" : "Attach a document (optional)"}</label>
+                  {!isTermSheet ? (
+                    <select className={inputClass} value={editing.documentId} onChange={(e) => setEditing({ ...editing, documentId: e.target.value })}>
+                      <option value="">None</option>
+                      {documents.map((d) => (
+                        <option key={d.id} value={d.id}>{d.originalName}</option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <div className={`${isTermSheet ? "" : "mt-2"} flex items-center gap-2`}>
                     <input
                       type="file"
                       accept=".pdf,.doc,.docx,.xls,.xlsx"
@@ -408,7 +411,9 @@ export function DealStageModule({ stage }) {
                     {documentUploading ? <span className="text-[12px] text-[#8592ab]">Uploading…</span> : null}
                   </div>
                   {documentUploadError ? <p className="mt-1 text-[12px] font-medium text-[#e0483f]">{documentUploadError}</p> : null}
-                  <p className="mt-1 text-[12px] text-[#8592ab]">Upload a new file here, or pick one already in the Data Room above.</p>
+                  <p className="mt-1 text-[12px] text-[#8592ab]">
+                    {isTermSheet ? "Upload the term sheet file here." : "Upload a new file here, or pick one already in the Data Room above."}
+                  </p>
                 </div>
               ) : null}
 

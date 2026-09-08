@@ -106,8 +106,8 @@ export const FIELD_LABEL = {
 };
 
 export const FIELD_PLACEHOLDER = {
-  amount: "EUR 2–4M",
-  valuation: "EUR 18M pre-money",
+  amount: "$2-4M",
+  valuation: "$18M pre-money",
   location: "Rotterdam site",
   attendees: "Rahul R, Meera S",
   counterparty: "Name of who signed / negotiated",

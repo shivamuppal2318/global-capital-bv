@@ -49,10 +49,9 @@ const tabContent = {
 // campaign/lead is selected.
 // visibleTabs optionally restricts which of the tabs above are shown/reachable
 // — omitted (the staff usage in App.jsx) shows all of them, unchanged. The
-// Channel Partner Portal (ChannelPartnerPortalApp.jsx) passes a short list
-// (dashboard/campaigns/leads, +templates if granted "cold-bulk-mailing")
-// since Mailbox/Settings talk to staff-only endpoints a partner's token
-// can't reach — hiding those tabs instead of leaving them clickable-but-broken.
+// Channel Partner Portal (ChannelPartnerPortalApp.jsx) passes the same email
+// tabs staff see; Settings hides only the staff-only lead ingestion API
+// when `visibleTabs` is present.
 export function EmailOutreachModule({ initialTab = "dashboard", visibleTabs, demoData = true }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const mailing = useEmailOutreachState({ demoData });

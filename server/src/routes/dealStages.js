@@ -9,17 +9,19 @@ import { generateStageReport, dealStageReportFacts, DEAL_STAGE_REPORT_LABEL } fr
 
 export const dealStagesRouter = Router();
 
-// A Channel Partner's Deal Stages access is read-only, scoped to their own
-// referred leads, and limited to the two stages that don't already have a
-// dedicated, separately-scoped router (NDA/IOI/Visit Planning outgrew this
-// shared table already -- see routes/ndaRecords.js etc.). This one route
-// serves all seven stages by query param, so without this check a partner
-// granted only "field-visit" could pull ?stage=NDA rows too.
+// A Channel Partner's Deal Stages access is scoped to their own referred
+// leads, and limited to the two stages that don't already have a dedicated,
+// separately-scoped router. This one route serves all seven stages by query
+// param, so without this check a partner granted only "field-visit" could
+// pull ?stage=NDA rows too.
 const CHANNEL_PARTNER_DEAL_STAGES = { FIELD_VISIT: "field-visit", TERM_SHEET: "term-sheet" };
 
-function blockChannelPartner(req, res, next) {
-  if (req.channelPartner) {
-    return res.status(403).json({ error: "Your account has read-only access to deal stages on your own referred leads." });
+function ensureChannelPartnerStage(req, res, next) {
+  if (!req.channelPartner) return next();
+  const stage = String(req.query.stage ?? req.body.stage ?? "");
+  const requiredModule = CHANNEL_PARTNER_DEAL_STAGES[stage];
+  if (!requiredModule || !hasChannelPartnerModule(req.channelPartner, requiredModule)) {
+    return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
   }
   next();
 }
@@ -79,18 +81,18 @@ dealStagesRouter.get("/catalogue", (_req, res) => res.json({ stages: DEAL_STAGES
 
 // Progress across every stage for every lead — powers the summary strip at
 // the top of each stage screen.
-dealStagesRouter.get("/summary", blockChannelPartner, asyncHandler(async (_req, res) => {
+dealStagesRouter.get("/summary", asyncHandler(async (req, res) => {
   const [grouped, leadCount] = await Promise.all([
-    prisma.dealStageRecord.groupBy({ by: ["stage", "status"], _count: { _all: true } }),
-    prisma.lead.count()
+    prisma.dealStageRecord.findMany({ where: relatedLeadOwnerWhereClause(req), select: { stage: true, status: true } }),
+    prisma.lead.count({ where: req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {} })
   ]);
 
   const byStage = Object.fromEntries(
     DEAL_STAGE_IDS.map((id) => [id, { total: 0, NOT_STARTED: 0, IN_PROGRESS: 0, COMPLETED: 0, DECLINED: 0, ON_HOLD: 0 }])
   );
   for (const row of grouped) {
-    byStage[row.stage].total += row._count._all;
-    byStage[row.stage][row.status] += row._count._all;
+    byStage[row.stage].total += 1;
+    byStage[row.stage][row.status] += 1;
   }
 
   res.json({ leadCount, byStage });
@@ -163,14 +165,14 @@ const toText = (v) => (v === undefined ? undefined : v && String(v).trim() ? Str
 // Upsert rather than create: a stage is a property of a lead, and the
 // unique [leadId, stage] constraint means "record the NDA for this lead"
 // should update the existing row rather than fail on a second attempt.
-dealStagesRouter.post("/", blockChannelPartner, asyncHandler(async (req, res) => {
+dealStagesRouter.post("/", ensureChannelPartnerStage, asyncHandler(async (req, res) => {
   const parsed = upsertSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const { leadId, stage, ...rest } = parsed.data;
 
-  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, ...(req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {}) } });
   if (!lead) return res.status(404).json({ error: "Lead not found" });
 
   const data = {
@@ -208,7 +210,7 @@ dealStagesRouter.post("/", blockChannelPartner, asyncHandler(async (req, res) =>
   res.status(201).json(publicRecord(record));
 }));
 
-dealStagesRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
+dealStagesRouter.patch("/:id", asyncHandler(async (req, res) => {
   const parsed = upsertSchema.partial({ leadId: true, stage: true }).safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -228,16 +230,37 @@ dealStagesRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res
   if (data.reportSubmitted === true) data.reportAt = new Date();
   if (data.reportSubmitted === false) data.reportAt = null;
 
-  const before = await prisma.dealStageRecord.findUnique({ where: { id: req.params.id }, select: { status: true } });
+  const existing = await prisma.dealStageRecord.findFirst({
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) },
+    select: { status: true, stage: true }
+  });
+  if (!existing) return res.status(404).json({ error: "Stage record not found" });
+  if (req.channelPartner) {
+    const requiredModule = CHANNEL_PARTNER_DEAL_STAGES[existing.stage];
+    if (!requiredModule || !hasChannelPartnerModule(req.channelPartner, requiredModule)) {
+      return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+    }
+  }
 
   const record = await prisma.dealStageRecord.update({ where: { id: req.params.id }, data, include }).catch(() => null);
   if (!record) return res.status(404).json({ error: "Stage record not found" });
-  maybeGenerateStageReport(record, before?.status === "COMPLETED");
+  maybeGenerateStageReport(record, existing.status === "COMPLETED");
 
   res.json(publicRecord(record));
 }));
 
-dealStagesRouter.delete("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
+dealStagesRouter.delete("/:id", asyncHandler(async (req, res) => {
+  const existing = await prisma.dealStageRecord.findFirst({
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) },
+    select: { id: true, stage: true }
+  });
+  if (!existing) return res.status(404).json({ error: "Stage record not found" });
+  if (req.channelPartner) {
+    const requiredModule = CHANNEL_PARTNER_DEAL_STAGES[existing.stage];
+    if (!requiredModule || !hasChannelPartnerModule(req.channelPartner, requiredModule)) {
+      return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+    }
+  }
   const deleted = await prisma.dealStageRecord.delete({ where: { id: req.params.id } }).catch(() => null);
   if (!deleted) return res.status(404).json({ error: "Stage record not found" });
   res.status(204).end();

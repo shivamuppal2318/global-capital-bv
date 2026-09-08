@@ -4,18 +4,11 @@ import { Badge, Card, SectionTitle } from "../ui";
 import { ndaApi, ioiApi, visitPlansApi, callsApi } from "../../lib/relationshipsApi";
 import { dealStagesApi } from "../../lib/dealStagesApi";
 
-// A Channel Partner's read-only view of NDA / IOI / Visit Planning / Zoom
-// Call / Field Visit / Term Sheet for their own referred leads -- one
-// component with simple tabs rather than six separate screens, since all
-// six are structurally the same ("dated records against my leads") and
-// none need any edit affordance (see the matching blockChannelPartner
-// guards in ndaRecords.js/ioiRecords.js/visitPlans.js/meetings.js/
-// dealStages.js -- this tier is read-only by design). The backend already
-// scopes every list call to this partner's own referred leads
-// (relatedLeadOwnerWhereClause) -- no client-side filtering here. Field
-// Visit and Term Sheet share DealStageRecord (they haven't outgrown that
-// shared table the way NDA/IOI/Visit Planning did), fetched via
-// dealStagesApi with a stage filter rather than a dedicated API module.
+// A Channel Partner's read-only view of one deal-stage module for their
+// own referred leads. The staff app shows these as separate sidebar
+// modules, so the partner shell does too; this shared renderer keeps the
+// partner-safe, scoped list behavior identical across NDA, Zoom Call, IOI,
+// Visit Planning, Field Visit and Term Sheet.
 const TABS = [
   { id: "nda", label: "NDA" },
   { id: "meetings", label: "Zoom Call" },
@@ -38,9 +31,9 @@ function formatDate(d) {
   return d ? new Date(d).toLocaleDateString() : "—";
 }
 
-export function PartnerDealRecordsView({ permissions = [] }) {
-  const visibleTabs = TABS.filter((t) => permissions.includes(t.id));
-  const [tab, setTab] = useState(visibleTabs[0]?.id ?? "nda");
+export function PartnerDealRecordsView({ section = "nda" }) {
+  const tab = section;
+  const current = TABS.find((t) => t.id === tab) ?? TABS[0];
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -57,23 +50,8 @@ export function PartnerDealRecordsView({ permissions = [] }) {
   return (
     <Card className="px-5 py-5">
       <SectionTitle icon={ShieldIcon} iconClass="text-[#3046b2]" subtitle="Progress on your own referred leads -- read-only.">
-        Deal Records
+        {current.label}
       </SectionTitle>
-
-      <div className="mt-4 flex gap-1.5 border-b border-[#e7edf5]">
-        {visibleTabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={`border-b-2 px-3 py-2 text-[13px] font-medium ${
-              tab === t.id ? "border-[#3046b2] text-[#3046b2]" : "border-transparent text-[#5f6f89] hover:text-[#334463]"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
 
       <div className="mt-4 space-y-2">
         {loading ? (
@@ -81,7 +59,7 @@ export function PartnerDealRecordsView({ permissions = [] }) {
         ) : error ? (
           <p className="text-[14px] text-[#e0483f]">{error}</p>
         ) : records.length === 0 ? (
-          <p className="text-[14px] text-[#8592ab]">No {TABS.find((t) => t.id === tab).label} records yet for your referred leads.</p>
+          <p className="text-[14px] text-[#8592ab]">No {current.label} records yet for your referred leads.</p>
         ) : (
           records.map((r) => (
             <div key={r.id} className="rounded-[14px] border border-[#e7edf5] px-4 py-3">

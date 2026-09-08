@@ -12,15 +12,15 @@
 // Lead.channelPartner field, same convention channelPartners.js's
 // withReferredLeads already uses for commission calc — Data Room also
 // correctly excludes the general company-wide library, since a document
-// with no leadId can't match a nested relation filter). Everything else
-// stays out: Executive Dashboard, WhatsApp Business and the Channel
+// with no leadId can't match a nested relation filter). Executive Dashboard
+// is included because its KPI engine has a real channel-partner-scoped
+// branch. Everything else stays out: WhatsApp Business and the Channel
 // Partner screen itself — not just unfinished, each has a real structural
-// reason it doesn't fit this recipe (see the plan doc): Executive
-// Dashboard is a pure company-wide aggregate with no coherent "my slice"
-// view; WhatsApp's Contact model has zero relation to Lead or
-// ChannelPartner to filter by; the Channel Partner screen is a staff tool
-// for administering every partner, not something a partner should see
-// about themselves. Universal Filters/Zoom Call/Field Visit/Term Sheet now
+// reason it doesn't fit this recipe (see the plan doc): WhatsApp's Contact
+// model has zero relation to Lead or ChannelPartner to filter by; the
+// Channel Partner screen is a staff tool for administering every partner,
+// not something a partner should see about themselves. Universal
+// Filters/Zoom Call/Field Visit/Term Sheet now
 // have real scoping (same Lead.channelPartner match as everything else
 // here) alongside NDA/IOI/Visit Planning/Ageing Report/Outreach-DOE.
 // Same items, same groups, same order as lib/permissions.js's employee
@@ -34,6 +34,7 @@
 // Employees' single checkbox — merged into one to match exactly; see
 // app.js's three /api/email/* mounts, all now gated on this one id).
 export const CHANNEL_PARTNER_OPTIONAL_MODULES = [
+  { id: "command-center", label: "Executive Dashboard", group: "Intelligence" },
   { id: "universal-filters", label: "Universal Filters", group: "Intelligence" },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence" },
   { id: "leads", label: "Outreach / DOE", group: "Intelligence" },

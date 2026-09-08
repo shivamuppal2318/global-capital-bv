@@ -698,6 +698,138 @@ emailCampaignsRouter.get("/:id/recent-sends", asyncHandler(async (req, res) => {
   );
 }));
 
+emailCampaignsRouter.get("/:id/activity-detail", asyncHandler(async (req, res) => {
+  const campaign = await loadOwnedCampaignOr404(req, res, req.params.id);
+  if (!campaign) return;
+
+  const [leads, activityRows] = await Promise.all([
+    prisma.emailLead.findMany({
+      where: { campaignId: campaign.id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        company: true,
+        email: true,
+        replyType: true,
+        stage: true,
+        unsubscribed: true,
+        bounced: true,
+        bounceKind: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    }),
+    prisma.emailActivityLog.findMany({
+      where: { lead: { campaignId: campaign.id } },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+      include: { lead: { select: { id: true, name: true, email: true, company: true } } }
+    })
+  ]);
+
+  const perLead = new Map(
+    leads.map((lead) => [
+      lead.id,
+      {
+        id: lead.id,
+        leadName: lead.name,
+        leadEmail: lead.email,
+        company: lead.company,
+        replyType: lead.replyType,
+        stage: lead.stage,
+        unsubscribed: lead.unsubscribed,
+        bounced: lead.bounced,
+        bounceKind: lead.bounceKind,
+        addedAt: lead.createdAt,
+        updatedAt: lead.updatedAt,
+        sentCount: 0,
+        openCount: 0,
+        clickCount: 0,
+        replyCount: 0,
+        bounceCount: 0,
+        lastSentAt: null,
+        lastOpenedAt: null,
+        lastClickedAt: null,
+        lastReplyAt: null,
+        lastActivityAt: null,
+        lastDetail: null
+      }
+    ])
+  );
+
+  const events = activityRows.map((row) => {
+    const lead = perLead.get(row.leadId);
+    if (lead) {
+      lead.lastActivityAt ??= row.createdAt;
+      lead.lastDetail ??= row.detail;
+      if (SEND_KINDS.includes(row.kind)) {
+        lead.sentCount += 1;
+        lead.lastSentAt ??= row.createdAt;
+      }
+      if (OPEN_PROOF_KINDS.includes(row.kind)) {
+        lead.openCount += 1;
+        lead.lastOpenedAt ??= row.createdAt;
+      }
+      if (row.kind === "LINK_CLICKED") {
+        lead.clickCount += 1;
+        lead.lastClickedAt ??= row.createdAt;
+      }
+      if (row.kind === "REPLY_RECEIVED") {
+        lead.replyCount += 1;
+        lead.lastReplyAt ??= row.createdAt;
+      }
+      if (row.kind === "BOUNCED") {
+        lead.bounceCount += 1;
+      }
+    }
+
+    return {
+      id: row.id,
+      leadId: row.leadId,
+      leadName: row.lead.name,
+      leadEmail: row.lead.email,
+      company: row.lead.company,
+      kind: row.kind,
+      title: row.title,
+      detail: row.detail,
+      createdAt: row.createdAt
+    };
+  });
+
+  const recipients = Array.from(perLead.values()).sort((a, b) => new Date(b.lastActivityAt ?? b.updatedAt) - new Date(a.lastActivityAt ?? a.updatedAt));
+  const sent = activityRows.filter((row) => SEND_KINDS.includes(row.kind)).length;
+  const opened = recipients.filter((lead) => lead.openCount > 0).length;
+  const clicked = recipients.filter((lead) => lead.clickCount > 0).length;
+  const replied = recipients.filter((lead) => lead.replyCount > 0 || lead.replyType !== "NO_REPLY").length;
+  const bounced = recipients.filter((lead) => lead.bounced || lead.bounceCount > 0).length;
+  const unsubscribed = recipients.filter((lead) => lead.unsubscribed).length;
+
+  res.json({
+    campaign: {
+      id: campaign.id,
+      name: campaign.name,
+      status: campaign.status,
+      subject: campaign.subject,
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt
+    },
+    stats: {
+      recipients: leads.length,
+      sent,
+      opened,
+      clicked,
+      replied,
+      bounced,
+      unsubscribed,
+      openRate: sent > 0 ? Math.round((opened / sent) * 100) : null,
+      clickRate: sent > 0 ? Math.round((clicked / sent) * 100) : null
+    },
+    recipients,
+    events
+  });
+}));
+
 // Every real send this campaign has ever made -- unlike /recent-sends above
 // (deliberately scoped to just the composer's own "last Send Now" blasts),
 // this is every SEND_KINDS row (bulk CSV imports and cadence follow-ups

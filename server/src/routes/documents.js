@@ -14,10 +14,8 @@ import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const documentsRouter = Router();
 
-// A Channel Partner's Data Room access is read-only, scoped to documents on
-// their own referred leads only -- the general company-wide library
-// (leadId: null) and every write/admin-checklist feature (categories,
-// kpis, gap-check, upload, verify, edit, delete) stays refused outright.
+// Some Data Room admin operations stay staff-only, but partner-safe reads
+// and uploads are scoped to documents on the partner's own referred leads.
 function blockChannelPartner(req, res, next) {
   if (req.channelPartner) {
     return res.status(403).json({ error: "Your account has read-only access to documents on your own referred leads." });
@@ -81,11 +79,11 @@ documentsRouter.get("/", asyncHandler(async (req, res) => {
   res.json(docs.map(publicDocument));
 }));
 
-documentsRouter.get("/categories", blockChannelPartner, asyncHandler(async (req, res) => {
+documentsRouter.get("/categories", asyncHandler(async (req, res) => {
   const { leadId } = req.query;
   const grouped = await prisma.document.groupBy({
     by: ["category"],
-    where: leadId ? { leadId: String(leadId) } : {},
+    where: { ...relatedLeadOwnerWhereClause(req), ...(leadId ? { leadId: String(leadId) } : {}) },
     _count: { category: true }
   });
   res.json(grouped.map((g) => ({ category: g.category, count: g._count.category })).sort((a, b) => a.category.localeCompare(b.category)));
@@ -100,10 +98,10 @@ documentsRouter.get("/required-documents", (_req, res) => res.json(REQUIRED_DOCU
 // reviewed) — both are surfaced since the framework's own status flow
 // (Requested → Received → Verified) treats them as genuinely different
 // milestones, not just two names for the same thing.
-documentsRouter.get("/kpis", blockChannelPartner, asyncHandler(async (req, res) => {
+documentsRouter.get("/kpis", asyncHandler(async (req, res) => {
   const { leadId } = req.query;
   const docs = await prisma.document.findMany({
-    where: { category: { in: REQUIRED_DOCUMENT_LABELS }, ...(leadId ? { leadId: String(leadId) } : {}) },
+    where: { ...relatedLeadOwnerWhereClause(req), category: { in: REQUIRED_DOCUMENT_LABELS }, ...(leadId ? { leadId: String(leadId) } : {}) },
     select: { category: true, verified: true }
   });
 
@@ -128,7 +126,7 @@ documentsRouter.get("/kpis", blockChannelPartner, asyncHandler(async (req, res) 
   });
 }));
 
-documentsRouter.post("/", blockChannelPartner, uploadDataRoomDocument.single("file"), asyncHandler(async (req, res) => {
+documentsRouter.post("/", uploadDataRoomDocument.single("file"), asyncHandler(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file was uploaded." });
   }
@@ -149,9 +147,12 @@ documentsRouter.post("/", blockChannelPartner, uploadDataRoomDocument.single("fi
       : requestedCategory;
 
   const leadId = req.body?.leadId ? String(req.body.leadId).trim() : null;
+  if (req.channelPartner && !leadId) {
+    return res.status(400).json({ error: "Pick one of your referred leads before uploading a document." });
+  }
   let lead = null;
   if (leadId) {
-    lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { id: true, owner: true } });
+    lead = await prisma.lead.findFirst({ where: { id: leadId, ...(req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {}) }, select: { id: true, owner: true } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
   }
 

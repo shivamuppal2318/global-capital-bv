@@ -20,20 +20,34 @@ import {
 // work -- each model's own `owner` field where it has one (NdaRecord,
 // IoiRecord, VisitPlan, DealStageRecord, EmailLead, and Lead.owner itself),
 // falling back to the owning Lead's `owner` for the two models with no
-// owner field of their own (Meeting, Document). Left unscoped ({}) when
-// `doeName` isn't given, which is the only way routes/outreachDoe.js calls
-// this today -- its own pipelineKpis stay company-wide by design.
-export async function computeExecutiveKpis({ doeName } = {}) {
-  const ownerWhere = doeName ? { owner: doeName } : {};
-  const relatedLeadOwnerWhere = doeName ? { lead: { owner: doeName } } : {};
+// owner field of their own (Meeting, Document).
+//
+// `channelPartner`, when set instead, scopes everything to that partner's
+// own referred leads -- transitively via each model's `lead` relation
+// (Lead.channelPartner), since a Channel Partner's portal shows every
+// stage on their own leads regardless of which internal rep's name is on
+// a given record.
+//
+// The two are mutually exclusive in practice (a request is either a staff
+// session or a Channel Partner session, never both) and neither is set
+// for the company-wide/admin view.
+export async function computeExecutiveKpis({ doeName, channelPartner } = {}) {
+  const leadWhere = channelPartner ? { channelPartner: channelPartner.businessName } : doeName ? { owner: doeName } : {};
+  const relatedLeadWhere = channelPartner ? { lead: { channelPartner: channelPartner.businessName } } : doeName ? { lead: { owner: doeName } } : {};
+  const emailLeadWhere = channelPartner ? { campaign: { ownerChannelPartnerId: channelPartner.id } } : doeName ? { owner: doeName } : {};
+  // Records with their own `owner` field: a Channel Partner's scope stays
+  // transitive via the Lead (every stage on their referred leads, no
+  // matter which rep's name is on it); a DOE's scope is their own `owner`
+  // attribution directly.
+  const ownerWhere = channelPartner ? relatedLeadWhere : doeName ? { owner: doeName } : {};
 
   const [leads, emailLeads, ndaRecords, meetings, documentCategories, ioiRecords, visitPlans, stageRows] =
     await Promise.all([
-      prisma.lead.findMany({ where: ownerWhere, select: { id: true, status: true, createdAt: true } }),
-      prisma.emailLead.findMany({ where: ownerWhere, select: { replyType: true } }),
+      prisma.lead.findMany({ where: leadWhere, select: { id: true, status: true, createdAt: true } }),
+      prisma.emailLead.findMany({ where: emailLeadWhere, select: { replyType: true } }),
       prisma.ndaRecord.findMany({ where: ownerWhere }),
-      prisma.meeting.findMany({ where: relatedLeadOwnerWhere }),
-      prisma.document.findMany({ where: relatedLeadOwnerWhere, select: { category: true }, distinct: ["category"] }),
+      prisma.meeting.findMany({ where: relatedLeadWhere }),
+      prisma.document.findMany({ where: relatedLeadWhere, select: { category: true }, distinct: ["category"] }),
       prisma.ioiRecord.findMany({ where: ownerWhere }),
       prisma.visitPlan.findMany({ where: ownerWhere }),
       prisma.dealStageRecord.findMany({ where: ownerWhere, select: { leadId: true, stage: true, status: true, amount: true } })
@@ -108,6 +122,6 @@ export async function computeExecutiveKpis({ doeName } = {}) {
       avgDealAge: dealAge.avgDays,
       winRate: winRate.winRate
     },
-    scope: doeName ? { doe: doeName } : null
+    scope: doeName ? { doe: doeName } : channelPartner ? { channelPartner: channelPartner.businessName } : null
   };
 }

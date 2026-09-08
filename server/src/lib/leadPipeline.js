@@ -11,10 +11,16 @@ import { REQUIRED_DOCUMENT_LABELS } from "./requiredDocuments.js";
 // Every stage after Outreach is a real, direct relation off this Lead
 // (NdaRecord/Meeting/DealStageRecord/IoiRecord all carry leadId) — nothing
 // here is inferred or matched by name. Outreach is the one exception: cold
-// email lives in a separate domain (EmailLead) with no relation back to
-// this CRM Lead, so it's approximated from the lead's own status instead
-// of left out — status past "NEW" is real evidence contact was made, even
-// though it can't say exactly when the first email went out.
+// email lives in a separate domain (EmailLead), and the two have no
+// formal foreign-key relation in either direction — a Lead created FROM a
+// converted EmailLead reply, and an EmailLead created FROM a Lead via CRM
+// Workspace's "Add to List", both just copy the same email address across
+// rather than pointing at each other's row. Matched by that shared email
+// address instead: real evidence a cold email actually went out for this
+// specific lead, not the earlier approximation (any status change past
+// "NEW", cold email or not — confirmed live: CSV-imported leads that had
+// their status touched for unrelated reasons showed as "contacted" here
+// despite never having been emailed at all).
 // Zoom Call 2 sits after IOI, not right after Zoom Call (1) — same
 // ordering/reasoning as the client portal's own stepper (see
 // clientPortalStages.js's PORTAL_STAGES comment): the second call is the
@@ -33,10 +39,12 @@ export const STAGE_LABELS = {
   TERM_SHEET: "Term Sheet"
 };
 
-// Same approximation Outreach itself uses (status is the only signal cold
-// outreach leaves on this Lead — see the Outreach comment above): status
-// INTERESTED or anything further along the positive funnel counts as this
-// stage being reached, whether it got there via the automatic
+// Interested still has no real relation to check (unlike Outreach's real
+// EmailActivityLog match below, there's no separate "marked interested"
+// record — a reply just flips this Lead's own status) so it stays a
+// status-based approximation: status INTERESTED or anything further along
+// the positive funnel counts as this stage being reached, whether it got
+// there via the automatic
 // reply-classified-INTERESTED conversion (see lib/emailLeadConversion.js)
 // or a rep manually setting it. LOST is deliberately excluded — a lead
 // marked lost may never have shown real interest at all, and this is a
@@ -44,9 +52,15 @@ export const STAGE_LABELS = {
 // passed through.
 const INTEREST_REACHED_STATUSES = new Set(["INTERESTED", "QUALIFIED", "NEGOTIATION", "CONVERTED"]);
 
+// Same two kinds routes/emailCampaigns.js's own SEND_KINDS and
+// lib/doeScorecard.js's own SEND_KINDS mean by "a real send" — a completed
+// provider send, not just a lead being added to a campaign
+// (BULK_INTRO_SENT) which never actually goes out on its own.
+const SEND_KINDS = ["BRANCH_EMAIL_SENT", "CAMPAIGN_BLAST_SENT"];
+
 export async function computeLeadPipeline(leadId) {
   const [lead, nda, meetings, dataRoomDocs, ioi, fieldVisitRecord, termSheetRecord] = await Promise.all([
-    prisma.lead.findUnique({ where: { id: leadId }, select: { status: true } }),
+    prisma.lead.findUnique({ where: { id: leadId }, select: { status: true, email: true } }),
     prisma.ndaRecord.findUnique({ where: { leadId } }),
     prisma.meeting.findMany({ where: { leadId }, orderBy: { startTime: "desc" } }),
     // Real received-document count against the required checklist (same
@@ -63,7 +77,15 @@ export async function computeLeadPipeline(leadId) {
 
   if (!lead) return null;
 
-  const outreach = { status: lead.status === "NEW" ? "not_started" : "done", detail: lead.status === "NEW" ? "Not yet contacted" : "Contact made" };
+  const realSendCount = lead.email
+    ? await prisma.emailActivityLog.count({
+        where: { kind: { in: SEND_KINDS }, lead: { email: { equals: lead.email, mode: "insensitive" } } }
+      })
+    : 0;
+  const outreach = {
+    status: realSendCount > 0 ? "done" : "not_started",
+    detail: realSendCount > 0 ? `${realSendCount} real cold email(s) sent` : "No cold outreach email sent yet"
+  };
 
   const interested = {
     status: INTEREST_REACHED_STATUSES.has(lead.status) ? "done" : "not_started",
@@ -226,13 +248,10 @@ export async function computePipelineSummary(where = {}) {
 }
 
 // A Kanban view of the SAME per-lead pipeline computeLeadPipeline already
-// tracks — one column per stage, one card per lead, placed in whichever
-// stage is furthest along for that lead (the highest-index stage that
-// isn't "not_started"). Deliberately not the same shape as
-// computePipelineSummary: that one is cumulative ("reached this stage at
-// least once", so one lead counts toward several stages at once); a Kanban
-// board needs each deal to live in exactly one column, its current stage,
-// the way a real pipeline board works.
+// tracks. Later-stage columns are current-stage only, but Outreach is a
+// deliberate exception: that column is the "real outreach was sent" pool,
+// so it should include every emailed lead, even if that same deal has
+// since moved on to Interested/NDA/IOI.
 export async function computeDealBoard(where = {}) {
   const leads = await prisma.lead.findMany({ where, select: { id: true, name: true, company: true, capitalAsk: true, updatedAt: true } });
   const pipelines = await Promise.all(leads.map((l) => computeLeadPipeline(l.id)));
@@ -241,6 +260,34 @@ export async function computeDealBoard(where = {}) {
 
   leads.forEach((lead, leadIdx) => {
     const pipeline = pipelines[leadIdx];
+
+    // A lead nothing has actually happened for yet (still status NEW, so
+    // even Outreach itself reads not_started) doesn't belong on a board
+    // about deals actively moving through stages — currentIdx below
+    // defaults to 0 when nothing has been reached, which used to dump
+    // every freshly added/imported lead straight into the Outreach column
+    // whether or not real outreach (or anything else) had actually
+    // happened for them. Confirmed live: a batch of CSV-imported leads,
+    // status NEW, never emailed, was filling up Outreach for exactly this
+    // reason. They still show up in New Enquiries and everywhere else —
+    // only this board, which is about current stage progress, excludes them.
+    const everReached = pipeline.some((stageSummary) => stageSummary.status !== "not_started");
+    if (!everReached) return;
+
+    const dealCard = (idx) => ({
+      id: lead.id,
+      name: lead.name,
+      company: lead.company,
+      capitalAsk: lead.capitalAsk,
+      updatedAt: lead.updatedAt,
+      stageStatus: pipeline[idx].status,
+      stageDetail: pipeline[idx].detail
+    });
+
+    if (pipeline[0].status !== "not_started") {
+      board[0].deals.push(dealCard(0));
+    }
+
     // The deal's real current column is its earliest unresolved gate
     // (in_progress or blocked) — e.g. an NDA that's been sent but not
     // signed yet — not just whichever stage was touched most recently.
@@ -262,15 +309,8 @@ export async function computeDealBoard(where = {}) {
     });
     if (firstUnresolvedIdx !== null) currentIdx = firstUnresolvedIdx;
 
-    board[currentIdx].deals.push({
-      id: lead.id,
-      name: lead.name,
-      company: lead.company,
-      capitalAsk: lead.capitalAsk,
-      updatedAt: lead.updatedAt,
-      stageStatus: pipeline[currentIdx].status,
-      stageDetail: pipeline[currentIdx].detail
-    });
+    if (currentIdx === 0) return;
+    board[currentIdx].deals.push(dealCard(currentIdx));
   });
 
   return board;

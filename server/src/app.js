@@ -122,6 +122,7 @@ const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
   "/api/email/templates",
   "/api/email/ai-agent",
   "/api/email-accounts",
+  "/api/executive-dashboard",
   "/api/market-intelligence",
   "/api/leads",
   "/api/documents",
@@ -249,7 +250,7 @@ app.use("/api/channel-partner-agreement", channelPartnerAgreementRouter);
 // this path is unauthenticated at the global-gate level.
 app.use("/api/channel-partner-portal-auth", channelPartnerPortalAuthRouter);
 app.use("/api/ioi-records", outreachOrChannelPartnerModule("ioi"), ioiRecordsRouter);
-app.use("/api/executive-dashboard", requireModule("command-center"), executiveDashboardRouter);
+app.use("/api/executive-dashboard", outreachOrChannelPartnerModule("command-center"), executiveDashboardRouter);
 app.use("/api/universal-filters", outreachOrChannelPartnerModule("universal-filters"), universalFiltersRouter);
 app.use("/api/ai", aiChatRouter);
 // Meeting scheduling/host management stays staff-only -- a Channel Partner's
@@ -306,18 +307,13 @@ app.use(
   },
   emailLeadsRouter
 );
-// Templates & Cadences is a tab inside MailX now (see
-// EmailOutreachModule.jsx), not its own nav entry, so it shares MailX's
-// module id rather than needing one of its own — for a Channel Partner
-// too, not just staff: previously "templates"/"segments"/"ai-agent" were
-// three separate partner-only grants where staff only ever needed the one
-// "cold-bulk-mailing" checkbox, making the two Feature access panels
-// mismatched. All three now check the same single id for both tiers.
-app.use("/api/email/templates", outreachOrChannelPartnerModule("cold-bulk-mailing"), emailTemplatesRouter);
-// Segments and AI Agent are tabs inside MailX too — same module id as
-// Templates & Cadences above, for the same reason.
-app.use("/api/email/segments", outreachOrChannelPartnerModule("cold-bulk-mailing"), emailSegmentsRouter);
-app.use("/api/email/ai-agent", outreachOrChannelPartnerModule("cold-bulk-mailing"), emailAiAgentRouter);
+// Templates/Segments/AI are internal Email Automation surfaces. Partner
+// Email Automation is an always-available baseline just like Campaigns and
+// Leads, so these follow the same partner branch instead of requiring an
+// extra optional permission that staff do not need inside the same module.
+app.use("/api/email/templates", outreachOrChannelPartner, emailTemplatesRouter);
+app.use("/api/email/segments", outreachOrChannelPartner, emailSegmentsRouter);
+app.use("/api/email/ai-agent", outreachOrChannelPartner, emailAiAgentRouter);
 // Not module-gated: everyone manages their own mailbox from Admin Panel →
 // My Account, and the router itself already scopes non-admins to the
 // mailboxes they own.

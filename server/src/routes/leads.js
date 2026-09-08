@@ -15,7 +15,8 @@ import {
   lookupLeadInZoomInfo,
   hasAnyZoomInfoMatch,
   buildLeadEnrichmentUpdate,
-  enrichCandidateWhereClause
+  enrichCandidateWhereClause,
+  findRepresentativeContactInZoomInfo
 } from "../lib/zoominfoEnrichment.js";
 
 const router = Router();
@@ -149,6 +150,42 @@ router.post("/zoominfo-search/reveal-contact", blockChannelPartner, async (req, 
     const token = await getAccessToken(credentials);
     const attributes = await enrichContactByName({ token, fullName: `${firstName} ${lastName}`, companyName });
     res.json({ email: attributes?.email ?? null, mobilePhone: attributes?.mobilePhone ?? null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// For "Add to List" straight from a bare ZoomInfo Companies-mode search
+// result — that result only ever carries a company name, no person, so
+// there's no name to reveal an email for the way reveal-contact above can.
+// Finds a real contact at the company first, then returns their real email
+// so the frontend can bulk-create them as an EmailLead — same "only spend
+// the extra credit for the specific result a rep picked" reasoning as
+// reveal-contact.
+router.post("/zoominfo-search/find-company-contact", blockChannelPartner, async (req, res, next) => {
+  try {
+    const { companyName } = req.body ?? {};
+    if (!companyName) {
+      return res.status(400).json({ error: "companyName is required." });
+    }
+
+    const credentials = await getZoomInfoCredentials();
+    if (!credentials) {
+      return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
+    }
+
+    const token = await getAccessToken(credentials);
+    const contact = await findRepresentativeContactInZoomInfo({ token, companyName });
+    if (!contact) {
+      return res.json({ found: false });
+    }
+    res.json({
+      found: true,
+      name: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+      email: contact.email ?? null,
+      mobilePhone: contact.mobilePhone ?? null,
+      jobTitle: contact.jobTitle ?? null
+    });
   } catch (err) {
     next(err);
   }
