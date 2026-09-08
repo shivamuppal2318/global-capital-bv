@@ -1221,17 +1221,17 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
               </div>
             ))}
           </div>
-          <div className="mt-5 overflow-x-auto">
-            <div className="flex gap-4" style={{ minWidth: "max-content" }}>
+          <div className="mt-5 max-h-[62vh] overflow-x-auto overflow-y-auto pr-1">
+            <div className="flex min-h-[320px] items-stretch gap-4" style={{ minWidth: "max-content" }}>
               {dealBoard.map((column) => (
-                <div key={column.id} className="w-[260px] shrink-0 rounded-[16px] bg-[#f7f9fc] p-3">
+                <div key={column.id} className="flex max-h-[60vh] w-[260px] shrink-0 flex-col rounded-[16px] bg-[#f7f9fc] p-3">
                   <div className="flex items-center justify-between px-1 pb-3">
                     <p className="text-[13px] font-semibold text-[#12213a]">{column.label}</p>
                     <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[#5f6f89] shadow-[0_2px_6px_rgba(30,48,87,0.06)]">
                       {column.deals.length}
                     </span>
                   </div>
-                  <div className="space-y-2.5">
+                  <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
                     {column.deals.length ? (
                       column.deals.map((deal) => (
                         <div
