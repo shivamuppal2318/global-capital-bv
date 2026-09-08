@@ -568,6 +568,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   const [importBusy, setImportBusy] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [statusFilter] = useState("INTERESTED");
+  const [leadSourceFilter, setLeadSourceFilter] = useState("ALL");
   // Convert: promotes a lead to CONVERTED — a single-field shortcut from the
   // action bar onto the same PATCH the Edit form already uses.
   const [converting, setConverting] = useState(false);
@@ -691,7 +692,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // once the filter changes to a different set of rows.
   useEffect(() => {
     setSelectedLeadIds(new Set());
-  }, [statusFilter]);
+  }, [statusFilter, leadSourceFilter]);
 
   useEffect(() => {
     refreshLeads()
@@ -1256,7 +1257,17 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       ]
     : [];
 
-  const visibleLeads = statusFilter === "ALL" ? leads : leads.filter((lead) => lead.status === statusFilter);
+  const leadSourceOptions = [
+    ...new Set([
+      ...(facets?.leadSources ?? []),
+      ...leads.map((lead) => lead.leadSource).filter(Boolean)
+    ])
+  ].sort((a, b) => a.localeCompare(b));
+  const visibleLeads = leads.filter((lead) => {
+    if (statusFilter !== "ALL" && lead.status !== statusFilter) return false;
+    if (leadSourceFilter !== "ALL" && (lead.leadSource || "") !== leadSourceFilter) return false;
+    return true;
+  });
   const dealStageCounts = dealBoard?.map((column) => ({
     id: column.id,
     label: column.label,
@@ -1329,10 +1340,24 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
             <p className="mt-1 text-[14px] text-[#6a7790]">
               {visibleLeads.length} of {leads.length} records
               {statusFilter !== "ALL" ? ` · filtered to ${STATUS_LABEL[statusFilter]}` : ""}
+              {leadSourceFilter !== "ALL" ? ` · source ${leadSourceFilter}` : ""}
             </p>
           </div>
           <div className="text-right">
             <div className="flex flex-wrap justify-end gap-2">
+              <select
+                value={leadSourceFilter}
+                onChange={(event) => setLeadSourceFilter(event.target.value)}
+                className="h-10 rounded-[12px] border border-[#d6deea] bg-white px-3 text-[13px] font-semibold text-[#435471] outline-none focus:border-[#3046b2]"
+                aria-label="Filter by lead source"
+              >
+                <option value="ALL">All lead sources</option>
+                {leadSourceOptions.map((source) => (
+                  <option key={source} value={source}>
+                    {source}
+                  </option>
+                ))}
+              </select>
               <ActionButton
                 label="Find Companies (ZoomInfo)"
                 icon={GlobeIcon}
@@ -1484,7 +1509,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
         ) : null}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-[14px]">
+          <table className="w-full min-w-[900px] text-left text-[14px]">
             <thead>
               <tr className="bg-[#eef4fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8a8fe8]">
                 <th className="px-5 py-3">
@@ -1497,6 +1522,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                 </th>
                 <th className="px-4 py-3">Lead</th>
                 <th className="px-4 py-3">Company</th>
+                <th className="px-4 py-3">Lead Source</th>
                 <th className="px-4 py-3">Capital Ask</th>
                 <th className="px-4 py-3">Owner</th>
                 <th className="px-4 py-3 text-right">Status</th>
@@ -1531,6 +1557,11 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                     </div>
                   </td>
                   <td className="px-4 py-4 align-top text-[#435471]">{lead.company}</td>
+                  <td className="px-4 py-4 align-top">
+                    <span className="inline-flex max-w-[180px] rounded-full bg-[#eef1ff] px-2.5 py-1 text-[11.5px] font-semibold text-[#4766cc]">
+                      <span className="truncate">{lead.leadSource || "Not specified"}</span>
+                    </span>
+                  </td>
                   <td className="px-4 py-4 align-top text-[#435471]">{lead.capitalAsk}</td>
                   <td className="px-4 py-4 align-top text-[#435471]">{lead.owner || "Unassigned"}</td>
                   <td className="px-4 py-4 align-top text-right">
@@ -1542,10 +1573,12 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
               ))}
               {visibleLeads.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-6 text-[14px] text-[#8592ab]">
+                  <td colSpan={7} className="px-5 py-6 text-[14px] text-[#8592ab]">
                     {leads.length === 0
                       ? "No leads yet — send one in via the webhook (Settings → Integrations & API), or wait for one to arrive from WhatsApp."
-                      : `No leads with status "${STATUS_LABEL[statusFilter]}".`}
+                      : leadSourceFilter !== "ALL"
+                        ? `No interested leads from "${leadSourceFilter}".`
+                        : `No leads with status "${STATUS_LABEL[statusFilter]}".`}
                   </td>
                 </tr>
               ) : null}
