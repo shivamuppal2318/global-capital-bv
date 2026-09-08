@@ -6,10 +6,14 @@ import { MarketIntelligenceModule } from "../marketIntelligence/MarketIntelligen
 import { UniversalFiltersModule } from "../universalFilters/UniversalFiltersModule.jsx";
 import { PartnerLeadsView } from "./PartnerLeadsView.jsx";
 import { PartnerDocumentsView } from "./PartnerDocumentsView.jsx";
-import { PartnerDealRecordsView } from "./PartnerDealRecordsView.jsx";
 import { PartnerAgeingReportView } from "./PartnerAgeingReportView.jsx";
 import { PartnerOutreachView } from "./PartnerOutreachView.jsx";
 import { ExecutiveDashboardModule } from "../executive/ExecutiveDashboardModule.jsx";
+import { NdaModule } from "../relationships/NdaModule.jsx";
+import { MeetingsModule } from "../meetings/MeetingsModule.jsx";
+import { IoiModule } from "../relationships/IoiModule.jsx";
+import { VisitPlanningModule } from "../relationships/VisitPlanningModule.jsx";
+import { DealStageModule } from "../dealStages/DealStageModule.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
 import logoUrl from "../../assets/global-capital-logo.png";
 import {
@@ -257,18 +261,18 @@ function PartnerResetPasswordView({ token, onDone }) {
 // Extra top-level sections beyond Email Automation (always shown). These
 // mirror the staff sidebar's module split so a partner sees the same shape:
 // Intelligence, CRM & Outreach, then each relationship stage as its own
-// entry. Relationship entries share a scoped read-only renderer because
-// partner accounts cannot create/edit staff-owned deal records.
+// entry. Relationship entries now reuse the same staff modules where the
+// backend can scope writes to the partner's own referred leads.
 const EXTRA_SECTIONS = [
   { id: "command-center", label: "Executive Dashboard", group: "Intelligence", Component: ExecutiveDashboardModule },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach", Component: PartnerLeadsView },
-  { id: "nda", label: "NDA", group: "Relationships", Component: PartnerDealRecordsView },
-  { id: "meetings", label: "Zoom Call", group: "Relationships", Component: PartnerDealRecordsView },
+  { id: "nda", label: "NDA", group: "Relationships", Component: NdaModule },
+  { id: "meetings", label: "Zoom Call", group: "Relationships", Component: MeetingsModule },
   { id: "data-room", label: "Data Room", group: "Relationships", Component: PartnerDocumentsView },
-  { id: "ioi", label: "IOI", group: "Relationships", Component: PartnerDealRecordsView },
-  { id: "visit-planning", label: "Visit Planning", group: "Relationships", Component: PartnerDealRecordsView },
-  { id: "field-visit", label: "Field Visit", group: "Relationships", Component: PartnerDealRecordsView },
-  { id: "term-sheet", label: "Term Sheet", group: "Relationships", Component: PartnerDealRecordsView },
+  { id: "ioi", label: "IOI", group: "Relationships", Component: IoiModule },
+  { id: "visit-planning", label: "Visit Planning", group: "Relationships", Component: VisitPlanningModule },
+  { id: "field-visit", label: "Field Visit", group: "Relationships", Component: DealStageModule, stage: "FIELD_VISIT" },
+  { id: "term-sheet", label: "Term Sheet", group: "Relationships", Component: DealStageModule, stage: "TERM_SHEET" },
   { id: "ageing-report", label: "Ageing Report", group: "Relationships", Component: PartnerAgeingReportView },
   { id: "leads", label: "Outreach / DOE", group: "Intelligence", Component: PartnerOutreachView },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence", Component: MarketIntelligenceModule },
@@ -417,7 +421,7 @@ function PartnerShell() {
 
           <div className="space-y-6 p-6">
             {ActiveExtraSection ? (
-              <ActiveExtraSection section={section} permissions={permissions} />
+              <ActiveExtraSection stage={activeSection.stage} section={section} permissions={permissions} />
             ) : (
               <EmailOutreachModule
                 initialTab="dashboard"

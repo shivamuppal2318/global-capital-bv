@@ -9,16 +9,6 @@ import { generateStageReport, ioiReportFacts } from "../lib/stageCompletionRepor
 
 export const ioiRecordsRouter = Router();
 
-// A Channel Partner's IOI access is read-only, scoped to IOIs on their own
-// referred leads only -- company-wide metrics/funnel and every write stay
-// refused.
-function blockChannelPartner(req, res, next) {
-  if (req.channelPartner) {
-    return res.status(403).json({ error: "Your account has read-only access to IOIs on your own referred leads." });
-  }
-  next();
-}
-
 const STATUSES = ["DRAFT", "GENERATED", "SENT", "SIGNED", "DECLINED", "EXPIRED"];
 
 const include = {
@@ -80,8 +70,8 @@ ioiRecordsRouter.get("/:id/signed-document", asyncHandler(async (req, res) => {
 
 // Always over every record, never the filtered view — a KPI that moved when
 // you typed in the search box would be misleading.
-ioiRecordsRouter.get("/metrics", blockChannelPartner, asyncHandler(async (_req, res) => {
-  res.json(ioiMetrics(await prisma.ioiRecord.findMany()));
+ioiRecordsRouter.get("/metrics", asyncHandler(async (req, res) => {
+  res.json(ioiMetrics(await prisma.ioiRecord.findMany({ where: relatedLeadOwnerWhereClause(req) })));
 }));
 
 // NDA -> Zoom call -> Data room -> IOI -> Term sheet.
@@ -91,12 +81,12 @@ ioiRecordsRouter.get("/metrics", blockChannelPartner, asyncHandler(async (_req, 
 // records created before that move still live in the shared one, and a
 // funnel that ignored them would show a cliff where the migration happened
 // rather than where deals actually drop out.
-ioiRecordsRouter.get("/funnel", blockChannelPartner, asyncHandler(async (_req, res) => {
+ioiRecordsRouter.get("/funnel", asyncHandler(async (req, res) => {
   const [ndaRows, meetingRows, ioiRows, stageRows] = await Promise.all([
-    prisma.ndaRecord.findMany({ select: { leadId: true } }),
-    prisma.meeting.findMany({ where: { leadId: { not: null } }, select: { leadId: true } }),
-    prisma.ioiRecord.findMany({ select: { leadId: true } }),
-    prisma.dealStageRecord.findMany({ select: { leadId: true, stage: true } })
+    prisma.ndaRecord.findMany({ where: relatedLeadOwnerWhereClause(req), select: { leadId: true } }),
+    prisma.meeting.findMany({ where: { leadId: { not: null }, ...relatedLeadOwnerWhereClause(req) }, select: { leadId: true } }),
+    prisma.ioiRecord.findMany({ where: relatedLeadOwnerWhereClause(req), select: { leadId: true } }),
+    prisma.dealStageRecord.findMany({ where: relatedLeadOwnerWhereClause(req), select: { leadId: true, stage: true } })
   ]);
 
   const atStage = (stage) => stageRows.filter((r) => r.stage === stage).map((r) => r.leadId);
@@ -151,12 +141,12 @@ function buildData(input) {
 
 // One IOI per lead (leadId is unique), so this upserts — recording the same
 // lead's IOI twice updates it rather than failing on the constraint.
-ioiRecordsRouter.post("/", blockChannelPartner, asyncHandler(async (req, res) => {
+ioiRecordsRouter.post("/", asyncHandler(async (req, res) => {
   const parsed = upsertSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const { leadId, ...rest } = parsed.data;
-  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, ...(req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {}) } });
   if (!lead) return res.status(404).json({ error: "Lead not found" });
 
   const data = buildData(rest);
@@ -177,11 +167,11 @@ const ACTION_FIELD = {
   sign: { field: "signedAt", status: "SIGNED", label: "Signed" }
 };
 
-ioiRecordsRouter.post("/:id/:action", blockChannelPartner, asyncHandler(async (req, res) => {
+ioiRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
   const step = ACTION_FIELD[req.params.action];
   if (!step) return res.status(400).json({ error: `Unknown action "${req.params.action}".` });
 
-  const existing = await prisma.ioiRecord.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.ioiRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) } });
   if (!existing) return res.status(404).json({ error: "IOI record not found" });
 
   // An IOI cannot be sent or signed before it exists as a document.
@@ -210,11 +200,13 @@ ioiRecordsRouter.post("/:id/:action", blockChannelPartner, asyncHandler(async (r
   res.json(record);
 }));
 
-ioiRecordsRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
+ioiRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
   const parsed = upsertSchema.partial({ leadId: true }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const { leadId, ...rest } = parsed.data;
+  const existing = await prisma.ioiRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) }, select: { id: true } });
+  if (!existing) return res.status(404).json({ error: "IOI record not found" });
   const record = await prisma.ioiRecord
     .update({ where: { id: req.params.id }, data: buildData(rest), include })
     .catch(() => null);
@@ -222,7 +214,9 @@ ioiRecordsRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res
   res.json(record);
 }));
 
-ioiRecordsRouter.delete("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
+ioiRecordsRouter.delete("/:id", asyncHandler(async (req, res) => {
+  const existing = await prisma.ioiRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) }, select: { id: true } });
+  if (!existing) return res.status(404).json({ error: "IOI record not found" });
   const deleted = await prisma.ioiRecord.delete({ where: { id: req.params.id } }).catch(() => null);
   if (!deleted) return res.status(404).json({ error: "IOI record not found" });
   res.status(204).end();

@@ -9,13 +9,9 @@ import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 const router = Router();
 
-// A Channel Partner's Zoom Call access is read-only, scoped to meetings on
-// their own referred leads only (see GET / below) -- company-wide metrics
-// and every write/action route stay refused outright. Same pattern as
-// documents.js's blockChannelPartner.
 function blockChannelPartner(req, res, next) {
   if (req.channelPartner) {
-    return res.status(403).json({ error: "Your account has read-only access to meetings on your own referred leads." });
+    return res.status(403).json({ error: "This meeting action is staff-only." });
   }
   next();
 }
@@ -83,7 +79,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.post("/", blockChannelPartner, async (req, res, next) => {
+router.post("/", async (req, res, next) => {
   try {
     const { leadId, topic, startTime, durationMinutes } = req.body;
     if (!topic || !startTime) return res.status(400).json({ error: "topic and startTime are required" });
@@ -97,7 +93,7 @@ router.post("/", blockChannelPartner, async (req, res, next) => {
 
     let lead = null;
     if (leadId) {
-      lead = await prisma.lead.findUnique({ where: { id: leadId } });
+      lead = await prisma.lead.findFirst({ where: { id: leadId, ...(req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {}) } });
       if (!lead) return res.status(404).json({ error: "Lead not found" });
     }
 
@@ -109,7 +105,7 @@ router.post("/", blockChannelPartner, async (req, res, next) => {
         // is assigned (Admin Panel -> Employees), so their meetings run
         // concurrently under separate hosts instead of all landing on the
         // one global fallback account.
-        hostEmail: req.user.zoomHostEmail || settings.hostEmail,
+        hostEmail: req.user?.zoomHostEmail || settings.hostEmail,
         topic,
         startTime,
         durationMinutes: durationMinutes ?? 30
@@ -145,7 +141,7 @@ router.post("/", blockChannelPartner, async (req, res, next) => {
         startTime,
         durationMinutes: durationMinutes ?? 30,
         joinUrl: zoomMeeting.joinUrl,
-        hostName: req.user.name
+        hostName: req.user?.name ?? req.channelPartner?.name ?? "Global Capital BV"
       });
       const delivery = await sendSystemEmail({ to: lead.email, ...mail });
       inviteSent = delivery.sent;
@@ -171,9 +167,9 @@ router.post("/", blockChannelPartner, async (req, res, next) => {
 
 const TEXT_FIELDS = ["clientAttendees", "ourAttendees", "notes", "nextAction", "recordingLink", "status"];
 
-router.patch("/:id", blockChannelPartner, async (req, res, next) => {
+router.patch("/:id", async (req, res, next) => {
   try {
-    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
+    const meeting = await prisma.meeting.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) } });
     if (!meeting) return res.status(404).json({ error: "Meeting not found" });
 
     // Previously this only ever wrote `status` and silently discarded
@@ -204,9 +200,9 @@ router.patch("/:id", blockChannelPartner, async (req, res, next) => {
   }
 });
 
-router.get("/metrics", blockChannelPartner, async (_req, res, next) => {
+router.get("/metrics", async (req, res, next) => {
   try {
-    res.json(callMetrics(await prisma.meeting.findMany()));
+    res.json(callMetrics(await prisma.meeting.findMany({ where: relatedLeadOwnerWhereClause(req) })));
   } catch (err) {
     next(err);
   }
