@@ -1274,15 +1274,13 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
           </div>
           <div className="text-right">
             <div className="flex flex-wrap justify-end gap-2">
-              {!partnerMode ? (
-                <ActionButton
-                  label="Find Companies (ZoomInfo)"
-                  icon={GlobeIcon}
-                  small
-                  active={zoomInfoPanelOpen}
-                  onClick={() => setZoomInfoPanelOpen((open) => !open)}
-                />
-              ) : null}
+              <ActionButton
+                label="Find Companies (ZoomInfo)"
+                icon={GlobeIcon}
+                small
+                active={zoomInfoPanelOpen}
+                onClick={() => setZoomInfoPanelOpen((open) => !open)}
+              />
               <ActionButton
                 label={selectedLeadIds.size ? `Add to List (${selectedLeadIds.size})` : "Add to List"}
                 icon={TagIcon}
@@ -1294,7 +1292,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
           </div>
         </div>
 
-        {zoomInfoPanelOpen && !partnerMode ? (
+        {zoomInfoPanelOpen ? (
           <div className="border-b border-[#e7edf5] px-5 py-4">
             <ZoomInfoSearchPanel
               mode={zoomInfoMode}
