@@ -238,6 +238,8 @@ export async function renderSignedChannelPartnerAgreement(partner) {
     PARTNER_ADDRESS: partner.agreementAddress || "[address not provided]",
     TERRITORY: partner.region || "[territory not provided]",
     PAYMENT_SCHEDULE: partner.agreementPaymentSchedule || "[payment schedule not provided]",
+    COMPANY_SIGNATURE_STATUS: `signed electronically by Amol Kadam on ${fmtDateTime(partner.agreementSignedAt)}`,
+    PARTNER_TITLE: "Channel Partner",
     SIGNATURE_STATUS: `signed electronically by ${partner.agreementSignedName ?? "the partner"} on ${fmtDateTime(partner.agreementSignedAt)}`
   });
   const { mainHtml, signatureHtml } = renderBody(filled);
@@ -354,6 +356,8 @@ export async function channelPartnerAgreementFillFormFragment(partner) {
     PARTNER_ADDRESS: { editable: true, name: "partnerAddress", value: partner.agreementAddress ?? "", placeholder: "Your company's principal office address" },
     TERRITORY: { editable: true, name: "territory", value: partner.region ?? "", placeholder: "e.g. worldwide, or specific countries/regions" },
     PAYMENT_SCHEDULE: { editable: true, name: "paymentSchedule", value: partner.agreementPaymentSchedule ?? "", placeholder: "Monthly or Quarterly" },
+    COMPANY_SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" },
+    PARTNER_TITLE: { editable: false, text: "Channel Partner" },
     SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" }
   };
   return fillFormShell(renderInteractiveBody(raw, specs));

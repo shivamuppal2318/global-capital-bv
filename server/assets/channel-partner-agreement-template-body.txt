@@ -188,7 +188,7 @@ This Agreement shall be governed by and construed in accordance with the laws of
 
 Global Capital BV
 
-Signature: ____________________
+    Signature: {{COMPANY_SIGNATURE_STATUS}}
 Name: Amol Kadam
 Title: CEO
 Date: {{AGREEMENT_DATE}}
@@ -197,6 +197,6 @@ Channel Partner
 
 Signature: {{SIGNATURE_STATUS}}
 Name: {{PARTNER_NAME}}
-Title: ____________________
+    Title: {{PARTNER_TITLE}}
 Date: {{AGREEMENT_DATE}}
 
