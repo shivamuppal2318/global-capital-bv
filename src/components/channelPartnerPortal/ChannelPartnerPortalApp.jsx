@@ -421,7 +421,12 @@ function PartnerShell() {
 
           <div className="space-y-6 p-6">
             {ActiveExtraSection ? (
-              <ActiveExtraSection stage={activeSection.stage} section={section} permissions={permissions} />
+              <ActiveExtraSection
+                stage={activeSection.stage}
+                section={section}
+                permissions={permissions}
+                defaultOwner={partnerUser.channelPartner.name}
+              />
             ) : (
               <EmailOutreachModule
                 initialTab="dashboard"
