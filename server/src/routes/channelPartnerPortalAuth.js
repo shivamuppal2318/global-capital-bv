@@ -1,5 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { prisma } from "../db.js";
 import { verifyPassword, hashPassword, signChannelPartnerUserToken } from "../lib/auth.js";
 import { requireChannelPartnerAuth } from "../middleware/requireChannelPartnerAuth.js";
@@ -8,6 +10,8 @@ import { loginRateLimit, forgotPasswordRateLimit } from "../middleware/authRateL
 import { hashResetToken } from "../lib/resetTokenHash.js";
 import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
 import { appBaseUrl } from "../lib/appUrl.js";
+import { UPLOAD_DIR } from "../lib/fileUpload.js";
+import { renderSignedChannelPartnerAgreement, slugify } from "../lib/signedDocumentRenderer.js";
 
 export const channelPartnerPortalAuthRouter = Router();
 
@@ -66,6 +70,65 @@ channelPartnerPortalAuthRouter.get(
     });
     if (!channelPartnerUser) return res.status(401).json({ error: "Session no longer valid." });
     res.json(publicChannelPartnerUser(channelPartnerUser));
+  })
+);
+
+channelPartnerPortalAuthRouter.get(
+  "/agreement",
+  requireChannelPartnerAuth,
+  asyncHandler(async (req, res) => {
+    const partner = await prisma.channelPartner.findUnique({
+      where: { id: req.channelPartner.id },
+      include: { agreementDocument: { select: { id: true, originalName: true, mimeType: true, sizeBytes: true, createdAt: true } } }
+    });
+    if (!partner) return res.status(404).json({ error: "Channel partner not found." });
+
+    res.json({
+      id: partner.id,
+      name: partner.name,
+      contactEmail: partner.contactEmail,
+      region: partner.region,
+      status: partner.status,
+      commissionPct: partner.commissionPct,
+      agreementSignedAt: partner.agreementSignedAt,
+      agreementSignedName: partner.agreementSignedName,
+      agreementAddress: partner.agreementAddress,
+      agreementPaymentSchedule: partner.agreementPaymentSchedule,
+      hasSignedAgreement: Boolean(partner.agreementSignedAt),
+      uploadedSignedCopy: Boolean(partner.agreementDocumentId),
+      document: partner.agreementDocument
+    });
+  })
+);
+
+channelPartnerPortalAuthRouter.get(
+  "/agreement/download",
+  requireChannelPartnerAuth,
+  asyncHandler(async (req, res) => {
+    const partner = await prisma.channelPartner.findUnique({
+      where: { id: req.channelPartner.id },
+      include: { agreementDocument: true }
+    });
+    if (!partner) return res.status(404).json({ error: "Channel partner not found." });
+    if (!partner.agreementSignedAt) {
+      return res.status(400).json({ error: "This Channel Partner Agreement hasn't been signed yet." });
+    }
+
+    if (partner.agreementDocument) {
+      const filePath = path.join(UPLOAD_DIR, partner.agreementDocument.storedName);
+      if (!(await fs.stat(filePath).catch(() => null))) {
+        return res.status(410).json({ error: "The stored agreement file is missing on disk." });
+      }
+      res.setHeader("Content-Type", partner.agreementDocument.mimeType);
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(partner.agreementDocument.originalName)}"`);
+      return res.sendFile(path.resolve(filePath));
+    }
+
+    const html = await renderSignedChannelPartnerAgreement(partner);
+    const filename = `Signed-Channel-Partner-Agreement-${slugify(partner.name)}.html`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(html);
   })
 );
 

@@ -16,9 +16,11 @@ import { IoiModule } from "../relationships/IoiModule.jsx";
 import { VisitPlanningModule } from "../relationships/VisitPlanningModule.jsx";
 import { DealStageModule } from "../dealStages/DealStageModule.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
+import { ActionButton, Badge, Card, StatCard } from "../ui";
 import logoUrl from "../../assets/global-capital-logo.png";
 import {
   ClockIcon,
+  AttachmentIcon,
   FolderIcon,
   FunnelIcon,
   GridIcon,
@@ -60,8 +62,100 @@ const partnerIconMap = {
   "ageing-report": ClockIcon,
   leads: SendIcon,
   "market-intelligence": SparklesIcon,
-  "universal-filters": FunnelIcon
+  "universal-filters": FunnelIcon,
+  partnership: AttachmentIcon
 };
+
+function fmtDate(value) {
+  return value ? new Date(value).toLocaleDateString() : "-";
+}
+
+function PartnershipView({ partnerUser }) {
+  const [agreement, setAgreement] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    channelPartnerPortalAuthApi
+      .agreement()
+      .then((data) => {
+        setAgreement(data);
+        setError(null);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleDownload() {
+    setDownloading(true);
+    setError(null);
+    try {
+      await channelPartnerPortalAuthApi.downloadAgreement();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  const signed = Boolean(agreement?.hasSignedAgreement);
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <span className="inline-flex items-center gap-2 rounded-full bg-[#e6ebff] px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#3046b2]">
+          <AttachmentIcon className="size-4" />
+          Partnership
+        </span>
+        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Partnership</h1>
+        <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
+          Agreement status and signed Channel Partner documents for {partnerUser.channelPartner.name}.
+        </p>
+      </section>
+
+      {loading ? (
+        <Card className="px-5 py-8 text-[14px] text-[#8592ab]">Loading partnership details...</Card>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard card={{ label: "Agreement", value: signed ? "Signed" : "Pending", note: signed ? "Completed" : "Not signed", noteTone: signed ? "green" : "amber" }} />
+            <StatCard card={{ label: "Signed On", value: fmtDate(agreement?.agreementSignedAt), note: agreement?.agreementSignedName ?? "Signer not recorded", noteTone: "blue" }} />
+            <StatCard card={{ label: "Territory", value: agreement?.region || "-", note: "Partner coverage", noteTone: "violet" }} />
+            <StatCard card={{ label: "Commission", value: `${agreement?.commissionPct ?? 0}%`, note: "Configured rate", noteTone: "green" }} />
+          </div>
+
+          <Card className="px-5 py-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-[18px] font-semibold text-[#102246]">Signed Channel Partner Agreement</h2>
+                  <Badge tone={signed ? "green" : "amber"}>{signed ? "Signed" : "Pending"}</Badge>
+                  {agreement?.uploadedSignedCopy ? <Badge tone="blue">Uploaded copy</Badge> : <Badge tone="slate">Generated copy</Badge>}
+                </div>
+                <p className="mt-2 text-[14px] text-[#5f6f89]">
+                  {signed
+                    ? `Signed by ${agreement.agreementSignedName ?? partnerUser.name} on ${fmtDate(agreement.agreementSignedAt)}.`
+                    : "Your signed agreement is not available yet."}
+                </p>
+                {agreement?.agreementAddress ? <p className="mt-1 text-[13px] text-[#8592ab]">Address: {agreement.agreementAddress}</p> : null}
+                {agreement?.agreementPaymentSchedule ? <p className="mt-1 text-[13px] text-[#8592ab]">Payment schedule: {agreement.agreementPaymentSchedule}</p> : null}
+              </div>
+              <ActionButton
+                label={downloading ? "Downloading..." : "Download signed agreement"}
+                icon={AttachmentIcon}
+                primary
+                onClick={handleDownload}
+                disabled={!signed || downloading}
+              />
+            </div>
+            {error ? <p className="mt-4 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
 
 function PartnerLoginView({ onForgot }) {
   const { login } = useChannelPartnerAuth();
@@ -266,6 +360,7 @@ function PartnerResetPasswordView({ token, onDone }) {
 // entry. Relationship entries now reuse the same staff modules where the
 // backend can scope writes to the partner's own referred leads.
 const EXTRA_SECTIONS = [
+  { id: "partnership", label: "Partnership", group: "Partnership", Component: PartnershipView },
   { id: "command-center", label: "Executive Dashboard", group: "Intelligence", Component: ExecutiveDashboardModule },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach", Component: PartnerLeadsView },
   { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach", Component: WhatsappBusinessModule },
@@ -395,7 +490,7 @@ function PartnerShell() {
   const { partnerUser, logout } = useChannelPartnerAuth();
   const permissions = partnerUser.permissions ?? [];
   const grantedExtraSections = useMemo(
-    () => EXTRA_SECTIONS.filter((s) => permissions.includes(s.id)),
+    () => EXTRA_SECTIONS.filter((s) => s.id === "partnership" || permissions.includes(s.id)),
     [permissions]
   );
   const [section, setSection] = useState(() =>
@@ -405,6 +500,7 @@ function PartnerShell() {
   const ActiveExtraSection = activeSection?.Component ?? null;
   const crmOutreachSections = grantedExtraSections.filter((s) => s.group === "CRM & Outreach");
   const navSections = [
+    { title: "Partnership", items: grantedExtraSections.filter((s) => s.group === "Partnership") },
     { title: "Intelligence", items: grantedExtraSections.filter((s) => s.group === "Intelligence") },
     {
       title: "CRM & Outreach",
@@ -437,6 +533,7 @@ function PartnerShell() {
                 section={section}
                 permissions={permissions}
                 defaultOwner={partnerUser.channelPartner.name}
+                partnerUser={partnerUser}
               />
             ) : (
               <EmailOutreachModule
