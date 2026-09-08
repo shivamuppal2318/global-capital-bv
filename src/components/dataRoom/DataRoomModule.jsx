@@ -126,6 +126,33 @@ function DocumentRow({ doc, onOpen, onVerify, onDelete }) {
   );
 }
 
+function ChecklistColumn({ title, items, empty, tone }) {
+  const toneClass = tone === "green"
+    ? "border-[#cfeedd] bg-[#f3fbf6] text-[#2b9b60]"
+    : "border-[#f3dfbd] bg-[#fff8ed] text-[#c47a18]";
+
+  return (
+    <div className="rounded-[16px] border border-[#e7edf5] bg-[#f8faff] p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-[14px] font-semibold text-[#102246]">{title}</p>
+        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClass}`}>{items.length}</span>
+      </div>
+      {items.length ? (
+        <div className="grid gap-2">
+          {items.map((item) => (
+            <div key={item.label} className={`rounded-[12px] border px-3 py-2 ${toneClass}`}>
+              <p className="text-[13px] font-semibold text-[#102246]">{item.label}</p>
+              <p className="mt-0.5 line-clamp-2 text-[12px] text-[#5f6f89]">{item.description}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-[12px] border border-dashed border-[#d6deea] bg-white px-3 py-6 text-center text-[13px] text-[#8592ab]">{empty}</p>
+      )}
+    </div>
+  );
+}
+
 // Opened by clicking a client card in the "Company library" grouped view —
 // that view exists specifically so a long, all-clients-mixed-together list
 // isn't the default; this is where the actual per-document actions live for
@@ -171,6 +198,7 @@ function ClientDocumentsModal({ group, onOpen, onVerify, onDelete, onViewFullDat
 export function DataRoomModule() {
   const [documents, setDocuments] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [requiredDocuments, setRequiredDocuments] = useState([]);
   const [activeCategory, setActiveCategory] = useState("All");
   const [query, setQuery] = useState("");
 
@@ -181,6 +209,7 @@ export function DataRoomModule() {
   const [selectedLeadId, setSelectedLeadId] = useState("");
   useEffect(() => {
     leadsApi.list().then(setLeads).catch(() => {});
+    documentsApi.requiredDocuments().then(setRequiredDocuments).catch(() => {});
   }, []);
   const selectedLead = leads.find((l) => l.id === selectedLeadId) ?? null;
   const [loading, setLoading] = useState(true);
@@ -274,7 +303,17 @@ export function DataRoomModule() {
   };
 
   const total = categories.reduce((sum, c) => sum + c.count, 0);
-  const searchableCount = documents.filter((d) => d.searchable).length;
+  const requiredLabels = useMemo(() => requiredDocuments.map((doc) => doc.label), [requiredDocuments]);
+  const checklistSummary = useCallback(
+    (docs) => {
+      const uploadedCategories = new Set(docs.filter((doc) => requiredLabels.includes(doc.category)).map((doc) => doc.category));
+      const received = requiredDocuments.filter((doc) => uploadedCategories.has(doc.label));
+      const remaining = requiredDocuments.filter((doc) => !uploadedCategories.has(doc.label));
+      return { received, remaining, receivedCount: received.length, remainingCount: remaining.length, totalRequired: requiredDocuments.length };
+    },
+    [requiredDocuments, requiredLabels]
+  );
+  const currentChecklist = checklistSummary(documents);
 
   // Only meaningful in the "Company library" view (selectedLeadId === "") —
   // a mixed flat list of every client's documents together read poorly (the
@@ -324,11 +363,25 @@ export function DataRoomModule() {
           </select>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard card={{ label: "Documents", value: String(total), note: "In the data room", noteTone: "blue" }} />
           <StatCard card={{ label: "Categories", value: String(categories.length), note: "In use", noteTone: "violet" }} />
+          <StatCard card={{ label: "Received Docs", value: `${currentChecklist.receivedCount}/${currentChecklist.totalRequired || 0}`, note: "Client checklist", noteTone: "green" }} />
+          <StatCard card={{ label: "Remaining Docs", value: String(currentChecklist.remainingCount), note: "Still pending", noteTone: currentChecklist.remainingCount ? "amber" : "green" }} />
         </div>
       </section>
+
+      {selectedLeadId && requiredDocuments.length ? (
+        <Card className="px-5 py-5">
+          <SectionTitle icon={CheckCircleIcon} iconClass="text-[#2b9b60]" subtitle="Same required-document criteria the client portal uses.">
+            Client Checklist
+          </SectionTitle>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <ChecklistColumn title="Received Documents" items={currentChecklist.received} empty="No required documents received yet." tone="green" />
+            <ChecklistColumn title="Remaining Documents" items={currentChecklist.remaining} empty="All required documents are received." tone="amber" />
+          </div>
+        </Card>
+      ) : null}
 
       <Card className="px-5 py-5">
         <SectionTitle
@@ -401,7 +454,9 @@ export function DataRoomModule() {
             // Company library: grouped by client instead of one long mixed
             // list — click a card to open that client's documents in a
             // popup (see ClientDocumentsModal).
-            groupedByClient.map((group) => (
+            groupedByClient.map((group) => {
+              const summary = checklistSummary(group.docs);
+              return (
               <button
                 key={group.key}
                 type="button"
@@ -415,9 +470,20 @@ export function DataRoomModule() {
                     {group.docs.some((d) => d.verified) ? ` · ${group.docs.filter((d) => d.verified).length} verified` : ""}
                   </p>
                 </div>
+                <div className="hidden min-w-[300px] grid-cols-2 gap-2 text-left lg:grid">
+                  <div className="rounded-[10px] bg-[#eefaf2] px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#2b9b60]">Received</p>
+                    <p className="mt-1 text-[13px] font-semibold text-[#102246]">{summary.receivedCount}/{summary.totalRequired || 0}</p>
+                  </div>
+                  <div className="rounded-[10px] bg-[#fff7eb] px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#c47a18]">Remaining</p>
+                    <p className="mt-1 text-[13px] font-semibold text-[#102246]">{summary.remainingCount}</p>
+                  </div>
+                </div>
                 <span className="shrink-0 text-[13px] font-semibold text-[#3046b2]">View →</span>
               </button>
-            ))
+              );
+            })
           )}
         </div>
       </Card>
