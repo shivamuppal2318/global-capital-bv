@@ -95,20 +95,20 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
         </div>
       ) : null}
 
-      <div className="rounded-[26px] border border-[#d6deea] bg-[linear-gradient(180deg,#f8fbff_0%,#f3f7fc_100%)] px-5 py-5 shadow-[0_8px_28px_rgba(30,48,87,0.08)]">
+      <div className="rounded-[22px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
         <div className="grid gap-3 lg:grid-cols-4">
-          <MetricCard label="Total Campaigns" value={totalCampaigns} icon={MailIcon} iconClass="text-[#2995db]" />
-          <MetricCard label="Segments" value={totalSegments} icon={TagIcon} iconClass="text-[#2b9b60]" />
-          <MetricCard label="Subscribers" value={totalSubscribers} icon={UsersIcon} iconClass="text-[#f29c38]" />
-          <MetricCard label="Unread Mail" value={unreadMail} icon={InboxIcon} iconClass="text-[#e0483f]" />
+          <MetricCard label="Total Campaigns" value={totalCampaigns} icon={MailIcon} iconClass="text-[#3046b2]" />
+          <MetricCard label="Segments" value={totalSegments} icon={TagIcon} iconClass="text-[#3046b2]" />
+          <MetricCard label="Subscribers" value={totalSubscribers} icon={UsersIcon} iconClass="text-[#3046b2]" />
+          <MetricCard label="Unread Mail" value={unreadMail} icon={InboxIcon} iconClass="text-[#3046b2]" />
         </div>
 
         <div className="mt-3 grid gap-3 lg:grid-cols-5">
-          <SummaryCard label="Emails Sent" value={emailsSent} toneClass="text-[#2995db]" onClick={() => openEngagementDetail("sent", "Emails Sent")} />
-          <SummaryCard label="Opened" value={opened} toneClass="text-[#2b9b60]" onClick={() => openEngagementDetail("opened", "Opened")} />
-          <SummaryCard label="Clicked" value={clicked} toneClass="text-[#f29c38]" onClick={() => openEngagementDetail("clicked", "Clicked")} />
-          <SummaryCard label="Bounced" value={bounced} toneClass="text-[#c47f1a]" onClick={() => openEngagementDetail("bounced", "Bounced")} />
-          <SummaryCard label="Unsubscribed" value={unsubscribed} toneClass="text-[#e0483f]" onClick={() => openEngagementDetail("unsubscribed", "Unsubscribed")} />
+          <SummaryCard label="Emails Sent" value={emailsSent} toneClass="text-[#21439b]" onClick={() => openEngagementDetail("sent", "Emails Sent")} />
+          <SummaryCard label="Opened" value={opened} toneClass="text-[#21439b]" onClick={() => openEngagementDetail("opened", "Opened")} />
+          <SummaryCard label="Clicked" value={clicked} toneClass="text-[#21439b]" onClick={() => openEngagementDetail("clicked", "Clicked")} />
+          <SummaryCard label="Bounced" value={bounced} toneClass="text-[#21439b]" onClick={() => openEngagementDetail("bounced", "Bounced")} />
+          <SummaryCard label="Unsubscribed" value={unsubscribed} toneClass="text-[#21439b]" onClick={() => openEngagementDetail("unsubscribed", "Unsubscribed")} />
         </div>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[1.72fr_0.68fr]">
@@ -117,7 +117,7 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
             <div className="mt-3 overflow-x-auto rounded-[16px] border border-[#e7edf5] bg-[#f8faff]">
               <table className="w-full min-w-[620px] text-left">
                 <thead>
-                  <tr className="bg-[#f0f3ff] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8a8fe8]">
+                  <tr className="bg-[#eef4fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#60708b]">
                     <th className="px-4 py-3">Campaign Name</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Recipients</th>
@@ -128,9 +128,9 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
                   {topCampaigns.length ? (
                     topCampaigns.map((campaign) => (
                       <tr key={campaign.id} className="border-t border-[#e7edf5] bg-white text-[13px] text-[#5d6286]">
-                        <td className="px-4 py-3 font-medium text-[#5a67d8]">{campaign.name}</td>
+                        <td className="px-4 py-3 font-medium text-[#102246]">{campaign.name}</td>
                         <td className="px-4 py-3">
-                          <span className="rounded-full bg-[#efe9ff] px-2.5 py-1 text-[11px] font-semibold text-[#8b74c9]">
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${campaignToneClass[campaign.status] ?? "bg-[#edf1f6] text-[#748096]"}`}>
                             {campaign.status}
                           </span>
                         </td>
@@ -156,7 +156,7 @@ export function DashboardTab({ mailing, onNavigateTab, availableTabs }) {
               <button
                 type="button"
                 onClick={() => onNavigateTab?.("campaigns")}
-                className="w-full rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)]"
+                className="w-full rounded-[10px] bg-[#3046b2] px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-[#253996]"
               >
                 New Campaign
               </button>
