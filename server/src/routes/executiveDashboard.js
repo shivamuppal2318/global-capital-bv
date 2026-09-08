@@ -8,7 +8,7 @@ export const executiveDashboardRouter = Router();
 // lives in lib/executiveKpis.js -- shared with routes/outreachDoe.js's own
 // scorecard, so the two screens can never show conflicting numbers for the
 // same metric.
-executiveDashboardRouter.get("/", asyncHandler(async (_req, res) => {
-  const { stats, funnel, kpis } = await computeExecutiveKpis();
+executiveDashboardRouter.get("/", asyncHandler(async (req, res) => {
+  const { stats, funnel, kpis } = await computeExecutiveKpis(req.channelPartner ?? null);
   res.json({ generatedAt: new Date().toISOString(), stats, funnel, kpis });
 }));

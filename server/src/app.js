@@ -122,6 +122,7 @@ const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
   "/api/email/templates",
   "/api/email/ai-agent",
   "/api/email-accounts",
+  "/api/executive-dashboard",
   "/api/market-intelligence",
   "/api/leads",
   "/api/documents",
@@ -249,7 +250,7 @@ app.use("/api/channel-partner-agreement", channelPartnerAgreementRouter);
 // this path is unauthenticated at the global-gate level.
 app.use("/api/channel-partner-portal-auth", channelPartnerPortalAuthRouter);
 app.use("/api/ioi-records", outreachOrChannelPartnerModule("ioi"), ioiRecordsRouter);
-app.use("/api/executive-dashboard", requireModule("command-center"), executiveDashboardRouter);
+app.use("/api/executive-dashboard", outreachOrChannelPartnerModule("command-center"), executiveDashboardRouter);
 app.use("/api/universal-filters", outreachOrChannelPartnerModule("universal-filters"), universalFiltersRouter);
 app.use("/api/ai", aiChatRouter);
 // Meeting scheduling/host management stays staff-only -- a Channel Partner's

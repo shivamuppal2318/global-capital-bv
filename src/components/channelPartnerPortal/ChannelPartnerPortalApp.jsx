@@ -9,6 +9,7 @@ import { PartnerDocumentsView } from "./PartnerDocumentsView.jsx";
 import { PartnerDealRecordsView } from "./PartnerDealRecordsView.jsx";
 import { PartnerAgeingReportView } from "./PartnerAgeingReportView.jsx";
 import { PartnerOutreachView } from "./PartnerOutreachView.jsx";
+import { ExecutiveDashboardModule } from "../executive/ExecutiveDashboardModule.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
 import logoUrl from "../../assets/global-capital-logo.png";
 import {
@@ -39,6 +40,7 @@ const primaryButtonClass =
 
 const partnerIconMap = {
   dashboard: GridIcon,
+  "command-center": GridIcon,
   "crm-workspace": UsersIcon,
   email: MailIcon,
   "cold-bulk-mailing": MailIcon,
@@ -263,6 +265,7 @@ function PartnerResetPasswordView({ token, onDone }) {
 // component itself (via the permissions prop below) only renders tabs for
 // the ones actually granted.
 const EXTRA_SECTIONS = [
+  { id: "command-center", label: "Executive Dashboard", group: "Intelligence", Component: ExecutiveDashboardModule },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach", Component: PartnerLeadsView },
   {
     id: "deal-records",
@@ -389,14 +392,16 @@ function PartnerTopBar({ partnerUser, onLogout }) {
 
 function PartnerShell() {
   const { partnerUser, logout } = useChannelPartnerAuth();
-  const [section, setSection] = useState("email");
   const permissions = partnerUser.permissions ?? [];
   const grantedExtraSections = EXTRA_SECTIONS.filter((s) => (s.matchIds ?? [s.id]).some((id) => permissions.includes(id)));
+  const [section, setSection] = useState(() =>
+    grantedExtraSections.some((s) => s.id === "command-center") ? "command-center" : "email"
+  );
   const activeSection = grantedExtraSections.find((s) => s.id === section);
   const ActiveExtraSection = activeSection?.Component ?? null;
   const navSections = [
-    { title: "CRM & Outreach", items: [{ id: "email", label: "Email Automation" }, ...grantedExtraSections.filter((s) => s.group === "CRM & Outreach")] },
     { title: "Intelligence", items: grantedExtraSections.filter((s) => s.group === "Intelligence") },
+    { title: "CRM & Outreach", items: [{ id: "email", label: "Email Automation" }, ...grantedExtraSections.filter((s) => s.group === "CRM & Outreach")] },
     { title: "Relationships", items: grantedExtraSections.filter((s) => s.group === "Relationships") }
   ].filter((navSection) => navSection.items.length);
 
