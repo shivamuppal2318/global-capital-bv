@@ -2,6 +2,7 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { z } from "zod";
 import { prisma } from "../db.js";
 import { verifyPassword, hashPassword, signChannelPartnerUserToken } from "../lib/auth.js";
 import { requireChannelPartnerAuth } from "../middleware/requireChannelPartnerAuth.js";
