@@ -101,11 +101,11 @@ router.get("/enrich-candidates-count", blockChannelPartner, async (req, res, nex
 // by broad criteria. Nothing is persisted here — the frontend pre-fills
 // the existing "New Record" form from a chosen result, and the rep
 // reviews/saves it through the unchanged POST / below, same as any
-// other manually-entered lead. Real API credits spent — staff-only, and
-// must stay ahead of GET /:id, same reasoning as enrich-candidates-count.
-router.post("/zoominfo-search", blockChannelPartner, async (req, res, next) => {
+// other manually-entered lead. Real API credits spent, and must stay ahead
+// of GET /:id, same reasoning as enrich-candidates-count.
+router.post("/zoominfo-search", async (req, res, next) => {
   try {
-    const { mode, filters, page } = req.body ?? {};
+    const { mode, filters, page, pageSize } = req.body ?? {};
     if (mode !== "companies" && mode !== "contacts") {
       return res.status(400).json({ error: 'mode must be "companies" or "contacts".' });
     }
@@ -120,7 +120,8 @@ router.post("/zoominfo-search", blockChannelPartner, async (req, res, next) => {
 
     const token = await getAccessToken(credentials);
     const search = mode === "companies" ? searchCompanies : searchContacts;
-    const result = await search({ token, filters, page: page || 1, pageSize: 25 });
+    const safePageSize = Math.min(Math.max(Number(pageSize) || 50, 1), 100);
+    const result = await search({ token, filters, page: page || 1, pageSize: safePageSize });
     res.json(result);
   } catch (err) {
     next(err);
@@ -135,7 +136,7 @@ router.post("/zoominfo-search", blockChannelPartner, async (req, res, next) => {
 // ends up using). Same firstName+lastName+companyName match as the
 // existing per-lead Enrich route below, just not tied to an existing Lead
 // row yet.
-router.post("/zoominfo-search/reveal-contact", blockChannelPartner, async (req, res, next) => {
+router.post("/zoominfo-search/reveal-contact", async (req, res, next) => {
   try {
     const { firstName, lastName, companyName } = req.body ?? {};
     if (!firstName || !lastName) {
@@ -162,7 +163,7 @@ router.post("/zoominfo-search/reveal-contact", blockChannelPartner, async (req, 
 // so the frontend can bulk-create them as an EmailLead — same "only spend
 // the extra credit for the specific result a rep picked" reasoning as
 // reveal-contact.
-router.post("/zoominfo-search/find-company-contact", blockChannelPartner, async (req, res, next) => {
+router.post("/zoominfo-search/find-company-contact", async (req, res, next) => {
   try {
     const { companyName } = req.body ?? {};
     if (!companyName) {

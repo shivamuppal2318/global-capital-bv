@@ -641,6 +641,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   const [zoomInfoAddToListCampaignId, setZoomInfoAddToListCampaignId] = useState("");
   const [zoomInfoAddToListBusy, setZoomInfoAddToListBusy] = useState(false);
   const [zoomInfoAddToListResult, setZoomInfoAddToListResult] = useState(null);
+  const [zoomInfoSelectedIds, setZoomInfoSelectedIds] = useState(() => new Set());
 
   // "Add to List" — sends the currently-selected (already status-filtered)
   // leads into a real Email Automation List (an EmailCampaign) as real
@@ -676,6 +677,11 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     leadsApi.zoomInfoLookup("countries").then((r) => setZoomInfoCountries(r.values)).catch(() => {});
     leadsApi.zoomInfoLookup("states").then((r) => setZoomInfoStates(r.values)).catch(() => {});
   }, [zoomInfoPanelOpen, zoomInfoCountries.length, zoomInfoStates.length]);
+
+  useEffect(() => {
+    if (!zoomInfoPanelOpen || zoomInfoAddToListCampaigns.length) return;
+    emailCampaignsApi.list().then(setZoomInfoAddToListCampaigns).catch(() => setZoomInfoAddToListCampaigns([]));
+  }, [zoomInfoPanelOpen, zoomInfoAddToListCampaigns.length]);
 
   useEffect(() => {
     leadsApi.dealBoard().then(setDealBoard).catch(() => {});
@@ -772,11 +778,12 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     setZoomInfoSearching(true);
     setZoomInfoError(null);
     try {
-      const result = await leadsApi.zoomInfoSearch({ mode: zoomInfoMode, filters: buildZoomInfoFilters(), page });
+      const result = await leadsApi.zoomInfoSearch({ mode: zoomInfoMode, filters: buildZoomInfoFilters(), page, pageSize: 50 });
       setZoomInfoResults(result.results);
       setZoomInfoTotalResults(result.totalResults);
       setZoomInfoPage(page);
       setZoomInfoHasSearched(true);
+      setZoomInfoSelectedIds(new Set());
     } catch (err) {
       setZoomInfoError(err.message);
       setZoomInfoResults([]);
@@ -796,6 +803,58 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     setZoomInfoAddToListCampaignId("");
     setZoomInfoAddToListTarget(result);
     emailCampaignsApi.list().then(setZoomInfoAddToListCampaigns).catch(() => setZoomInfoAddToListCampaigns([]));
+  }
+
+  async function handleZoomInfoBulkAdd() {
+    const selectedResults = zoomInfoResults.filter((result) => zoomInfoSelectedIds.has(result.id));
+    if (!selectedResults.length || !zoomInfoAddToListCampaignId) return;
+
+    setZoomInfoAddToListBusy(true);
+    setZoomInfoAddToListResult(null);
+    try {
+      const rows = [];
+      let skipped = 0;
+      for (const result of selectedResults) {
+        if (zoomInfoMode === "companies") {
+          const company = result.name ?? "";
+          const contact = await leadsApi.zoomInfoFindCompanyContact(company);
+          if (!contact.found || !contact.email) {
+            skipped += 1;
+            continue;
+          }
+          rows.push({ name: contact.name || "Unknown contact", company, email: contact.email, owner: "Unassigned" });
+        } else {
+          const name = [result.firstName, result.lastName].filter(Boolean).join(" ") || "Unknown contact";
+          const company = result.company?.name ?? "";
+          if (!result.hasEmail) {
+            skipped += 1;
+            continue;
+          }
+          const revealed = await leadsApi.zoomInfoRevealContact({ firstName: result.firstName, lastName: result.lastName, companyName: company });
+          if (!revealed.email) {
+            skipped += 1;
+            continue;
+          }
+          rows.push({ name, company, email: revealed.email, owner: "Unassigned" });
+        }
+      }
+
+      const listName = zoomInfoAddToListCampaigns.find((c) => c.id === zoomInfoAddToListCampaignId)?.name ?? "the list";
+      if (!rows.length) {
+        setZoomInfoAddToListResult({ ok: false, text: `No reachable contacts found for the selected ${selectedResults.length} result(s).` });
+        return;
+      }
+      const bulkResult = await emailLeadsApi.bulkCreate(zoomInfoAddToListCampaignId, rows, { skipCadence: true });
+      setZoomInfoAddToListResult({
+        ok: true,
+        text: `${bulkResult.createdCount} added to "${listName}", ${bulkResult.duplicateCount} already existed${skipped ? `, ${skipped} skipped with no reachable email` : ""}.`
+      });
+      setZoomInfoSelectedIds(new Set());
+    } catch (err) {
+      setZoomInfoAddToListResult({ ok: false, text: err.message });
+    } finally {
+      setZoomInfoAddToListBusy(false);
+    }
   }
 
   async function handleZoomInfoAddToList() {
@@ -1316,9 +1375,12 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
               setAddToListCampaignId={setZoomInfoAddToListCampaignId}
               addToListBusy={zoomInfoAddToListBusy}
               addToListResult={zoomInfoAddToListResult}
+              selectedIds={zoomInfoSelectedIds}
+              setSelectedIds={setZoomInfoSelectedIds}
               onOpenAddToList={openZoomInfoAddToList}
               onCloseAddToList={() => setZoomInfoAddToListTarget(null)}
               onSubmitAddToList={handleZoomInfoAddToList}
+              onBulkSubmit={handleZoomInfoBulkAdd}
             />
           </div>
         ) : null}
@@ -1569,9 +1631,34 @@ function ZoomInfoSearchPanel({
   searching, error, results, totalResults, page, hasSearched, onSearch,
   countries, states,
   addToListTarget, addToListCampaigns, addToListCampaignId, setAddToListCampaignId,
-  addToListBusy, addToListResult, onOpenAddToList, onCloseAddToList, onSubmitAddToList
+  addToListBusy, addToListResult, selectedIds, setSelectedIds,
+  onOpenAddToList, onCloseAddToList, onSubmitAddToList, onBulkSubmit
 }) {
-  const hasMore = page * 25 < totalResults;
+  const pageSize = 50;
+  const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
+  const hasPrev = page > 1;
+  const hasMore = page < totalPages;
+  const pageResultIds = results.map((result) => result.id);
+  const selectedCount = pageResultIds.filter((id) => selectedIds.has(id)).length;
+  const allPageSelected = pageResultIds.length > 0 && selectedCount === pageResultIds.length;
+
+  function toggleResult(id) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function togglePageSelection() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allPageSelected) pageResultIds.forEach((id) => next.delete(id));
+      else pageResultIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
 
   // A plain <select> (not a free-text field) — ZoomInfo's own API rejects
   // anything not drawn from its controlled vocabulary (confirmed live: a
@@ -1675,18 +1762,58 @@ function ZoomInfoSearchPanel({
       {error ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
 
       {results.length > 0 ? (
-        <div className="mt-4 space-y-2.5">
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3">
+            <label className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#435471]">
+              <input
+                type="checkbox"
+                checked={allPageSelected}
+                onChange={togglePageSelection}
+                className="size-4 rounded border-[#b9c4d8]"
+              />
+              Select all {results.length} on this page
+            </label>
+            <div className="flex min-w-[280px] flex-1 flex-wrap justify-end gap-2">
+              <select
+                value={addToListCampaignId}
+                onChange={(e) => setAddToListCampaignId(e.target.value)}
+                className="min-w-[220px] rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] text-[#102246] outline-none"
+              >
+                <option value="">Choose List</option>
+                {addToListCampaigns.map((campaign) => (
+                  <option key={campaign.id} value={campaign.id}>{campaign.name}</option>
+                ))}
+              </select>
+              <ActionButton
+                label={addToListBusy ? "Adding..." : `Add selected (${selectedIds.size})`}
+                primary
+                small
+                onClick={onBulkSubmit}
+                disabled={addToListBusy || selectedIds.size === 0 || !addToListCampaignId}
+              />
+            </div>
+            {addToListResult ? <p className={`w-full text-[13px] font-medium ${addToListResult.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>{addToListResult.text}</p> : null}
+          </div>
+          <div className="grid gap-3 xl:grid-cols-2">
           {results.map((result) =>
             mode === "companies" ? (
               <div key={result.id} className="rounded-[14px] border border-[#e7edf5] px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(result.id)}
+                      onChange={() => toggleResult(result.id)}
+                      className="mt-1 size-4 rounded border-[#b9c4d8]"
+                    />
+                    <div className="min-w-0">
                     <p className="truncate text-[14px] font-semibold text-[#102246]">{result.name}</p>
                     <p className="mt-0.5 truncate text-[12px] text-[#6a7790]">
                       {[result.city, result.state, result.country].filter(Boolean).join(", ") || "Location unknown"}
                       {result.employeeCount ? ` · ${result.employeeCount} employees` : ""}
                       {result.website ? ` · ${result.website}` : ""}
                     </p>
+                    </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <ActionButton label="Add to List" small onClick={() => onOpenAddToList(result)} />
@@ -1707,7 +1834,14 @@ function ZoomInfoSearchPanel({
             ) : (
               <div key={result.id} className="rounded-[14px] border border-[#e7edf5] px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(result.id)}
+                      onChange={() => toggleResult(result.id)}
+                      className="mt-1 size-4 rounded border-[#b9c4d8]"
+                    />
+                    <div className="min-w-0">
                     <p className="truncate text-[14px] font-semibold text-[#102246]">
                       {[result.firstName, result.lastName].filter(Boolean).join(" ") || "Unnamed contact"}
                     </p>
@@ -1719,6 +1853,7 @@ function ZoomInfoSearchPanel({
                       {result.hasEmail ? "✉ Email on file" : "No email on file"}
                       {result.hasDirectPhone || result.hasMobilePhone ? " · ☎ Phone on file" : ""}
                     </p>
+                    </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <ActionButton label="Add to List" small onClick={() => onOpenAddToList(result)} />
@@ -1738,11 +1873,16 @@ function ZoomInfoSearchPanel({
               </div>
             )
           )}
-          {hasMore ? (
-            <div className="pt-1">
-              <ActionButton label={searching ? "Loading…" : "Load more"} onClick={() => onSearch(page + 1)} disabled={searching} />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <p className="text-[13px] text-[#8592ab]">
+              Page {page} of {totalPages} · showing up to {pageSize} per page
+            </p>
+            <div className="flex items-center gap-2">
+              <ActionButton label="Previous" small onClick={() => onSearch(page - 1)} disabled={searching || !hasPrev} />
+              <ActionButton label={searching ? "Loading..." : "Next"} small onClick={() => onSearch(page + 1)} disabled={searching || !hasMore} />
             </div>
-          ) : null}
+          </div>
         </div>
       ) : !searching && !error && hasSearched ? (
         <p className="mt-4 text-[13px] text-[#9aa6ba]">No matches on ZoomInfo for these filters — try broadening them.</p>
