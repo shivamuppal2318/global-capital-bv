@@ -567,7 +567,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   const [importText, setImportText] = useState("");
   const [importBusy, setImportBusy] = useState(false);
   const [importResult, setImportResult] = useState(null);
-  const [statusFilter] = useState("ALL");
+  const [statusFilter] = useState("INTERESTED");
   // Convert: promotes a lead to CONVERTED — a single-field shortcut from the
   // action bar onto the same PATCH the Edit form already uses.
   const [converting, setConverting] = useState(false);
