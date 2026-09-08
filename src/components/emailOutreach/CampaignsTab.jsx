@@ -322,65 +322,72 @@ export function CampaignsTab({ mailing }) {
     const campaign = detail.campaign ?? {};
     const stats = detail.stats ?? {};
     const statCards = [
-      ["Recipients", stats.recipients ?? "—", "Total contacts in list"],
-      ["Emails Sent", stats.sent ?? "—", "Actual provider sends"],
-      ["Opened", stats.opened ?? "—", `${fmtRate(stats.openRate)} open rate`],
-      ["Clicked", stats.clicked ?? "—", `${fmtRate(stats.clickRate)} click rate`],
-      ["Replies", stats.replied ?? "—", "Interested / not interested / other"],
-      ["Issues", (stats.bounced ?? 0) + (stats.unsubscribed ?? 0), `${stats.bounced ?? 0} bounced, ${stats.unsubscribed ?? 0} unsubscribed`]
+      ["Recipients", stats.recipients ?? "—", "Total contacts in list", "bg-[#eef4ff] text-[#3046b2]", "border-[#dbe5ff]"],
+      ["Emails Sent", stats.sent ?? "—", "Actual provider sends", "bg-[#eaf8ef] text-[#2b9b60]", "border-[#d7f0df]"],
+      ["Opened", stats.opened ?? "—", `${fmtRate(stats.openRate)} open rate`, "bg-[#e8f7ff] text-[#247db8]", "border-[#d8edf9]"],
+      ["Clicked", stats.clicked ?? "—", `${fmtRate(stats.clickRate)} click rate`, "bg-[#fff4df] text-[#b87510]", "border-[#f8e8c8]"],
+      ["Replies", stats.replied ?? "—", "Interested / not interested / other", "bg-[#efe8ff] text-[#7a4ec2]", "border-[#e5d8ff]"],
+      ["Issues", (stats.bounced ?? 0) + (stats.unsubscribed ?? 0), `${stats.bounced ?? 0} bounced, ${stats.unsubscribed ?? 0} unsubscribed`, "bg-[#fff0f5] text-[#c43d72]", "border-[#f8d7e5]"]
     ];
 
     return (
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
+      <section className="space-y-5">
+        <div className="overflow-hidden rounded-[20px] border border-[#d6deea] bg-white shadow-[0_8px_24px_rgba(30,48,87,0.07)]">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#e7edf5] bg-[#f8faff] px-5 py-4">
+            <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setViewMode("list")}
-              className="inline-flex items-center gap-2 rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-medium text-[#435471] shadow-[0_2px_8px_rgba(30,48,87,0.04)]"
+              className="inline-flex items-center gap-2 rounded-[10px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] font-semibold text-[#435471] shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:border-[#b7c2dd] hover:text-[#3046b2]"
             >
               <span aria-hidden="true">←</span>
               Back to campaigns
             </button>
             <div className="min-w-0">
-              <p className="truncate text-[18px] font-semibold text-[#102246]">{campaign.name ?? "Campaign activity"}</p>
-              <p className="truncate text-[12px] text-[#8592ab]">{campaign.subject || "No subject saved yet"}</p>
+              <p className="truncate text-[20px] font-semibold text-[#102246]">{campaign.name ?? "Campaign activity"}</p>
+              <p className="mt-1 truncate text-[12px] text-[#73829d]">{campaign.subject || "No subject saved yet"}</p>
             </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => campaign.id && openListActivity(campaign)}
+              disabled={activityPageLoading || !campaign.id}
+              className="inline-flex items-center gap-2 rounded-[10px] border border-[#cfd9eb] bg-white px-4 py-2 text-[13px] font-semibold text-[#3046b2] shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:border-[#3046b2] disabled:opacity-50"
+            >
+              {activityPageLoading ? "Refreshing..." : "Refresh"}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => campaign.id && openListActivity(campaign)}
-            disabled={activityPageLoading || !campaign.id}
-            className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#3046b2] disabled:opacity-50"
-          >
-            {activityPageLoading ? "Refreshing…" : "Refresh"}
-          </button>
+          <div className="grid gap-3 px-5 py-4 md:grid-cols-3 xl:grid-cols-6">
+            {statCards.map(([label, value, note, toneClass, borderClass]) => (
+              <div key={label} className={`rounded-[14px] border ${borderClass} bg-white px-4 py-3 shadow-[0_3px_12px_rgba(30,48,87,0.04)]`}>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7a89a4]">{label}</p>
+                  <span className={`grid h-8 w-8 place-items-center rounded-[10px] text-[13px] font-bold ${toneClass}`}>{String(label).slice(0, 1)}</span>
+                </div>
+                <p className="mt-2 text-[26px] font-semibold leading-none text-[#102246]">{value}</p>
+                <p className="mt-2 truncate text-[12px] text-[#8592ab]">{note}</p>
+              </div>
+            ))}
+          </div>
         </div>
 
         {detail.error ? (
           <div className="rounded-[16px] border border-[#ffe4ee] bg-[#fff6f9] px-4 py-3 text-[13px] font-semibold text-[#c43d72]">{detail.error}</div>
         ) : null}
 
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {statCards.map(([label, value, note]) => (
-            <div key={label} className="rounded-[14px] border border-[#d6deea] bg-white px-4 py-3 shadow-[0_3px_12px_rgba(30,48,87,0.05)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7a89a4]">{label}</p>
-              <p className="mt-2 text-[24px] font-semibold text-[#102246]">{value}</p>
-              <p className="mt-1 truncate text-[12px] text-[#8592ab]">{note}</p>
-            </div>
-          ))}
-        </div>
-
         <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
-          <div className="rounded-[20px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+          <div className="rounded-[20px] border border-[#d6deea] bg-white p-5 shadow-[0_8px_24px_rgba(30,48,87,0.06)]">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-[16px] font-semibold text-[#102246]">Recipients</h2>
+              <div>
+                <h2 className="text-[17px] font-semibold text-[#102246]">Recipients</h2>
+                <p className="mt-1 text-[12px] text-[#8592ab]">Per-lead delivery, engagement, and reply status.</p>
+              </div>
               <span className="rounded-full bg-[#eef4fb] px-2.5 py-1 text-[11px] font-semibold text-[#60708b]">{detail.recipients?.length ?? 0}</span>
             </div>
-            <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e7edf5]">
+            <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e7edf5] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
               <table className="w-full min-w-[780px] text-left">
                 <thead>
-                  <tr className="bg-[#f4f7fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#60708b]">
+                  <tr className="bg-[#f1f5fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#60708b]">
                     <th className="px-3 py-3">Lead</th>
                     <th className="px-3 py-3 text-right">Sent</th>
                     <th className="px-3 py-3 text-right">Opened</th>
@@ -394,7 +401,7 @@ export function CampaignsTab({ mailing }) {
                     <tr><td colSpan="6" className="px-3 py-5 text-[13px] text-[#9aa6ba]">Loading…</td></tr>
                   ) : detail.recipients?.length ? (
                     detail.recipients.map((lead) => (
-                      <tr key={lead.id} className="border-t border-[#edf1f6] text-[13px] text-[#5f6f89]">
+                      <tr key={lead.id} className="border-t border-[#edf1f6] text-[13px] text-[#5f6f89] transition hover:bg-[#fbfcff]">
                         <td className="px-3 py-3">
                           <p className="font-semibold text-[#102246]">{lead.leadName}</p>
                           <p className="mt-0.5 text-[12px] text-[#8592ab]">{lead.company} · {lead.leadEmail}</p>
@@ -419,12 +426,15 @@ export function CampaignsTab({ mailing }) {
             </div>
           </div>
 
-          <div className="rounded-[20px] border border-[#d6deea] bg-white px-5 py-5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+          <div className="rounded-[20px] border border-[#d6deea] bg-white p-5 shadow-[0_8px_24px_rgba(30,48,87,0.06)]">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-[16px] font-semibold text-[#102246]">Activity Timeline</h2>
+              <div>
+                <h2 className="text-[17px] font-semibold text-[#102246]">Activity Timeline</h2>
+                <p className="mt-1 text-[12px] text-[#8592ab]">Latest sends, opens, clicks, replies, and issues.</p>
+              </div>
               <span className="rounded-full bg-[#eef4fb] px-2.5 py-1 text-[11px] font-semibold text-[#60708b]">{detail.events?.length ?? 0}</span>
             </div>
-            <div className="mt-4 max-h-[560px] space-y-2 overflow-y-auto pr-1">
+            <div className="mt-4 max-h-[560px] space-y-3 overflow-y-auto pr-1">
               {activityPageLoading ? (
                 <p className="text-[13px] text-[#9aa6ba]">Loading…</p>
               ) : detail.events?.length ? (
@@ -433,8 +443,9 @@ export function CampaignsTab({ mailing }) {
                     key={event.id}
                     type="button"
                     onClick={() => setActivityDetailRow({ ...event, status: event.detail?.startsWith("Failed") ? "failed" : event.detail?.startsWith("Sending") ? "pending" : "sent" })}
-                    className="w-full rounded-[12px] border border-[#e7edf5] px-3 py-3 text-left hover:bg-[#f8faff]"
+                    className="group relative w-full rounded-[14px] border border-[#e7edf5] bg-[#fbfcff] px-4 py-3 text-left transition hover:border-[#c7d2e5] hover:bg-white hover:shadow-[0_6px_18px_rgba(30,48,87,0.07)]"
                   >
+                    <span className={`absolute left-0 top-4 h-8 w-1 rounded-r-full ${activityDotClass(event.kind).split(" ")[0]}`} aria-hidden="true" />
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-[13px] font-semibold text-[#102246]">{event.leadName}</p>
