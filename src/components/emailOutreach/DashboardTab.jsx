@@ -10,6 +10,13 @@ import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
 // it's genuinely useful to know it wasn't necessarily the pixel.
 const OPEN_VIA_LABEL = { EMAIL_OPENED: "pixel", LINK_CLICKED: "a click", REPLY_RECEIVED: "a reply" };
 
+const campaignToneClass = {
+  Sending: "bg-[#dff5e7] text-[#2b9b60]",
+  Scheduled: "bg-[#dff2ff] text-[#2995db]",
+  Completed: "bg-[#efe5ff] text-[#8853d0]",
+  Draft: "bg-[#edf1f6] text-[#748096]"
+};
+
 function MetricCard({ label, value, icon: Icon, iconClass }) {
   return (
     <div className="rounded-[18px] border border-[#d6deea] bg-white px-5 py-3.5 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
