@@ -43,7 +43,7 @@ function fillTokens(text, tokens) {
 function toParagraphHtml(part, substitute) {
   return part
     .trim()
-    .split(/\n{2,}/)
+    .split(/\r?\n(?:[ \t]*\r?\n)+/)
     .map((block) => block.trim())
     .filter(Boolean)
     .map((block) => {
