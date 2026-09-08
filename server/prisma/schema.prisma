@@ -140,6 +140,7 @@ model User {
 
   // Personal SMTP mailboxes this employee owns (see EmailAccount.ownerId).
   emailAccounts EmailAccount[]
+  emailCampaigns EmailCampaign[]
   passwordResets PasswordResetToken[]
   documents      Document[]
   verifiedDocuments Document[] @relation("DocumentVerifiedBy")
@@ -1163,6 +1164,12 @@ model EmailCampaign {
   emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id])
   emailAccountId String?
 
+  // Null = an admin/shared staff campaign. Set = created by an employee,
+  // so that employee sees only their own Email Automation workspace instead
+  // of the admin/shared mailbox campaign history.
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId String?
+
   // Null = an admin-owned campaign (all existing data, unchanged
   // behavior). Set = created by a Channel Partner through their own
   // portal (see lib/channelPartnerScope.js) — every list/create/dashboard
@@ -1176,6 +1183,7 @@ model EmailCampaign {
   segments     EmailSegment[]
 
   @@index([status])
+  @@index([ownerId])
   @@index([ownerChannelPartnerId])
 }
 

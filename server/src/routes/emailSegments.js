@@ -45,12 +45,15 @@ async function withMatchingCount(req, segment) {
 }
 
 function segmentWhereClause(req) {
-  return req.channelPartner ? { campaign: ownerWhereClause(req) } : {};
+  if (req.user?.role === "ADMIN" && !req.channelPartner) {
+    return { OR: [{ campaignId: null }, { campaign: ownerWhereClause(req) }] };
+  }
+  return { campaign: ownerWhereClause(req) };
 }
 
 async function loadOwnedCampaignForSegment(req, res, campaignId) {
   if (!campaignId) {
-    if (req.channelPartner) {
+    if (req.channelPartner || req.user?.role !== "ADMIN") {
       res.status(400).json({ error: "Pick one of your lists for this segment." });
       return null;
     }

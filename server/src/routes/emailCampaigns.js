@@ -5,7 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { isQueueEnabled, enqueueCampaignBlast } from "../queue/cadenceQueue.js";
 import { recordAudit } from "../lib/auditLog.js";
-import { ownerWhereClause, ownerIdForCreate } from "../lib/channelPartnerScope.js";
+import { ownerWhereClause, ownerFieldsForCreate } from "../lib/channelPartnerScope.js";
 import { filterMatchingLeads } from "../lib/segmentMatching.js";
 import { sendCampaignBlastEmail } from "../lib/campaignBlastSender.js";
 
@@ -213,7 +213,11 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
   // graph: campaigns, leads, activity, and mailbox stats all stay under the
   // same ownerChannelPartnerId.
   const campaignFilter = ownerWhereClause(req);
-  const mailboxFilter = req.channelPartner ? { ownerChannelPartnerId: req.channelPartner.id } : { ownerChannelPartnerId: null };
+  const mailboxFilter = req.channelPartner
+    ? { ownerChannelPartnerId: req.channelPartner.id }
+    : req.user.role === "ADMIN"
+      ? { ownerId: null, ownerChannelPartnerId: null }
+      : { ownerId: req.user.id, ownerChannelPartnerId: null };
 
   const [sentRows, openedRows, totalLeads, repliedLeads, interestedLeads, ndaSignedLeads, recentActivity, mailboxes] = await Promise.all([
     prisma.emailActivityLog.findMany({ where: { kind: { in: SEND_KINDS }, createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
@@ -344,7 +348,7 @@ emailCampaignsRouter.post("/", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const campaign = await prisma.emailCampaign.create({
-    data: { ...parsed.data, ownerChannelPartnerId: ownerIdForCreate(req) }
+    data: { ...parsed.data, ...ownerFieldsForCreate(req) }
   });
   await recordAudit({ req, action: "campaign.created", entityType: "EmailCampaign", entityId: campaign.id, detail: campaign.name });
   res.status(201).json(campaign);
