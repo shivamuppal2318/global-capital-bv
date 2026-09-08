@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context/ChannelPartnerAuthContext";
 import { channelPartnerPortalAuthApi } from "../../lib/channelPartnerPortalAuthApi";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
+import { WhatsappBusinessModule } from "../whatsapp/WhatsappBusinessModule.jsx";
 import { MarketIntelligenceModule } from "../marketIntelligence/MarketIntelligenceModule.jsx";
 import { UniversalFiltersModule } from "../universalFilters/UniversalFiltersModule.jsx";
 import { PartnerLeadsView } from "./PartnerLeadsView.jsx";
@@ -48,6 +49,7 @@ const partnerIconMap = {
   "crm-workspace": UsersIcon,
   email: MailIcon,
   "cold-bulk-mailing": MailIcon,
+  "whatsapp-business": PhoneIcon,
   nda: ShieldIcon,
   meetings: PhoneIcon,
   "data-room": FolderIcon,
@@ -266,6 +268,7 @@ function PartnerResetPasswordView({ token, onDone }) {
 const EXTRA_SECTIONS = [
   { id: "command-center", label: "Executive Dashboard", group: "Intelligence", Component: ExecutiveDashboardModule },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach", Component: PartnerLeadsView },
+  { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach", Component: WhatsappBusinessModule },
   { id: "nda", label: "NDA", group: "Relationships", Component: NdaModule },
   { id: "meetings", label: "Zoom Call", group: "Relationships", Component: MeetingsModule },
   { id: "data-room", label: "Data Room", group: "Relationships", Component: PartnerDocumentsView },

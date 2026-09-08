@@ -14,12 +14,10 @@
 // correctly excludes the general company-wide library, since a document
 // with no leadId can't match a nested relation filter). Executive Dashboard
 // is included because its KPI engine has a real channel-partner-scoped
-// branch. Everything else stays out: WhatsApp Business and the Channel
-// Partner screen itself — not just unfinished, each has a real structural
-// reason it doesn't fit this recipe (see the plan doc): WhatsApp's Contact
-// model has zero relation to Lead or ChannelPartner to filter by; the
-// Channel Partner screen is a staff tool for administering every partner,
-// not something a partner should see about themselves. Universal
+// branch. Everything else stays out: the Channel Partner screen is a staff
+// tool for administering every partner, not something a partner should see
+// about themselves. WhatsApp Business is now available as the same module
+// surface staff uses, gated per partner here and at the API tier. Universal
 // Filters/Zoom Call/Field Visit/Term Sheet now
 // have real scoping (same Lead.channelPartner match as everything else
 // here) alongside NDA/IOI/Visit Planning/Ageing Report/Outreach-DOE.
@@ -40,6 +38,7 @@ export const CHANNEL_PARTNER_OPTIONAL_MODULES = [
   { id: "leads", label: "Outreach / DOE", group: "Intelligence" },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach" },
   { id: "cold-bulk-mailing", label: "Email Automation", group: "CRM & Outreach" },
+  { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach" },
   { id: "nda", label: "NDA", group: "Relationships" },
   { id: "meetings", label: "Zoom Call", group: "Relationships" },
   { id: "data-room", label: "Data Room", group: "Relationships" },
