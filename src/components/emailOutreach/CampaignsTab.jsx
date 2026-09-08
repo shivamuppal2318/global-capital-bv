@@ -916,6 +916,7 @@ export function CampaignsTab({ mailing }) {
                 <th className="px-4 py-4">Status</th>
                 <th className="px-4 py-4 text-right">Recipients</th>
                 <th className="px-4 py-4 text-right">Emails Sent</th>
+                <th className="px-4 py-4 text-right">Activity</th>
                 <th className="px-4 py-4 text-right">Open Rate</th>
               </tr>
             </thead>
@@ -928,25 +929,23 @@ export function CampaignsTab({ mailing }) {
                       <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${campaignToneClass[campaign.status]}`}>{campaign.status}</span>
                     </td>
                     <td className="px-4 py-4 text-right">{campaign.leadCount ?? "—"}</td>
+                    <td className="px-4 py-4 text-right">{campaign.sentCount ?? campaign.sent}</td>
                     <td className="px-4 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {campaign.sentCount ?? campaign.sent}
-                        <button
-                          type="button"
-                          onClick={() => openListActivity(campaign)}
-                          title="View who this campaign has sent to"
-                          className="grid size-6 place-items-center rounded-[6px] text-[#8592ab] hover:bg-[#f0f3f9] hover:text-[#3046b2]"
-                        >
-                          <EyeIcon className="size-3.5" />
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openListActivity(campaign)}
+                        title="View campaign activity"
+                        className="ml-auto grid size-7 place-items-center rounded-[8px] text-[#8592ab] hover:bg-[#f0f3f9] hover:text-[#3046b2]"
+                      >
+                        <EyeIcon className="size-3.5" />
+                      </button>
                     </td>
                     <td className="px-4 py-4 text-right">{campaign.open}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="5" className="px-4 py-5 text-[14px] text-[#7a7d9c]">
+                  <td colSpan="6" className="px-4 py-5 text-[14px] text-[#7a7d9c]">
                     No entries found
                   </td>
                 </tr>
