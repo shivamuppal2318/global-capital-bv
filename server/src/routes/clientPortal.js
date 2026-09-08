@@ -1037,8 +1037,11 @@ clientPortalRouter.get(
     }
 
     const html = await renderSignedNda({ ...nda, lead: req.clientUser.lead });
+    const version = slugify(nda.updatedAt?.toISOString?.() ?? nda.signedAt?.toISOString?.() ?? "latest");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="Signed-NDA-${slugify(nda.counterpartyLegalName || req.clientUser.lead.company)}.html"`);
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Content-Disposition", `attachment; filename="Signed-NDA-${slugify(nda.counterpartyLegalName || req.clientUser.lead.company)}-${version}.html"`);
     res.send(html);
   })
 );

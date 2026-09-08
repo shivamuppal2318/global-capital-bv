@@ -46,7 +46,7 @@ export const ndaApi = {
   advance: (id, action) => apiFetch(`${ndaBase}/${id}/${action}`, { method: "POST" }),
   update: (id, body) => apiFetch(`${ndaBase}/${id}`, { method: "PATCH", body }),
   remove: (id) => apiFetch(`${ndaBase}/${id}`, { method: "DELETE" }),
-  downloadSignedDocument: (id) => downloadBlob(`${ndaBase}/${id}/signed-document`)
+  downloadSignedDocument: (id) => downloadBlob(`${ndaBase}/${id}/signed-document?fresh=${Date.now()}`)
 };
 
 const visitBase = `${API_ROOT}/api/visit-plans`;
