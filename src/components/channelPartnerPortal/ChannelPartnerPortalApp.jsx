@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context/ChannelPartnerAuthContext";
 import { channelPartnerPortalAuthApi } from "../../lib/channelPartnerPortalAuthApi";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
@@ -44,7 +44,6 @@ const partnerIconMap = {
   "crm-workspace": UsersIcon,
   email: MailIcon,
   "cold-bulk-mailing": MailIcon,
-  "deal-records": FolderIcon,
   nda: ShieldIcon,
   meetings: PhoneIcon,
   "data-room": FolderIcon,
@@ -255,26 +254,21 @@ function PartnerResetPasswordView({ token, onDone }) {
   );
 }
 
-// Extra top-level sections beyond Email Automation (always shown) — each
-// is a separate top-level module in the staff app (App.jsx), not a tab
-// inside EmailOutreachModule like Segments/Templates/AI Agent are, so they
-// need their own nav entries here rather than more visibleTabs ids.
-// matchIds (instead of a single id) is for Deal Records, which folds NDA/
-// IOI/Visit Planning into one section with internal tabs rather than three
-// separate nav entries -- shown if ANY of the three is granted, and the
-// component itself (via the permissions prop below) only renders tabs for
-// the ones actually granted.
+// Extra top-level sections beyond Email Automation (always shown). These
+// mirror the staff sidebar's module split so a partner sees the same shape:
+// Intelligence, CRM & Outreach, then each relationship stage as its own
+// entry. Relationship entries share a scoped read-only renderer because
+// partner accounts cannot create/edit staff-owned deal records.
 const EXTRA_SECTIONS = [
   { id: "command-center", label: "Executive Dashboard", group: "Intelligence", Component: ExecutiveDashboardModule },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach", Component: PartnerLeadsView },
-  {
-    id: "deal-records",
-    label: "Deal Records",
-    group: "Relationships",
-    matchIds: ["nda", "ioi", "visit-planning", "meetings", "field-visit", "term-sheet"],
-    Component: PartnerDealRecordsView
-  },
+  { id: "nda", label: "NDA", group: "Relationships", Component: PartnerDealRecordsView },
+  { id: "meetings", label: "Zoom Call", group: "Relationships", Component: PartnerDealRecordsView },
   { id: "data-room", label: "Data Room", group: "Relationships", Component: PartnerDocumentsView },
+  { id: "ioi", label: "IOI", group: "Relationships", Component: PartnerDealRecordsView },
+  { id: "visit-planning", label: "Visit Planning", group: "Relationships", Component: PartnerDealRecordsView },
+  { id: "field-visit", label: "Field Visit", group: "Relationships", Component: PartnerDealRecordsView },
+  { id: "term-sheet", label: "Term Sheet", group: "Relationships", Component: PartnerDealRecordsView },
   { id: "ageing-report", label: "Ageing Report", group: "Relationships", Component: PartnerAgeingReportView },
   { id: "leads", label: "Outreach / DOE", group: "Intelligence", Component: PartnerOutreachView },
   { id: "market-intelligence", label: "Market Intelligence", group: "Intelligence", Component: MarketIntelligenceModule },
@@ -393,7 +387,10 @@ function PartnerTopBar({ partnerUser, onLogout }) {
 function PartnerShell() {
   const { partnerUser, logout } = useChannelPartnerAuth();
   const permissions = partnerUser.permissions ?? [];
-  const grantedExtraSections = EXTRA_SECTIONS.filter((s) => (s.matchIds ?? [s.id]).some((id) => permissions.includes(id)));
+  const grantedExtraSections = useMemo(
+    () => EXTRA_SECTIONS.filter((s) => permissions.includes(s.id)),
+    [permissions]
+  );
   const [section, setSection] = useState(() =>
     grantedExtraSections.some((s) => s.id === "command-center") ? "command-center" : "email"
   );
@@ -405,6 +402,11 @@ function PartnerShell() {
     { title: "Relationships", items: grantedExtraSections.filter((s) => s.group === "Relationships") }
   ].filter((navSection) => navSection.items.length);
 
+  useEffect(() => {
+    if (section === "email" || grantedExtraSections.some((s) => s.id === section)) return;
+    setSection(grantedExtraSections.some((s) => s.id === "command-center") ? "command-center" : "email");
+  }, [grantedExtraSections, section]);
+
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-[#12213a]">
       <div className="grid min-h-screen md:grid-cols-[260px_1fr]">
@@ -415,7 +417,7 @@ function PartnerShell() {
 
           <div className="space-y-6 p-6">
             {ActiveExtraSection ? (
-              <ActiveExtraSection permissions={permissions} />
+              <ActiveExtraSection section={section} permissions={permissions} />
             ) : (
               <EmailOutreachModule
                 initialTab="dashboard"
