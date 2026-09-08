@@ -101,18 +101,38 @@ function PartnershipView({ partnerUser }) {
   }
 
   const signed = Boolean(agreement?.hasSignedAgreement);
+  const signedBy = agreement?.agreementSignedName ?? partnerUser.name;
+  const signedOn = fmtDate(agreement?.agreementSignedAt);
+  const agreementDetails = [
+    ["Signer", signedBy || "-"],
+    ["Address", agreement?.agreementAddress || "-"],
+    ["Payment", agreement?.agreementPaymentSchedule || "-"],
+    ["Copy", agreement?.uploadedSignedCopy ? "Uploaded signed copy" : "Generated signed copy"]
+  ];
 
   return (
     <div className="space-y-6">
-      <section>
-        <span className="inline-flex items-center gap-2 rounded-full bg-[#e6ebff] px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#3046b2]">
-          <AttachmentIcon className="size-4" />
-          Partnership
-        </span>
-        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Partnership</h1>
-        <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
-          Agreement status and signed Channel Partner documents for {partnerUser.channelPartner.name}.
-        </p>
+      <section className="rounded-[24px] border border-[#dfe6f2] bg-white px-6 py-6 shadow-[0_18px_45px_rgba(27,41,95,0.08)]">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-[#e6ebff] px-4 py-1.5 text-[12px] font-semibold uppercase text-[#3046b2]">
+              <AttachmentIcon className="size-4" />
+              Partnership
+            </span>
+            <h1 className="mt-4 text-[42px] font-semibold leading-tight text-[#0f2042]">Partnership</h1>
+            <p className="mt-2 max-w-3xl text-[17px] leading-7 text-[#4f6181]">
+              Agreement status and signed Channel Partner documents for {partnerUser.channelPartner.name}.
+            </p>
+          </div>
+          <div className="min-w-[220px] rounded-[18px] border border-[#dfe6f2] bg-[#f6f8fc] px-4 py-4">
+            <p className="text-[12px] font-semibold uppercase text-[#7b8aa6]">Current status</p>
+            <div className="mt-2 flex items-center gap-2">
+              <span className={`size-2.5 rounded-full ${signed ? "bg-[#2fac63]" : "bg-[#f0a43b]"}`} />
+              <span className="text-[22px] font-semibold text-[#102246]">{signed ? "Signed" : "Pending"}</span>
+            </div>
+            <p className="mt-1 text-[13px] text-[#72809a]">{signed ? `Completed on ${signedOn}` : "Agreement is waiting for signature."}</p>
+          </div>
+        </div>
       </section>
 
       {loading ? (
@@ -121,14 +141,14 @@ function PartnershipView({ partnerUser }) {
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard card={{ label: "Agreement", value: signed ? "Signed" : "Pending", note: signed ? "Completed" : "Not signed", noteTone: signed ? "green" : "amber" }} />
-            <StatCard card={{ label: "Signed On", value: fmtDate(agreement?.agreementSignedAt), note: agreement?.agreementSignedName ?? "Signer not recorded", noteTone: "blue" }} />
+            <StatCard card={{ label: "Signed On", value: signedOn, note: signedBy ?? "Signer not recorded", noteTone: "blue" }} />
             <StatCard card={{ label: "Territory", value: agreement?.region || "-", note: "Partner coverage", noteTone: "violet" }} />
             <StatCard card={{ label: "Commission", value: `${agreement?.commissionPct ?? 0}%`, note: "Configured rate", noteTone: "green" }} />
           </div>
 
-          <Card className="px-5 py-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
+          <Card className="overflow-hidden">
+            <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
+              <div className="px-5 py-5 sm:px-6">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-[18px] font-semibold text-[#102246]">Signed Channel Partner Agreement</h2>
                   <Badge tone={signed ? "green" : "amber"}>{signed ? "Signed" : "Pending"}</Badge>
@@ -136,19 +156,39 @@ function PartnershipView({ partnerUser }) {
                 </div>
                 <p className="mt-2 text-[14px] text-[#5f6f89]">
                   {signed
-                    ? `Signed by ${agreement.agreementSignedName ?? partnerUser.name} on ${fmtDate(agreement.agreementSignedAt)}.`
+                    ? `Signed by ${signedBy} on ${signedOn}.`
                     : "Your signed agreement is not available yet."}
                 </p>
-                {agreement?.agreementAddress ? <p className="mt-1 text-[13px] text-[#8592ab]">Address: {agreement.agreementAddress}</p> : null}
-                {agreement?.agreementPaymentSchedule ? <p className="mt-1 text-[13px] text-[#8592ab]">Payment schedule: {agreement.agreementPaymentSchedule}</p> : null}
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {agreementDetails.map(([label, value]) => (
+                    <div key={label} className="rounded-[16px] border border-[#e4eaf4] bg-[#f8faff] px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase text-[#8795ad]">{label}</p>
+                      <p className="mt-1 text-[14px] font-medium text-[#102246]">{value}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <ActionButton
-                label={downloading ? "Downloading..." : "Download signed agreement"}
-                icon={AttachmentIcon}
-                primary
-                onClick={handleDownload}
-                disabled={!signed || downloading}
-              />
+              <div className="border-t border-[#e4eaf4] bg-[#f6f8fc] px-5 py-5 lg:border-l lg:border-t-0">
+                <div className="rounded-[18px] border border-[#dfe6f2] bg-white px-4 py-4">
+                  <div className="flex size-11 items-center justify-center rounded-[14px] bg-[#e6ebff] text-[#3046b2]">
+                    <AttachmentIcon className="size-5" />
+                  </div>
+                  <h3 className="mt-4 text-[16px] font-semibold text-[#102246]">Agreement copy</h3>
+                  <p className="mt-1 text-[13px] leading-6 text-[#72809a]">
+                    Download the signed Channel Partner agreement linked to this portal account.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleDownload}
+                    disabled={!signed || downloading}
+                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[14px] border border-[#3046b2] bg-[#3046b2] px-4 py-3 text-[15px] font-semibold text-white shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:bg-[#253ba2] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <AttachmentIcon className="size-4" />
+                    {downloading ? "Downloading..." : "Download agreement"}
+                  </button>
+                </div>
+              </div>
             </div>
             {error ? <p className="mt-4 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
           </Card>
