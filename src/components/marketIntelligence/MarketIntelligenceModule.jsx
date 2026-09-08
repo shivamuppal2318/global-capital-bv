@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { ActionButton } from "../ui.jsx";
 import { RadarIcon, SendIcon, SparklesIcon } from "../Icons.jsx";
 import { marketIntelligenceApi } from "../../lib/marketIntelligenceApi.js";
+import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
+import { emailLeadsApi } from "../../lib/emailLeadsApi.js";
 import { ChatBubble } from "./ChatBubble.jsx";
 
 const signalStatusToneClass = {
@@ -73,6 +75,48 @@ function buildFallbackAnswer(message, signals) {
   return `Found ${matches.length} captured signal${matches.length === 1 ? "" : "s"} matching "${message}":\n${preview}${remainder}`;
 }
 
+function SignalAddToListInline({ campaigns, campaignId, setCampaignId, busy, result, canAdd, onSubmit, onClose }) {
+  return (
+    <div className="mt-3 rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3">
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Add ZoomInfo contact to List</p>
+      {canAdd ? (
+        <>
+          <div className="max-h-[170px] overflow-y-auto rounded-[10px] border border-[#d6deea] bg-white">
+            {campaigns.length ? (
+              campaigns.map((campaign) => (
+                <label key={campaign.id} className="flex items-center gap-2.5 border-b border-[#f0f3f9] px-3 py-2 text-[13px] text-[#435471] last:border-b-0">
+                  <input
+                    type="radio"
+                    name={`market-signal-add-to-list-${campaign.id}`}
+                    checked={campaignId === campaign.id}
+                    onChange={() => setCampaignId(campaign.id)}
+                    className="h-4 w-4 border-[#b9c4d8]"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{campaign.name}</span>
+                </label>
+              ))
+            ) : (
+              <p className="px-3 py-3 text-[12px] text-[#9aa6ba]">No Lists yet — create one from Email Automation → Leads → New List.</p>
+            )}
+          </div>
+          <p className="mt-2 text-[11px] leading-4 text-[#8592ab]">
+            Adds the verified ZoomInfo contact only. Cadence is skipped, so no email is sent automatically.
+          </p>
+        </>
+      ) : (
+        <p className="text-[13px] text-[#9aa6ba]">Find a ZoomInfo contact first, then this can be added to a List.</p>
+      )}
+      <div className="mt-2.5 flex flex-wrap items-center gap-3">
+        <ActionButton label={busy ? "Adding…" : "Add"} primary small onClick={onSubmit} disabled={busy || !campaignId || !canAdd} />
+        <button type="button" onClick={onClose} className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#435471]">
+          Close
+        </button>
+      </div>
+      {result ? <p className={`mt-2 text-[13px] font-medium ${result.ok ? "text-[#2b9b60]" : "text-[#e0483f]"}`}>{result.text}</p> : null}
+    </div>
+  );
+}
+
 // Scans Google News RSS (live, no key needed) + stubbed NewsAPI/Exa/
 // Firecrawl/Apollo for funding/acquisition/expansion signals, routes them
 // against EmailLead.company, and offers a grounded chat assistant (falls
@@ -91,6 +135,11 @@ export function MarketIntelligenceModule() {
   // several signal cards can each be enriched independently.
   const [enrichingId, setEnrichingId] = useState(null);
   const [enrichNotices, setEnrichNotices] = useState({});
+  const [addToListSignalId, setAddToListSignalId] = useState(null);
+  const [addToListCampaigns, setAddToListCampaigns] = useState([]);
+  const [addToListCampaignId, setAddToListCampaignId] = useState("");
+  const [addToListBusy, setAddToListBusy] = useState(false);
+  const [addToListResult, setAddToListResult] = useState(null);
 
   const loadStatusAndSignals = () => {
     marketIntelligenceApi
@@ -155,6 +204,43 @@ export function MarketIntelligenceModule() {
       setEnrichNotices((current) => ({ ...current, [signal.id]: `Could not enrich via ZoomInfo (${error.message}).` }));
     } finally {
       setEnrichingId(null);
+    }
+  }
+
+  function openAddToList(signal) {
+    setAddToListSignalId(signal.id);
+    setAddToListCampaignId("");
+    setAddToListResult(null);
+    emailCampaignsApi.list().then(setAddToListCampaigns).catch(() => setAddToListCampaigns([]));
+  }
+
+  async function handleAddSignalToList(signal) {
+    if (!addToListCampaignId || !signal.zoomInfoContactData?.email) return;
+
+    const contact = signal.zoomInfoContactData;
+    const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ") || signal.entityName || "Unknown contact";
+    const company = signal.entityName || signal.zoomInfoCompanyData?.name || "Unknown company";
+    const listName = addToListCampaigns.find((c) => c.id === addToListCampaignId)?.name ?? "the list";
+
+    setAddToListBusy(true);
+    setAddToListResult(null);
+    try {
+      const result = await emailLeadsApi.bulkCreate(
+        addToListCampaignId,
+        [{ name, company, email: contact.email, owner: "Unassigned", country: signal.zoomInfoCompanyData?.country ?? null }],
+        { skipCadence: true }
+      );
+      if (result.createdCount > 0) {
+        setAddToListResult({ ok: true, text: `${name} (${contact.email}) added to "${listName}".` });
+      } else if (result.duplicateCount > 0) {
+        setAddToListResult({ ok: true, text: `${name} (${contact.email}) is already in "${listName}".` });
+      } else {
+        setAddToListResult({ ok: false, text: `Could not add ${name} — ${result.invalid?.[0]?.reason ?? result.failed?.[0]?.reason ?? "unknown reason"}.` });
+      }
+    } catch (error) {
+      setAddToListResult({ ok: false, text: error.message });
+    } finally {
+      setAddToListBusy(false);
     }
   }
 
@@ -464,7 +550,16 @@ export function MarketIntelligenceModule() {
                         disabled={enrichingId === signal.id}
                         className="ml-auto rounded-full border border-[#d6deea] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#3046b2] transition hover:bg-[#f4f7fb] disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {enrichingId === signal.id ? "Enriching…" : signal.zoomInfoEnrichedAt ? "Re-enrich (ZoomInfo)" : "Enrich (ZoomInfo)"}
+                        {enrichingId === signal.id ? "Finding contact…" : signal.zoomInfoEnrichedAt ? "Re-check ZoomInfo" : "Find contact (ZoomInfo)"}
+                      </button>
+                    ) : null}
+                    {signal.zoomInfoContactData?.email ? (
+                      <button
+                        type="button"
+                        onClick={() => openAddToList(signal)}
+                        className="rounded-full border border-[#cce7d6] bg-[#f1fbf5] px-2.5 py-1 text-[11px] font-semibold text-[#1f7a4a] transition hover:border-[#9ed4b3]"
+                      >
+                        Add to List
                       </button>
                     ) : null}
                   </div>
@@ -510,6 +605,19 @@ export function MarketIntelligenceModule() {
                         Best real contact ZoomInfo's own search found for this company — not necessarily the one mentioned in the article.
                       </p>
                     </div>
+                  ) : null}
+
+                  {addToListSignalId === signal.id ? (
+                    <SignalAddToListInline
+                      campaigns={addToListCampaigns}
+                      campaignId={addToListCampaignId}
+                      setCampaignId={setAddToListCampaignId}
+                      busy={addToListBusy}
+                      result={addToListResult}
+                      canAdd={Boolean(signal.zoomInfoContactData?.email)}
+                      onSubmit={() => handleAddSignalToList(signal)}
+                      onClose={() => setAddToListSignalId(null)}
+                    />
                   ) : null}
 
                   {signal.zoomInfoScoops?.length ? (
