@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react";
 import {
-  FunnelIcon,
   GlobeIcon,
   MailIcon,
   PencilIcon,
-  PlusIcon,
   RadarIcon,
   SendIcon,
   TagIcon,
-  UploadIcon,
   UserCheckIcon
 } from "../Icons";
 import { ActionButton, Card, noteToneClass, SectionTitle } from "../ui";
@@ -570,14 +567,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   const [importText, setImportText] = useState("");
   const [importBusy, setImportBusy] = useState(false);
   const [importResult, setImportResult] = useState(null);
-  // "Views" — a quick client-side status filter over the already-loaded
-  // leads list (New Enquiries table below); no new backend call needed
-  // since every lead's status is already in `leads`. Defaults to
-  // "Interested" per request — the table a rep lands on should already be
-  // narrowed to the leads worth acting on, not every status mixed together;
-  // "Views" still switches to "All statuses" or any other one in one click.
-  const [viewsOpen, setViewsOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("INTERESTED");
+  const [statusFilter] = useState("ALL");
   // Convert: promotes a lead to CONVERTED — a single-field shortcut from the
   // action bar onto the same PATCH the Edit form already uses.
   const [converting, setConverting] = useState(false);
@@ -1216,14 +1206,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
 
   return (
     <div className="space-y-6">
-      <Header
-        onNewRecord={() => setAddModalOpen(true)}
-        onImport={() => setImportModalOpen(true)}
-        viewsOpen={viewsOpen}
-        setViewsOpen={setViewsOpen}
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
-      />
+      <Header />
 
       {dealBoard ? (
         <Card className="px-5 py-5">
@@ -1501,7 +1484,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                 <tr>
                   <td colSpan={6} className="px-5 py-6 text-[14px] text-[#8592ab]">
                     {leads.length === 0
-                      ? "No leads yet — add one with \"New record\", import a CSV, send one in via the webhook (Settings → Integrations & API), or wait for one to arrive from WhatsApp."
+                      ? "No leads yet — send one in via the webhook (Settings → Integrations & API), or wait for one to arrive from WhatsApp."
                       : `No leads with status "${STATUS_LABEL[statusFilter]}".`}
                   </td>
                 </tr>
@@ -1576,34 +1559,6 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
         />
       ) : null}
 
-      {addModalOpen ? (
-        <AddLeadModal
-          form={addForm}
-          setForm={setAddForm}
-          saving={addSaving}
-          error={addError}
-          onClose={() => {
-            setAddModalOpen(false);
-            setAddError(null);
-          }}
-          onSave={handleAddLead}
-        />
-      ) : null}
-
-      {importModalOpen ? (
-        <ImportLeadsModal
-          text={importText}
-          setText={setImportText}
-          busy={importBusy}
-          result={importResult}
-          onClose={() => {
-            setImportModalOpen(false);
-            setImportText("");
-            setImportResult(null);
-          }}
-          onImport={handleImportLeads}
-        />
-      ) : null}
     </div>
   );
 }
@@ -1879,7 +1834,7 @@ const VIEW_OPTIONS = [
   { value: "LOST", label: "Lost" }
 ];
 
-function Header({ onNewRecord, onImport, viewsOpen, setViewsOpen, statusFilter, setStatusFilter }) {
+function Header() {
   return (
     <section>
       <div className="flex items-start justify-between gap-4">
@@ -1888,37 +1843,6 @@ function Header({ onNewRecord, onImport, viewsOpen, setViewsOpen, statusFilter, 
             Module
           </span>
           <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">CRM Workspace</h1>
-        </div>
-        <div className="relative flex flex-wrap justify-end gap-3 pt-1">
-          <ActionButton label="New record" icon={PlusIcon} primary onClick={onNewRecord} />
-          <ActionButton label="Import" icon={UploadIcon} onClick={onImport} />
-          <ActionButton
-            label="Views"
-            icon={FunnelIcon}
-            active={Boolean(statusFilter && statusFilter !== "ALL")}
-            onClick={() => setViewsOpen?.((open) => !open)}
-          />
-
-          {viewsOpen ? (
-            <div className="absolute right-0 top-[52px] z-20 w-56 rounded-[14px] border border-[#d6deea] bg-white p-2 shadow-[0_12px_32px_rgba(15,31,61,0.14)]">
-              <p className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#8592ab]">Filter by status</p>
-              {VIEW_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    setStatusFilter?.(option.value);
-                    setViewsOpen?.(false);
-                  }}
-                  className={`block w-full rounded-[10px] px-3 py-2 text-left text-[13px] font-medium ${
-                    statusFilter === option.value ? "bg-[#eef2ff] text-[#3046b2]" : "text-[#435471] hover:bg-[#f7f9fc]"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
       </div>
     </section>
