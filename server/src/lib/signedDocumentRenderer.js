@@ -68,7 +68,7 @@ function renderBody(rawText) {
 // rather than a plain unstyled scroll of paragraphs. The PDF repeats that
 // header/footer on every physical page; this is one continuous HTML
 // document, so each is shown once rather than faked per-page.
-function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
+function documentShell({ title, mainHtml, signatureHtml, footerNote, showInitialsLine = false }) {
   const logo = LOGO_DATA_URI;
   return `<!doctype html>
 <html>
@@ -87,6 +87,7 @@ function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
   .header img { height: 48px; width: auto; margin-bottom: 8px; }
   .brand { display: block; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-weight: 800; font-size: 19px; color: #16213e; letter-spacing: 0.02em; }
   .tag { display: block; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-weight: 700; font-size: 11px; color: #21439b; text-transform: uppercase; letter-spacing: 0.07em; margin-top: 3px; }
+  .initials-line { display: flex; justify-content: flex-end; margin: -10px 0 22px; font-size: 12px; color: #16213e; }
   .signature { margin-top: 32px; padding-top: 20px; border-top: 1px solid #d6deea; }
   .doc-footer { margin-top: 40px; padding-top: 16px; border-top: 2px solid #21439b; text-align: center; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
   .doc-footer p { text-align: center; font-size: 11px; color: #5c6b87; margin: 0 0 3px; }
@@ -102,6 +103,7 @@ function documentShell({ title, mainHtml, signatureHtml, footerNote }) {
       <span class="brand">GLOBAL CAPITAL BV</span>
       <span class="tag">Building Financial Dreams Together</span>
     </div>
+    ${showInitialsLine ? '<div class="initials-line">_______________Initials</div>' : ""}
     <div class="doc-body">${mainHtml}</div>
     <div class="signature">${signatureHtml}</div>
     <div class="doc-footer">
@@ -194,7 +196,8 @@ export async function renderSignedNda(nda) {
     title: `Signed NDA — ${nda.counterpartyLegalName || nda.lead?.company || "Global Capital BV"}`,
     mainHtml,
     signatureHtml,
-    footerNote: `Accepted online via the Global Capital BV client portal by ${nda.signerName ?? "the client"} on ${fmtDateTime(nda.signedAt)}. This copy reflects the details the client submitted at acceptance.`
+    footerNote: `Accepted online via the Global Capital BV client portal by ${nda.signerName ?? "the client"} on ${fmtDateTime(nda.signedAt)}. This copy reflects the details the client submitted at acceptance.`,
+    showInitialsLine: true
   });
 }
 

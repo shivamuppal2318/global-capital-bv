@@ -961,7 +961,7 @@ const ndaFillDetailsSchema = z.object({
   counterpartyAddress: z.string().trim().min(1, "Enter the registered office address."),
   agreementDate: z.string().trim().min(1, "Choose the agreement date."),
   signatoryName: z.string().trim().min(1, "Enter the signatory's name."),
-  signatoryTitle: z.string().trim().min(1, "Enter the signatory's title.")
+  signatoryTitle: z.string().trim().optional()
 });
 
 clientPortalRouter.post(
