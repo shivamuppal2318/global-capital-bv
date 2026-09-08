@@ -579,19 +579,13 @@ export function VisitPlanningModule() {
               </div>
 
               <div className="md:col-span-2">
-                <label className={labelClass}>Attach the visit report (optional)</label>
-                {editing.reportId ? (
-                  <p className="text-[13px] text-[#334463]">
-                    Attached: {documents.find((d) => d.id === editing.reportId)?.originalName ?? "1 file"}{" "}
-                    <button
-                      type="button"
-                      className="font-semibold text-[#3046b2] hover:underline"
-                      onClick={() => setEditing({ ...editing, reportId: "" })}
-                    >
-                      Remove
-                    </button>
-                  </p>
-                ) : null}
+                <label className={labelClass}>Attach a document (optional)</label>
+                <select className={inputClass} value={editing.reportId} onChange={(e) => setEditing({ ...editing, reportId: e.target.value })}>
+                  <option value="">None</option>
+                  {documents.map((d) => (
+                    <option key={d.id} value={d.id}>{d.originalName}</option>
+                  ))}
+                </select>
                 <div className="mt-2 flex items-center gap-2">
                   <input
                     type="file"
@@ -607,18 +601,7 @@ export function VisitPlanningModule() {
                   {documentUploading ? <span className="text-[12px] text-[#8592ab]">Uploading…</span> : null}
                 </div>
                 {documentUploadError ? <p className="mt-1 text-[12px] font-medium text-[#e0483f]">{documentUploadError}</p> : null}
-                <p className="mt-1 text-[12px] text-[#8592ab]">Uploading also adds it to this lead's Data Room.</p>
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="flex items-center gap-2 text-[14px] font-medium text-[#334463]">
-                  <input
-                    type="checkbox"
-                    checked={editing.reportSubmitted}
-                    onChange={(e) => setEditing({ ...editing, reportSubmitted: e.target.checked })}
-                  />
-                  Report submitted
-                </label>
+                <p className="mt-1 text-[12px] text-[#8592ab]">Upload a new file here, or pick one already in the Data Room.</p>
               </div>
 
               <div className="md:col-span-2">

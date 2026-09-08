@@ -7,7 +7,6 @@ import {
   LinkIcon,
   RadarIcon,
   SlidersIcon,
-  TagIcon,
   UserCheckIcon,
   UsersIcon,
   WorkflowIcon,
@@ -27,37 +26,6 @@ const LIFECYCLE_STAGES = [
   { key: "zoomCall2", label: "Zoom call 2" },
   { key: "fieldVisit", label: "Field visit" },
   { key: "termSheet", label: "Term sheet" }
-];
-
-const TICKET_SIZE_BANDS = [
-  { key: "under_1m", label: "Under $1M" },
-  { key: "1m_5m", label: "$1M–$5M" },
-  { key: "5m_20m", label: "$5M–$20M" },
-  { key: "20m_plus", label: "$20M+" },
-  { key: "unspecified", label: "Unspecified" }
-];
-
-const TEMPERATURES = [
-  { key: "HOT", label: "Hot" },
-  { key: "WARM", label: "Warm" },
-  { key: "COLD", label: "Cold" }
-];
-
-const STATUSES = [
-  { key: "NEW", label: "New" },
-  { key: "CONTACTED", label: "Contacted" },
-  { key: "INTERESTED", label: "Interested" },
-  { key: "QUALIFIED", label: "Qualified" },
-  { key: "NEGOTIATION", label: "Negotiation" },
-  { key: "CONVERTED", label: "Converted" },
-  { key: "LOST", label: "Lost" }
-];
-
-const DUE_WINDOWS = [
-  { key: "overdue", label: "Overdue" },
-  { key: "due_7d", label: "Due within 7 days" },
-  { key: "due_30d", label: "Due within 30 days" },
-  { key: "none", label: "No action due" }
 ];
 
 const TEMPERATURE_TONE = { HOT: "red", WARM: "amber", COLD: "blue" };
@@ -82,14 +50,7 @@ const EMPTY_FILTERS = {
   timeTo: "",
   lifecyclePhase: "",
   industry: "",
-  ticketSizeBand: "",
-  geography: "",
-  temperature: "",
-  teamLeader: "",
-  manager: "",
-  leadSource: "",
-  status: "",
-  dueWindow: ""
+  geography: ""
 };
 
 const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : "—");
@@ -130,7 +91,6 @@ export function UniversalFiltersModule() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showMore, setShowMore] = useState(false);
 
   // Previously swallowed silently — a facets-load failure (403 from the
   // module permission gate, an expired session, network issue) left every
@@ -176,9 +136,6 @@ export function UniversalFiltersModule() {
   const channelPartnerOptions = useMemo(() => asOptions(facets?.channelPartners ?? []), [facets]);
   const industryOptions = useMemo(() => asOptions(facets?.industries ?? []), [facets]);
   const geographyOptions = useMemo(() => asOptions(facets?.geographies ?? []), [facets]);
-  const teamLeaderOptions = useMemo(() => asOptions(facets?.teamLeaders ?? []), [facets]);
-  const managerOptions = useMemo(() => asOptions(facets?.managers ?? []), [facets]);
-  const leadSourceOptions = useMemo(() => asOptions(facets?.leadSources ?? []), [facets]);
 
   return (
     <div className="space-y-5">
@@ -190,7 +147,7 @@ export function UniversalFiltersModule() {
           Universal Filters
         </h1>
         <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
-          The same 14 filter dimensions, available across every report — filter the full lead pipeline by any
+          The same 7 filter dimensions, available across every report — filter the full lead pipeline by any
           combination of them.
         </p>
       </section>
@@ -237,33 +194,10 @@ export function UniversalFiltersModule() {
             <Select label="" value={filters.industry} onChange={set("industry")} options={industryOptions} />
           </FilterCard>
 
-          <FilterCard icon={TagIcon} label="Ticket Size">
-            <Select label="" value={filters.ticketSizeBand} onChange={set("ticketSizeBand")} options={TICKET_SIZE_BANDS} />
-          </FilterCard>
-
           <FilterCard icon={RadarIcon} label="Geography">
             <Select label="" value={filters.geography} onChange={set("geography")} options={geographyOptions} />
           </FilterCard>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setShowMore((v) => !v)}
-          className="mt-4 text-[13px] font-semibold text-[#3046b2] hover:underline"
-        >
-          {showMore ? "Hide additional filters" : "Show additional filters"}
-        </button>
-
-        {showMore ? (
-          <div className="mt-3 grid gap-3 rounded-[16px] border border-dashed border-[#d6deea] p-4 sm:grid-cols-2 xl:grid-cols-3">
-            <Select label="Hot / Warm / Cold" value={filters.temperature} onChange={set("temperature")} options={TEMPERATURES} />
-            <Select label="Team Leader" value={filters.teamLeader} onChange={set("teamLeader")} options={teamLeaderOptions} />
-            <Select label="Manager" value={filters.manager} onChange={set("manager")} options={managerOptions} />
-            <Select label="Lead Source" value={filters.leadSource} onChange={set("leadSource")} options={leadSourceOptions} />
-            <Select label="Status" value={filters.status} onChange={set("status")} options={STATUSES} />
-            <Select label="Next Action Due" value={filters.dueWindow} onChange={set("dueWindow")} options={DUE_WINDOWS} />
-          </div>
-        ) : null}
       </Card>
 
       <Card className="px-5 py-5">
@@ -277,7 +211,7 @@ export function UniversalFiltersModule() {
           <table className="w-full min-w-[900px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
-                {["Lead", "Status", "Lifecycle Phase", "Industry", "Geography", "Ticket Size", "Temp", "Owner", "Next Action Due"].map((h) => (
+                {["Lead", "Status", "Lifecycle Phase", "Industry", "Geography", "Temp", "Owner", "Next Action Due"].map((h) => (
                   <th key={h} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
                     {h}
                   </th>
@@ -297,9 +231,6 @@ export function UniversalFiltersModule() {
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.lifecyclePhaseLabel}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.industry ?? "—"}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.territory ?? "—"}</td>
-                  <td className="py-3 pr-4 text-[13px] text-[#334463]">
-                    {TICKET_SIZE_BANDS.find((b) => b.key === lead.ticketSizeBand)?.label ?? "—"}
-                  </td>
                   <td className="py-3 pr-4">
                     {lead.temperature ? <Badge tone={TEMPERATURE_TONE[lead.temperature]}>{lead.temperature}</Badge> : "—"}
                   </td>

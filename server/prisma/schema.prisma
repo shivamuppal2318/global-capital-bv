@@ -368,6 +368,12 @@ model DealStageRecord {
   document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
   documentId String?
 
+  // Field Visit's own report toggle — same shape as VisitPlan.reportSubmitted/
+  // reportAt, kept independent of `document` above since a visit report can
+  // be marked submitted before (or without) a file actually being attached.
+  reportSubmitted Boolean   @default(false)
+  reportAt        DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

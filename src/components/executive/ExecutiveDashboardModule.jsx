@@ -1,20 +1,10 @@
 import { useEffect, useState } from "react";
 import { executiveDashboardApi } from "../../lib/executiveDashboardApi";
 import { Card, SectionTitle, StatCard } from "../ui";
-import { ChartBarIcon, GridIcon, SparklesIcon } from "../Icons";
+import { GridIcon, SparklesIcon } from "../Icons";
 
 const has = (v) => v !== null && v !== undefined;
 const fmtPct = (v) => (has(v) ? `${v}%` : "—");
-
-// Same abbreviation scheme as the IOI module's fmtMoney: at these
-// magnitudes "$99,200,000" wraps and loses its shape in a KPI tile.
-function fmtMoney(value) {
-  if (!has(value) || value === 0) return "—";
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
-  if (abs >= 1_000) return `$${(value / 1_000).toFixed(0)}k`;
-  return `$${value.toLocaleString()}`;
-}
 
 // Each row restates one number from the funnel/KPI payload as a rate, with
 // the formula that produced it — so the dashboard reads as a live
@@ -28,10 +18,7 @@ const KPI_ROWS = [
   { key: "ioiConversion", label: "IOI Signed", formula: "IOIs signed / IOIs generated", format: fmtPct },
   { key: "zoomCall2Conversion", label: "Zoom Call 2", formula: "Leads with a 2nd zoom call completed / Leads with IOI Signed", format: fmtPct },
   { key: "fieldVisitCompletion", label: "Field Visit", formula: "Visits completed / Visits planned", format: fmtPct },
-  { key: "termSheetConversion", label: "Term Sheet Closed", formula: "Term sheets issued / Leads reaching field visit", format: fmtPct },
-  { key: "pipelineValue", label: "Pipeline Value", formula: "Sum of qualified IOI + term sheet value", format: fmtMoney },
-  { key: "avgDealAge", label: "Average Deal Age", formula: "Now − lead creation date, averaged over open deals", format: (v) => (has(v) ? `${v} days` : "—") },
-  { key: "winRate", label: "Win Rate", formula: "Closed won / (Closed won + Closed lost)", format: fmtPct }
+  { key: "termSheetConversion", label: "Term Sheet Closed", formula: "Term sheets issued / field visit", format: fmtPct }
 ];
 
 export function ExecutiveDashboardModule() {
@@ -65,60 +52,39 @@ export function ExecutiveDashboardModule() {
     );
   }
 
-  const { stats, funnel, kpis } = data;
+  const { stats, funnel, kpis, scope } = data;
   const funnelMax = funnel.reduce((m, s) => Math.max(m, s.count), 0);
 
-  const trend = stats.activeDeals.trendPct;
   const cards = [
     {
-      label: "Active Deals",
-      value: String(stats.activeDeals.count),
-      note: has(trend) ? `${trend >= 0 ? "+" : ""}${trend}% vs prior 30 days` : "Total opportunities in pipeline",
-      noteTone: !has(trend) ? "blue" : trend >= 0 ? "green" : "red"
-    },
-    {
-      label: "Term Sheets Closed",
-      value: String(stats.termSheets.count),
-      note: has(stats.termSheets.conversionPct) ? `${stats.termSheets.conversionPct}% overall conversion` : "Overall conversion rate",
-      noteTone: "amber"
-    },
-    {
-      label: "Avg Deal Age",
-      value: has(stats.dealAge.avgDays) ? `${stats.dealAge.avgDays} Days` : "—",
-      note: "Across all lifecycle phases",
+      label: "Total Outreach",
+      value: String(stats.totalOutreach.count),
+      note: has(stats.totalOutreach.responseRate) ? `${stats.totalOutreach.responseRate}% response rate` : "Cold emails sent",
       noteTone: "blue"
     },
     {
-      label: "Pipeline Value",
-      value: fmtMoney(stats.pipelineValue.total),
-      note: stats.pipelineValue.termSheetUnparsed
-        ? `Qualified IOI + Term Sheet (${stats.pipelineValue.termSheetUnparsed} unparsed excluded)`
-        : "Qualified IOI + Term Sheet",
+      label: "NDA Signed",
+      value: String(stats.ndaSigned.count),
+      note: has(stats.ndaSigned.conversionPct) ? `${stats.ndaSigned.conversionPct}% of sent` : "Of NDAs sent",
+      noteTone: "amber"
+    },
+    {
+      label: "IOI Signed",
+      value: String(stats.ioiSigned.count),
+      note: has(stats.ioiSigned.conversionPct) ? `${stats.ioiSigned.conversionPct}% of generated` : "Of IOIs generated",
       noteTone: "green"
+    },
+    {
+      label: "Term Sheet Closed",
+      value: String(stats.termSheets.count),
+      note: has(stats.termSheets.conversionPct) ? `${stats.termSheets.conversionPct}% overall conversion` : "Overall conversion rate",
+      noteTone: "amber"
     }
-  ];
-
-  // The four Executive Metrics rows that aren't a "count of leads at this
-  // stage" — a %, a currency total and a day count don't belong as bars
-  // next to Funnel Health's lead counts (a "75" bar would read as 75 leads,
-  // not a 75% rate), so they get their own chart instead, matching the
-  // same bar-chart visual language.
-  //
-  // Only Response Rate and Win Rate are real percentages that can honestly
-  // share a 0-100% bar height. Pipeline Value and Avg Deal Age have no
-  // natural upper bound to scale against, so their bars are drawn at full
-  // height on purpose — they carry the number, not a proportion — rather
-  // than inventing a fake target to compare them to.
-  const funnelExtras = [
-    { key: "responseRate", label: "Response Rate", value: fmtPct(kpis.responseRate), pct: has(kpis.responseRate) ? kpis.responseRate : 0, color: "#4c8bf5", proportional: true },
-    { key: "winRate", label: "Win Rate", value: fmtPct(kpis.winRate), pct: has(kpis.winRate) ? kpis.winRate : 0, color: "#2b9b60", proportional: true },
-    { key: "pipelineValue", label: "Pipeline Value", value: fmtMoney(kpis.pipelineValue), color: "#8b52d0", proportional: false },
-    { key: "avgDealAge", label: "Avg Deal Age", value: has(kpis.avgDealAge) ? `${kpis.avgDealAge} Days` : "—", color: "#f29c38", proportional: false }
   ];
 
   return (
     <div className="space-y-6">
-      <Header />
+      <Header scope={scope} />
 
       <div className="grid gap-4 xl:grid-cols-4">
         {cards.map((c) => (
@@ -178,49 +144,23 @@ export function ExecutiveDashboardModule() {
           </p>
         )}
       </Card>
-
-      <Card className="px-5 py-5">
-        <SectionTitle icon={ChartBarIcon} iconClass="text-[#2b9b60]" subtitle="Rate, value and speed metrics that don't fit a lead-count bar chart.">
-          Rate &amp; Value Snapshot
-        </SectionTitle>
-
-        <div className="mt-6 flex items-end gap-3 overflow-x-auto pb-1" style={{ height: 180 }}>
-          {funnelExtras.map((c) => (
-            <div key={c.key} className="flex min-w-[110px] flex-1 flex-col items-center justify-end gap-2" style={{ height: "100%" }}>
-              <span className="text-[15px] font-semibold text-[#102246]">{c.value}</span>
-              <div
-                className="w-full rounded-t-[8px]"
-                style={{
-                  height: c.proportional ? `${Math.max(4, c.pct)}%` : "100%",
-                  background: c.color,
-                  opacity: c.proportional ? 1 : 0.55
-                }}
-                title={c.proportional ? `${c.value} of a 0-100% scale` : `${c.value} — shown at full height, not a rate on the same scale as the other bars`}
-              />
-              <span className="text-center text-[11px] font-medium text-[#5c6b87]">{c.label}</span>
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 text-[12px] text-[#9aa6bd]">
-          Response Rate and Win Rate bars are drawn to their real 0–100% scale. Pipeline Value and Avg Deal Age have
-          no natural upper bound, so their bars are shown at full height (the number, not a proportion).
-        </p>
-      </Card>
     </div>
   );
 }
 
-function Header() {
+function Header({ scope }) {
   return (
     <section>
       <span className="inline-flex items-center gap-2 rounded-full bg-[#eef2ff] px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#3046b2]">
-        Executive Dashboard · CEO View
+        Executive Dashboard · {scope ? `${scope.doe}'s View` : "CEO View"}
       </span>
       <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">
         Executive Dashboard
       </h1>
       <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
-        The landing dashboard that gives the health of the entire business in one screen.
+        {scope
+          ? `Your own numbers as ${scope.doe} — the leads and stages you own, not the company-wide total.`
+          : "The landing dashboard that gives the health of the entire business in one screen."}
       </p>
     </section>
   );

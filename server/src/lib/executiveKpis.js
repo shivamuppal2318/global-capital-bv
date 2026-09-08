@@ -16,17 +16,27 @@ import {
   pipelineValueMetrics
 } from "./executiveMetrics.js";
 
-export async function computeExecutiveKpis() {
+// `doeName`, when set, scopes every query down to just that DOE's own
+// work -- each model's own `owner` field where it has one (NdaRecord,
+// IoiRecord, VisitPlan, DealStageRecord, EmailLead, and Lead.owner itself),
+// falling back to the owning Lead's `owner` for the two models with no
+// owner field of their own (Meeting, Document). Left unscoped ({}) when
+// `doeName` isn't given, which is the only way routes/outreachDoe.js calls
+// this today -- its own pipelineKpis stay company-wide by design.
+export async function computeExecutiveKpis({ doeName } = {}) {
+  const ownerWhere = doeName ? { owner: doeName } : {};
+  const relatedLeadOwnerWhere = doeName ? { lead: { owner: doeName } } : {};
+
   const [leads, emailLeads, ndaRecords, meetings, documentCategories, ioiRecords, visitPlans, stageRows] =
     await Promise.all([
-      prisma.lead.findMany({ select: { id: true, status: true, createdAt: true } }),
-      prisma.emailLead.findMany({ select: { replyType: true } }),
-      prisma.ndaRecord.findMany(),
-      prisma.meeting.findMany(),
-      prisma.document.findMany({ select: { category: true }, distinct: ["category"] }),
-      prisma.ioiRecord.findMany(),
-      prisma.visitPlan.findMany(),
-      prisma.dealStageRecord.findMany({ select: { leadId: true, stage: true, status: true, amount: true } })
+      prisma.lead.findMany({ where: ownerWhere, select: { id: true, status: true, createdAt: true } }),
+      prisma.emailLead.findMany({ where: ownerWhere, select: { replyType: true } }),
+      prisma.ndaRecord.findMany({ where: ownerWhere }),
+      prisma.meeting.findMany({ where: relatedLeadOwnerWhere }),
+      prisma.document.findMany({ where: relatedLeadOwnerWhere, select: { category: true }, distinct: ["category"] }),
+      prisma.ioiRecord.findMany({ where: ownerWhere }),
+      prisma.visitPlan.findMany({ where: ownerWhere }),
+      prisma.dealStageRecord.findMany({ where: ownerWhere, select: { leadId: true, stage: true, status: true, amount: true } })
     ]);
 
   const atStage = (stage) => stageRows.filter((r) => r.stage === stage);
@@ -73,6 +83,9 @@ export async function computeExecutiveKpis() {
   return {
     stats: {
       activeDeals,
+      totalOutreach: { count: outreach.totalOutreach, responseRate: outreach.responseRate },
+      ndaSigned: { count: nda.signed, sent: nda.sent, conversionPct: nda.signRate },
+      ioiSigned: { count: ioi.signed, generated: ioi.generated, conversionPct: ioi.signRate },
       termSheets: {
         count: termSheetRows.length,
         conversionPct: leads.length ? Math.round((termSheetRows.length / leads.length) * 1000) / 10 : null
@@ -94,6 +107,7 @@ export async function computeExecutiveKpis() {
       pipelineValue: pipelineValue.total,
       avgDealAge: dealAge.avgDays,
       winRate: winRate.winRate
-    }
+    },
+    scope: doeName ? { doe: doeName } : null
   };
 }

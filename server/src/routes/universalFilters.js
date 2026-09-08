@@ -49,7 +49,9 @@ universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
   // own portal has no legitimate need to see the full company roster.
   let does = distinct("doe");
   if (!req.channelPartner) {
-    const employees = await prisma.user.findMany({ select: { name: true } });
+    // EMPLOYEE only -- an ADMIN account (e.g. the seeded system admin) is a
+    // login role, not a deal originator, and shouldn't be pickable here.
+    const employees = await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } });
     does = [...new Set([...does, ...employees.map((e) => e.name)])].sort();
   }
 

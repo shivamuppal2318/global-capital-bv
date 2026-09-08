@@ -39,6 +39,8 @@ function publicRecord(r) {
     notes: r.notes,
     owner: r.owner,
     clientRating: r.clientRating,
+    reportSubmitted: r.reportSubmitted,
+    reportAt: r.reportAt,
     document: r.document ? { id: r.document.id, originalName: r.document.originalName } : null,
     lead: r.lead ? { id: r.lead.id, name: r.lead.name, company: r.lead.company, status: r.lead.status, leadSource: r.lead.leadSource } : null,
     createdAt: r.createdAt,
@@ -151,7 +153,8 @@ const upsertSchema = z.object({
   notes: z.string().nullable().optional(),
   owner: z.string().nullable().optional(),
   documentId: z.string().nullable().optional(),
-  clientRating: z.number().min(0).max(5).nullable().optional()
+  clientRating: z.number().min(0).max(5).nullable().optional(),
+  reportSubmitted: z.boolean().optional()
 });
 
 const toDate = (v) => (v ? new Date(v) : null);
@@ -182,10 +185,15 @@ dealStagesRouter.post("/", blockChannelPartner, asyncHandler(async (req, res) =>
     notes: toText(rest.notes),
     owner: toText(rest.owner),
     ...(rest.documentId !== undefined ? { documentId: rest.documentId || null } : {}),
-    ...(rest.clientRating !== undefined ? { clientRating: rest.clientRating } : {})
+    ...(rest.clientRating !== undefined ? { clientRating: rest.clientRating } : {}),
+    ...(rest.reportSubmitted !== undefined ? { reportSubmitted: rest.reportSubmitted } : {})
   };
   // Strip keys explicitly set to undefined so they don't clear stored values.
   for (const k of Object.keys(data)) if (data[k] === undefined) delete data[k];
+  // Submitting a report is what sets its timestamp — same convention as
+  // VisitPlan's own reportSubmitted/reportAt pair.
+  if (data.reportSubmitted === true) data.reportAt = new Date();
+  if (data.reportSubmitted === false) data.reportAt = null;
 
   const before = await prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage } }, select: { status: true } });
 
@@ -216,6 +224,9 @@ dealStagesRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res
   }
   if (rest.documentId !== undefined) data.documentId = rest.documentId || null;
   if (rest.clientRating !== undefined) data.clientRating = rest.clientRating;
+  if (rest.reportSubmitted !== undefined) data.reportSubmitted = rest.reportSubmitted;
+  if (data.reportSubmitted === true) data.reportAt = new Date();
+  if (data.reportSubmitted === false) data.reportAt = null;
 
   const before = await prisma.dealStageRecord.findUnique({ where: { id: req.params.id }, select: { status: true } });
 

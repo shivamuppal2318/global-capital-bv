@@ -85,7 +85,7 @@ export function DealStageModule({ stage }) {
   // shouldn't stop the stage list rendering.
   useEffect(() => {
     leadsApi.list().then(setLeads).catch(() => {});
-    if (config.fields.includes("document")) {
+    if (config.fields.includes("document") || config.fields.includes("visitReport")) {
       documentsApi.list().then(setDocuments).catch(() => {});
     }
     if (config.fields.includes("owner")) {
@@ -109,7 +109,8 @@ export function DealStageModule({ stage }) {
       owner: "",
       clientRating: "",
       notes: "",
-      documentId: ""
+      documentId: "",
+      reportSubmitted: false
     });
   };
 
@@ -148,7 +149,8 @@ export function DealStageModule({ stage }) {
       owner: r.owner ?? "",
       clientRating: r.clientRating ?? "",
       notes: r.notes ?? "",
-      documentId: r.document?.id ?? ""
+      documentId: r.document?.id ?? "",
+      reportSubmitted: Boolean(r.reportSubmitted)
     });
   };
 
@@ -407,6 +409,53 @@ export function DealStageModule({ stage }) {
                   </div>
                   {documentUploadError ? <p className="mt-1 text-[12px] font-medium text-[#e0483f]">{documentUploadError}</p> : null}
                   <p className="mt-1 text-[12px] text-[#8592ab]">Upload a new file here, or pick one already in the Data Room above.</p>
+                </div>
+              ) : null}
+
+              {uses("visitReport") ? (
+                <div className="md:col-span-2">
+                  <label className={labelClass}>Attach the visit report (optional)</label>
+                  {editing.documentId ? (
+                    <p className="text-[13px] text-[#334463]">
+                      Attached: {documents.find((d) => d.id === editing.documentId)?.originalName ?? "1 file"}{" "}
+                      <button
+                        type="button"
+                        className="font-semibold text-[#3046b2] hover:underline"
+                        onClick={() => setEditing({ ...editing, documentId: "" })}
+                      >
+                        Remove
+                      </button>
+                    </p>
+                  ) : null}
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx"
+                      disabled={documentUploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        handleUploadDocument(file);
+                      }}
+                      className="text-[13px] text-[#5f6f89] file:mr-3 file:rounded-[8px] file:border-0 file:bg-[#eef1ff] file:px-3 file:py-1.5 file:text-[13px] file:font-semibold file:text-[#3046b2]"
+                    />
+                    {documentUploading ? <span className="text-[12px] text-[#8592ab]">Uploading…</span> : null}
+                  </div>
+                  {documentUploadError ? <p className="mt-1 text-[12px] font-medium text-[#e0483f]">{documentUploadError}</p> : null}
+                  <p className="mt-1 text-[12px] text-[#8592ab]">Uploading also adds it to this lead's Data Room.</p>
+                </div>
+              ) : null}
+
+              {uses("visitReport") ? (
+                <div className="md:col-span-2">
+                  <label className="flex items-center gap-2 text-[14px] font-medium text-[#334463]">
+                    <input
+                      type="checkbox"
+                      checked={editing.reportSubmitted}
+                      onChange={(e) => setEditing({ ...editing, reportSubmitted: e.target.checked })}
+                    />
+                    Report submitted
+                  </label>
                 </div>
               ) : null}
 

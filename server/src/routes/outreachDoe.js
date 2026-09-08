@@ -43,7 +43,9 @@ outreachDoeRouter.get("/facets", blockChannelPartner, asyncHandler(async (_req, 
   // person on this team at all, several times longer than the actual
   // employee roster. blockChannelPartner above already refuses this whole
   // route for a Channel Partner, so no extra guard is needed here.
-  const employees = await prisma.user.findMany({ select: { name: true } });
+  // EMPLOYEE only -- an ADMIN account is a login role, not a deal
+  // originator, and shouldn't be pickable as a DOE.
+  const employees = await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } });
   const does = [...new Set(employees.map((e) => e.name))].sort();
 
   res.json({
@@ -109,7 +111,9 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   // total) below is intentionally still computed over every real lead
   // regardless of owner, since that total is meant to be everyone's
   // combined activity, not just the named employees'.
-  const employeeNames = new Set((await prisma.user.findMany({ select: { name: true } })).map((e) => e.name));
+  const employeeNames = new Set(
+    (await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } })).map((e) => e.name)
+  );
   const scorecard = doeScorecard(leads.filter((l) => employeeNames.has(l.owner)), activity);
   const overall = doeOverallMetrics(leads, activity);
   const callsBooked = leads.filter((l) => l.callBookedAt).length;

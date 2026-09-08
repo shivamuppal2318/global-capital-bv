@@ -9,20 +9,8 @@ const inputClass =
 const has = (v) => v !== null && v !== undefined;
 const fmtPct = (v) => (has(v) ? `${v}%` : "—");
 const fmtNum = (v) => (has(v) ? String(v) : "—");
-const fmtDays = (v) => (has(v) ? `${v} days` : "—");
 
-// Same abbreviation scheme as Executive Dashboard's own fmtMoney -- these
-// numbers come from the exact same computation (lib/executiveKpis.js), so
-// they need to read the same way wherever they show up.
-function fmtMoney(value) {
-  if (!has(value) || value === 0) return "—";
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
-  if (abs >= 1_000) return `$${(value / 1_000).toFixed(0)}k`;
-  return `$${value.toLocaleString()}`;
-}
-
-const EMPTY_FILTERS = { doe: "", geography: "", dateFrom: "", dateTo: "", industry: "", ticketSizeBand: "", temperature: "" };
+const EMPTY_FILTERS = { doe: "", geography: "", dateFrom: "", dateTo: "", industry: "" };
 
 export function OutreachDoeModule() {
   const [facets, setFacets] = useState(null);
@@ -82,9 +70,7 @@ export function OutreachDoeModule() {
       { key: "ioiConversion", label: "IOI Signed", format: () => fmtPct(k?.ioiConversion), attributable: false, note: pipelineNote },
       { key: "zoomCall2Conversion", label: "Zoom Call 2", format: () => fmtPct(k?.zoomCall2Conversion), attributable: false, note: pipelineNote },
       { key: "fieldVisitCompletion", label: "Field Visit", format: () => fmtPct(k?.fieldVisitCompletion), attributable: false, note: pipelineNote },
-      { key: "termSheetConversion", label: "Term Sheet Closed", format: () => fmtPct(k?.termSheetConversion), attributable: false, note: pipelineNote },
-      { key: "pipelineValue", label: "Pipeline Value", format: () => fmtMoney(k?.pipelineValue), attributable: false, note: pipelineNote },
-      { key: "avgDealAge", label: "Average Deal Age", format: () => fmtDays(k?.avgDealAge), attributable: false, note: pipelineNote }
+      { key: "termSheetConversion", label: "Term Sheet Closed", format: () => fmtPct(k?.termSheetConversion), attributable: false, note: pipelineNote }
     ];
   }, [data, scoped]);
 
@@ -102,9 +88,7 @@ export function OutreachDoeModule() {
       { key: "ioiConversion", label: "IOI Signed", value: fmtPct(k?.ioiConversion) },
       { key: "zoomCall2Conversion", label: "Zoom Call 2", value: fmtPct(k?.zoomCall2Conversion) },
       { key: "fieldVisitCompletion", label: "Field Visit", value: fmtPct(k?.fieldVisitCompletion) },
-      { key: "termSheetConversion", label: "Term Sheet Closed", value: fmtPct(k?.termSheetConversion) },
-      { key: "pipelineValue", label: "Pipeline Value", value: fmtMoney(k?.pipelineValue) },
-      { key: "avgDealAge", label: "Average Deal Age", value: fmtDays(k?.avgDealAge) }
+      { key: "termSheetConversion", label: "Term Sheet Closed", value: fmtPct(k?.termSheetConversion) }
     ];
   }, [data]);
 
@@ -182,11 +166,11 @@ export function OutreachDoeModule() {
           </div>
         </div>
 
-        {/* Industry / Ticket Size / Hot-Warm-Cold live on the CRM Lead a
-            cold-outreach contact became, not on the EmailLead itself —
-            matched server-side via EmailLead.convertedToLeadId. A contact
-            nobody has converted yet has no real value for these and just
-            won't match, rather than showing a fake one. */}
+        {/* Industry lives on the CRM Lead a cold-outreach contact became,
+            not on the EmailLead itself — matched server-side via
+            EmailLead.convertedToLeadId. A contact nobody has converted yet
+            has no real value for this and just won't match, rather than
+            showing a fake one. */}
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Industry</label>
@@ -199,32 +183,10 @@ export function OutreachDoeModule() {
               ))}
             </select>
           </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Ticket Size</label>
-            <select className={inputClass} value={filters.ticketSizeBand} onChange={(e) => set("ticketSizeBand")(e.target.value)}>
-              <option value="">All</option>
-              {(facets?.ticketSizeBands ?? []).map((b) => (
-                <option key={b.key} value={b.key}>
-                  {b.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Hot/Warm/Cold</label>
-            <select className={inputClass} value={filters.temperature} onChange={(e) => set("temperature")(e.target.value)}>
-              <option value="">All</option>
-              {(facets?.temperatures ?? []).map((t) => (
-                <option key={t} value={t}>
-                  {t.charAt(0) + t.slice(1).toLowerCase()}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
         <p className="mt-2 text-[12px] text-[#9aa6bd]">
-          Industry, Ticket Size and Hot/Warm/Cold match against the CRM lead a cold-outreach contact was converted
-          into — a contact nobody has converted yet won't match any of these three.
+          Industry matches against the CRM lead a cold-outreach contact was converted into — a contact nobody has
+          converted yet won't match it.
         </p>
       </Card>
 
