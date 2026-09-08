@@ -169,16 +169,34 @@ export function CampaignsTab({ mailing }) {
       .finally(() => setActivityPageLoading(false));
   }
 
+  function openRecipientActivity(lead) {
+    setActivityDetailRow({
+      type: "recipient",
+      leadName: lead.leadName,
+      leadEmail: lead.leadEmail,
+      company: lead.company,
+      sentCount: lead.sentCount ?? 0,
+      openCount: lead.openCount ?? 0,
+      clickCount: lead.clickCount ?? 0,
+      replyType: lead.replyType,
+      lastActivityAt: lead.lastActivityAt,
+      lastDetail: lead.lastDetail
+    });
+  }
+
   const activityDetailPopup = activityDetailRow ? (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" onClick={() => setActivityDetailRow(null)}>
       <div
-        className="w-full max-w-[480px] rounded-[16px] border border-[#d6deea] bg-white p-5 shadow-[0_12px_36px_rgba(16,34,70,0.18)]"
+        className="w-full max-w-[560px] rounded-[16px] border border-[#d6deea] bg-white p-5 shadow-[0_12px_36px_rgba(16,34,70,0.18)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-[14px] font-semibold text-[#102246]">{activityDetailRow.leadName}</p>
-            <p className="truncate text-[12px] text-[#8592ab]">{activityDetailRow.leadEmail}</p>
+            <p className="truncate text-[12px] text-[#8592ab]">
+              {activityDetailRow.company ? `${activityDetailRow.company} · ` : ""}
+              {activityDetailRow.leadEmail}
+            </p>
           </div>
           <button
             type="button"
@@ -188,21 +206,50 @@ export function CampaignsTab({ mailing }) {
             <XIcon className="size-4" />
           </button>
         </div>
-        <span
-          className={`mt-3 inline-block rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-            activityDetailRow.status === "sent"
-              ? "bg-[#dff5e7] text-[#2b9b60]"
-              : activityDetailRow.status === "failed"
-                ? "bg-[#ffe4ee] text-[#ef5b8f]"
-                : "bg-[#fff4de] text-[#c47f1a]"
-          }`}
-        >
-          {activityDetailRow.status === "sent" ? "Sent" : activityDetailRow.status === "failed" ? "Failed" : "Sending…"}
-        </span>
-        <p className="mt-3 whitespace-pre-wrap break-words text-[13px] leading-6 text-[#334463]">{activityDetailRow.detail}</p>
-        {activityDetailRow.createdAt ? (
-          <p className="mt-3 text-[12px] text-[#9aa6ba]">{new Date(activityDetailRow.createdAt).toLocaleString()}</p>
-        ) : null}
+        {activityDetailRow.type === "recipient" ? (
+          <>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {[
+                ["Sent", activityDetailRow.sentCount, "bg-[#eaf8ef] text-[#2b9b60]"],
+                ["Opened", activityDetailRow.openCount, "bg-[#e8f7ff] text-[#247db8]"],
+                ["Clicked", activityDetailRow.clickCount, "bg-[#fff4df] text-[#b87510]"]
+              ].map(([label, value, tone]) => (
+                <div key={label} className="rounded-[12px] border border-[#e7edf5] bg-[#fbfcff] px-3 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#7a89a4]">{label}</p>
+                  <p className={`mt-2 inline-flex min-w-9 justify-center rounded-[10px] px-2 py-1 text-[18px] font-semibold ${tone}`}>{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-[14px] border border-[#e7edf5] bg-[#f8faff] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-[#60708b]">Reply status</p>
+                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-[#3046b2] shadow-[0_1px_4px_rgba(30,48,87,0.06)]">
+                  {activityKindLabel(activityDetailRow.replyType)}
+                </span>
+              </div>
+              <p className="mt-3 text-[13px] leading-6 text-[#334463]">{activityDetailRow.lastDetail ?? "No activity yet"}</p>
+              <p className="mt-3 text-[12px] text-[#9aa6ba]">Last activity: {fmtDateTime(activityDetailRow.lastActivityAt)}</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <span
+              className={`mt-3 inline-block rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                activityDetailRow.status === "sent"
+                  ? "bg-[#dff5e7] text-[#2b9b60]"
+                  : activityDetailRow.status === "failed"
+                    ? "bg-[#ffe4ee] text-[#ef5b8f]"
+                    : "bg-[#fff4de] text-[#c47f1a]"
+              }`}
+            >
+              {activityDetailRow.status === "sent" ? "Sent" : activityDetailRow.status === "failed" ? "Failed" : "Sending..."}
+            </span>
+            <p className="mt-3 whitespace-pre-wrap break-words text-[13px] leading-6 text-[#334463]">{activityDetailRow.detail}</p>
+            {activityDetailRow.createdAt ? (
+              <p className="mt-3 text-[12px] text-[#9aa6ba]">{new Date(activityDetailRow.createdAt).toLocaleString()}</p>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   ) : null;
@@ -401,7 +448,11 @@ export function CampaignsTab({ mailing }) {
                     <tr><td colSpan="6" className="px-3 py-5 text-[13px] text-[#9aa6ba]">Loading…</td></tr>
                   ) : detail.recipients?.length ? (
                     detail.recipients.map((lead) => (
-                      <tr key={lead.id} className="border-t border-[#edf1f6] text-[13px] text-[#5f6f89] transition hover:bg-[#fbfcff]">
+                      <tr
+                        key={lead.id}
+                        onClick={() => openRecipientActivity(lead)}
+                        className="cursor-pointer border-t border-[#edf1f6] text-[13px] text-[#5f6f89] transition hover:bg-[#fbfcff]"
+                      >
                         <td className="px-3 py-3">
                           <p className="font-semibold text-[#102246]">{lead.leadName}</p>
                           <p className="mt-0.5 text-[12px] text-[#8592ab]">{lead.company} · {lead.leadEmail}</p>
