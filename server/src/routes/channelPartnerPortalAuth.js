@@ -213,7 +213,8 @@ channelPartnerPortalAuthRouter.post(
         }),
         industry: data.industry || null,
         doe: data.doe || null,
-        channelPartner: req.channelPartner.businessName
+        channelPartner: req.channelPartner.businessName,
+        status: "INTERESTED"
       }
     });
 
