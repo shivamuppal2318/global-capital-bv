@@ -21,6 +21,9 @@ export const channelPartnerPortalAuthApi = {
   },
   me: () => apiFetch(`${API_BASE_URL}/me`),
   agreement: () => apiFetch(`${API_BASE_URL}/agreement`),
+  doeOptions: () => apiFetch(`${API_BASE_URL}/doe-options`),
+  referralMetrics: () => apiFetch(`${API_BASE_URL}/referral-metrics`),
+  referLead: (body) => apiFetch(`${API_BASE_URL}/refer-lead`, { method: "POST", body }),
   downloadAgreement: async () => {
     const token = getToken();
     const response = await fetch(`${API_BASE_URL}/agreement/download?fresh=${Date.now()}`, {

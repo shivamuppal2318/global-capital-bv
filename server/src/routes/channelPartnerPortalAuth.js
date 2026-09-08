@@ -12,10 +12,27 @@ import { sendSystemEmail, passwordResetEmail } from "../lib/systemMailer.js";
 import { appBaseUrl } from "../lib/appUrl.js";
 import { UPLOAD_DIR } from "../lib/fileUpload.js";
 import { renderSignedChannelPartnerAgreement, slugify } from "../lib/signedDocumentRenderer.js";
+import { buildLeadCreateData } from "../lib/leadCreation.js";
 
 export const channelPartnerPortalAuthRouter = Router();
 
 const RESET_TTL_MINUTES = 60;
+
+const referLeadSchema = z.object({
+  name: z.string().min(1),
+  company: z.string().min(1),
+  email: z.string().email().optional().or(z.literal("")),
+  mobile: z.string().optional(),
+  jobTitle: z.string().optional(),
+  industry: z.string().optional(),
+  companySize: z.string().optional(),
+  revenue: z.string().optional(),
+  capitalAsk: z.string().optional(),
+  territory: z.string().optional(),
+  website: z.string().optional(),
+  doe: z.string().optional(),
+  notes: z.string().optional()
+});
 
 function publicChannelPartnerUser(channelPartnerUser) {
   return {
@@ -129,6 +146,77 @@ channelPartnerPortalAuthRouter.get(
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(html);
+  })
+);
+
+channelPartnerPortalAuthRouter.get(
+  "/doe-options",
+  requireChannelPartnerAuth,
+  asyncHandler(async (_req, res) => {
+    const users = await prisma.user.findMany({
+      where: { status: "ACTIVE" },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, email: true, role: true }
+    });
+    res.json(users.map((user) => ({ id: user.id, name: user.name, email: user.email, label: `${user.name} (${user.role})` })));
+  })
+);
+
+channelPartnerPortalAuthRouter.get(
+  "/referral-metrics",
+  requireChannelPartnerAuth,
+  asyncHandler(async (req, res) => {
+    const partnerName = req.channelPartner.businessName;
+    const leadWhere = { channelPartner: partnerName };
+    const [leadReferred, ndaSigned, ioiSigned, termSheetClosed] = await Promise.all([
+      prisma.lead.count({ where: leadWhere }),
+      prisma.ndaRecord.count({ where: { status: "SIGNED", lead: leadWhere } }),
+      prisma.ioiRecord.count({ where: { status: "SIGNED", lead: leadWhere } }),
+      prisma.dealStageRecord.count({ where: { stage: "TERM_SHEET", status: "COMPLETED", lead: leadWhere } })
+    ]);
+    res.json({ leadReferred, ndaSigned, ioiSigned, termSheetClosed });
+  })
+);
+
+channelPartnerPortalAuthRouter.post(
+  "/refer-lead",
+  requireChannelPartnerAuth,
+  asyncHandler(async (req, res) => {
+    const parsed = referLeadSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const data = parsed.data;
+    if (!data.email && !data.mobile) {
+      return res.status(400).json({ error: "At least one contact method is required (email or mobile)." });
+    }
+
+    const details = [
+      data.jobTitle ? `Job title: ${data.jobTitle}` : null,
+      data.companySize ? `Company size: ${data.companySize}` : null,
+      data.revenue ? `Revenue: ${data.revenue}` : null,
+      data.website ? `Website: ${data.website}` : null,
+      data.notes ? `Notes: ${data.notes}` : null
+    ].filter(Boolean);
+
+    const lead = await prisma.lead.create({
+      data: {
+        ...buildLeadCreateData({
+          name: data.name,
+          company: data.company,
+          email: data.email || null,
+          mobile: data.mobile || null,
+          capitalAsk: data.capitalAsk || "Not specified",
+          owner: data.doe || null,
+          leadSource: "Channel Partner Referral",
+          territory: data.territory || null,
+          notes: details.join("\n") || null
+        }),
+        industry: data.industry || null,
+        doe: data.doe || null,
+        channelPartner: req.channelPartner.businessName
+      }
+    });
+
+    res.status(201).json(lead);
   })
 );
 

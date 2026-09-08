@@ -63,7 +63,8 @@ const partnerIconMap = {
   leads: SendIcon,
   "market-intelligence": SparklesIcon,
   "universal-filters": FunnelIcon,
-  partnership: AttachmentIcon
+  partnership: AttachmentIcon,
+  "refer-lead": UsersIcon
 };
 
 function fmtDate(value) {
@@ -154,6 +155,144 @@ function PartnershipView({ partnerUser }) {
         </>
       )}
     </div>
+  );
+}
+
+const referralInitialForm = {
+  name: "",
+  company: "",
+  email: "",
+  mobile: "",
+  jobTitle: "",
+  industry: "",
+  companySize: "",
+  revenue: "",
+  capitalAsk: "",
+  territory: "",
+  website: "",
+  doe: "",
+  notes: ""
+};
+
+function ReferLeadView({ partnerUser }) {
+  const [form, setForm] = useState(referralInitialForm);
+  const [doeOptions, setDoeOptions] = useState([]);
+  const [metrics, setMetrics] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [error, setError] = useState(null);
+
+  const loadMetrics = () => channelPartnerPortalAuthApi.referralMetrics().then(setMetrics).catch(() => {});
+
+  useEffect(() => {
+    channelPartnerPortalAuthApi.doeOptions().then(setDoeOptions).catch(() => setDoeOptions([]));
+    loadMetrics();
+  }, []);
+
+  const setField = (key) => (value) => setForm((current) => ({ ...current, [key]: value }));
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const lead = await channelPartnerPortalAuthApi.referLead(form);
+      setNotice(`${lead.name} referred successfully${form.doe ? ` to ${form.doe}` : ""}.`);
+      setForm(referralInitialForm);
+      loadMetrics();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <span className="inline-flex items-center gap-2 rounded-full bg-[#e6ebff] px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#3046b2]">
+          <UsersIcon className="size-4" />
+          Refer a Lead
+        </span>
+        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Refer a Lead</h1>
+        <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
+          Submit a new opportunity from {partnerUser.channelPartner.name} and route it to the right DOE.
+        </p>
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard card={{ label: "Lead Referred", value: String(metrics?.leadReferred ?? 0), note: "Your referrals", noteTone: "blue" }} />
+          <StatCard card={{ label: "NDA Signed", value: String(metrics?.ndaSigned ?? 0), note: "Signed by referred leads", noteTone: "green" }} />
+          <StatCard card={{ label: "Termsheet Closed", value: String(metrics?.termSheetClosed ?? 0), note: "Closed term sheets", noteTone: "violet" }} />
+          <StatCard card={{ label: "IOI Signed", value: String(metrics?.ioiSigned ?? 0), note: "Signed IOIs", noteTone: "green" }} />
+        </div>
+      </section>
+
+      <Card className="px-5 py-5">
+        <div className="mb-5">
+          <h2 className="text-[18px] font-semibold text-[#102246]">Lead details</h2>
+          <p className="mt-1 text-[13px] text-[#8592ab]">Company, contact, size, funding ask, and DOE routing.</p>
+        </div>
+        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
+          <PortalField label="Contact name" value={form.name} onChange={setField("name")} required placeholder="e.g. Vimal Patel" />
+          <PortalField label="Company name" value={form.company} onChange={setField("company")} required placeholder="e.g. EXL India" />
+          <PortalField label="Email" value={form.email} onChange={setField("email")} type="email" placeholder="name@company.com" />
+          <PortalField label="Mobile / WhatsApp" value={form.mobile} onChange={setField("mobile")} placeholder="+91..." />
+          <PortalField label="Job title" value={form.jobTitle} onChange={setField("jobTitle")} placeholder="Founder / CFO / Director" />
+          <PortalField label="Industry" value={form.industry} onChange={setField("industry")} placeholder="Software, manufacturing, hospitality..." />
+          <PortalField label="Company size" value={form.companySize} onChange={setField("companySize")} placeholder="e.g. 100 employees" />
+          <PortalField label="Revenue" value={form.revenue} onChange={setField("revenue")} placeholder="e.g. $5M ARR" />
+          <PortalField label="Capital ask" value={form.capitalAsk} onChange={setField("capitalAsk")} placeholder="e.g. $2-4M" />
+          <PortalField label="Territory / country" value={form.territory} onChange={setField("territory")} placeholder="India, UAE..." />
+          <PortalField label="Website" value={form.website} onChange={setField("website")} placeholder="https://..." />
+          <label className="block">
+            <p className={labelClass}>Send to DOE</p>
+            <select className={inputClass} value={form.doe} onChange={(e) => setField("doe")(e.target.value)}>
+              <option value="">Select DOE...</option>
+              {doeOptions.map((doe) => (
+                <option key={doe.id} value={doe.name}>{doe.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block lg:col-span-2">
+            <p className={labelClass}>Notes</p>
+            <textarea
+              className={`${inputClass} min-h-[120px]`}
+              value={form.notes}
+              onChange={(e) => setField("notes")(e.target.value)}
+              placeholder="Context, source, funding need, warm intro details..."
+            />
+          </label>
+          {error ? <p className="lg:col-span-2 rounded-[12px] bg-[#fdeceb] px-3.5 py-2.5 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
+          {notice ? <p className="lg:col-span-2 rounded-[12px] bg-[#eefaf2] px-3.5 py-2.5 text-[13px] font-medium text-[#2b9b60]">{notice}</p> : null}
+          <div className="lg:col-span-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-[12px] bg-[#3046b2] px-5 py-3 text-[14px] font-semibold text-white shadow-[0_10px_22px_rgba(48,70,178,0.24)] transition hover:bg-[#24399a] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? "Submitting..." : "Submit referral"}
+            </button>
+          </div>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
+function PortalField({ label, value, onChange, type = "text", required = false, placeholder }) {
+  return (
+    <label className="block">
+      <p className={labelClass}>{label}</p>
+      <input
+        type={type}
+        required={required}
+        className={inputClass}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
   );
 }
 
@@ -361,6 +500,7 @@ function PartnerResetPasswordView({ token, onDone }) {
 // backend can scope writes to the partner's own referred leads.
 const EXTRA_SECTIONS = [
   { id: "partnership", label: "Partnership", group: "Partnership", Component: PartnershipView },
+  { id: "refer-lead", label: "Refer a Lead", group: "Partnership", Component: ReferLeadView },
   { id: "command-center", label: "Executive Dashboard", group: "Intelligence", Component: ExecutiveDashboardModule },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach", Component: PartnerLeadsView },
   { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach", Component: WhatsappBusinessModule },
@@ -490,7 +630,7 @@ function PartnerShell() {
   const { partnerUser, logout } = useChannelPartnerAuth();
   const permissions = partnerUser.permissions ?? [];
   const grantedExtraSections = useMemo(
-    () => EXTRA_SECTIONS.filter((s) => s.id === "partnership" || permissions.includes(s.id)),
+    () => EXTRA_SECTIONS.filter((s) => s.group === "Partnership" || permissions.includes(s.id)),
     [permissions]
   );
   const [section, setSection] = useState(() =>
