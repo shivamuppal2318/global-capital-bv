@@ -10,6 +10,7 @@ import { getEmailProvider } from "../lib/emailProvider.js";
 import { plainTextToHtml } from "../lib/leadSender.js";
 import { CHANNEL_PARTNER_OPTIONAL_MODULES, CHANNEL_PARTNER_OPTIONAL_MODULE_IDS } from "../lib/channelPartnerPermissions.js";
 import { renderSignedChannelPartnerAgreement, slugify } from "../lib/signedDocumentRenderer.js";
+import { appBaseUrl } from "../lib/appUrl.js";
 
 export const channelPartnersRouter = Router();
 
@@ -256,8 +257,24 @@ channelPartnersRouter.post("/:id/portal-login-link", asyncHandler(async (req, re
   }
 
   const token = signChannelPartnerUserToken(partner.portalUser, "15m");
-  res.json({ url: `${req.protocol}://${req.get("host")}/partner?loginToken=${encodeURIComponent(token)}` });
+  res.json({ url: `${partnerPortalBaseUrl(req)}/partner?loginToken=${encodeURIComponent(token)}` });
 }));
+
+function partnerPortalBaseUrl(req) {
+  const configured = process.env.CORS_ORIGIN?.split(",")[0]?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+
+  const protocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
+  const rawHost = req.get("x-forwarded-host")?.split(",")[0]?.trim() || req.get("host");
+  if (!rawHost) return appBaseUrl();
+
+  let host = rawHost.replace(/:8095$/, ":8096");
+  const hasExplicitPort = /:\d+$/.test(host);
+  if (!hasExplicitPort && !["localhost", "127.0.0.1"].includes(host)) {
+    host = `${host}:8096`;
+  }
+  return `${protocol}://${host}`.replace(/\/+$/, "");
+}
 
 function publicPortalUser(portalUser) {
   return {
