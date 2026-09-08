@@ -185,7 +185,8 @@ export async function renderSignedNda(nda) {
     COUNTERPARTY_COUNTRY: nda.counterpartyCountry || "[country not provided]",
     COUNTERPARTY_ADDRESS: nda.counterpartyAddress || "[address not provided]",
     SIGNATORY_NAME: nda.signatoryName || nda.signerName || "[signatory not provided]",
-    SIGNATORY_TITLE: nda.signatoryTitle || "",
+    SIGNATORY_TITLE: nda.signatoryTitle || "Authorized Signatory",
+    COMPANY_SIGNATURE_STATUS: `signed electronically by Amol Kadam on ${fmtDateTime(nda.signedAt)}`,
     SIGNATURE_STATUS: `signed electronically by ${signerName} on ${fmtDateTime(nda.signedAt)}`
   });
   const { mainHtml, signatureHtml } = renderBody(filled);
@@ -334,6 +335,7 @@ export async function ndaFillFormFragment(filled, companyName) {
     COUNTERPARTY_ADDRESS: { editable: true, name: "counterpartyAddress", value: filled.counterpartyAddress ?? "", placeholder: "Registered office address" },
     SIGNATORY_NAME: { editable: true, name: "signatoryName", value: filled.signatoryName ?? "", placeholder: "Signatory name" },
     SIGNATORY_TITLE: { editable: true, name: "signatoryTitle", value: filled.signatoryTitle ?? "", placeholder: "Signatory title" },
+    COMPANY_SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" },
     SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" }
   };
   return fillFormShell(renderInteractiveBody(raw, specs));

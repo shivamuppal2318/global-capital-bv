@@ -171,7 +171,7 @@ This Agreement may be executed in any number of counterparts, each of which when
 Global Capital BV
 Name: Amol Kadam
 Designation: CEO
-Signature: signed electronically
+Signature: {{COMPANY_SIGNATURE_STATUS}}
 
 {{COUNTERPARTY_NAME}}
 Name: {{SIGNATORY_NAME}}
