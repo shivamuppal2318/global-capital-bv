@@ -324,17 +324,9 @@ export function DataRoomModule() {
           </select>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-3">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <StatCard card={{ label: "Documents", value: String(total), note: "In the data room", noteTone: "blue" }} />
           <StatCard card={{ label: "Categories", value: String(categories.length), note: "In use", noteTone: "violet" }} />
-          <StatCard
-            card={{
-              label: "AI-readable",
-              value: `${searchableCount}/${documents.length}`,
-              note: "Text extracted",
-              noteTone: searchableCount === documents.length ? "green" : "amber"
-            }}
-          />
         </div>
       </section>
 
