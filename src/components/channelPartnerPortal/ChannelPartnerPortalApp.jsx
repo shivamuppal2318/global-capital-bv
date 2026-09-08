@@ -403,9 +403,17 @@ function PartnerShell() {
   );
   const activeSection = grantedExtraSections.find((s) => s.id === section);
   const ActiveExtraSection = activeSection?.Component ?? null;
+  const crmOutreachSections = grantedExtraSections.filter((s) => s.group === "CRM & Outreach");
   const navSections = [
     { title: "Intelligence", items: grantedExtraSections.filter((s) => s.group === "Intelligence") },
-    { title: "CRM & Outreach", items: [{ id: "email", label: "Email Automation" }, ...grantedExtraSections.filter((s) => s.group === "CRM & Outreach")] },
+    {
+      title: "CRM & Outreach",
+      items: [
+        ...crmOutreachSections.filter((s) => s.id === "crm-workspace"),
+        { id: "email", label: "Email Automation" },
+        ...crmOutreachSections.filter((s) => s.id !== "crm-workspace")
+      ]
+    },
     { title: "Relationships", items: grantedExtraSections.filter((s) => s.group === "Relationships") }
   ].filter((navSection) => navSection.items.length);
 
