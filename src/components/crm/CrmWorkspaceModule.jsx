@@ -1249,11 +1249,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
         ["Engagement Stage", selectedLead.engagementStage ?? "—"],
         ["Industry", selectedLead.industry ?? "—"],
         ["Channel Partner", selectedLead.channelPartner ?? "—"],
-        ["Hot / Warm / Cold", selectedLead.temperature ?? "Not rated"],
-        ["Team Leader", selectedLead.teamLeader ?? "—"],
-        ["Manager", selectedLead.manager ?? "—"],
-        ["DOE (Deal Originator Executive)", selectedLead.doe ?? "—"],
-        ["Consent (GDPR)", selectedLead.consentGdpr ?? "—"]
+        ["DOE (Deal Originator Executive)", selectedLead.doe ?? "—"]
       ]
     : [];
 
