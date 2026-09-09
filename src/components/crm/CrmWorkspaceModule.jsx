@@ -1725,31 +1725,40 @@ function ZoomInfoSearchPanel({
   }
 
   return (
-    <div>
-      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Find Contacts (ZoomInfo)</p>
-      <p className="mt-1 text-[13px] text-[#6a7790]">
-        Real search against ZoomInfo's database — a genuine API lookup, not a preview. Results can be added to a list.
-      </p>
+    <div className="rounded-[16px] border border-[#e2e9f3] bg-[#fbfcff] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-[#eef3ff] text-[#3046b2]">
+            <GlobeIcon className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Find {mode === "contacts" ? "Contacts" : "Companies"} (ZoomInfo)</p>
+            <p className="mt-1 max-w-[760px] text-[13px] leading-5 text-[#6a7790]">
+              Live ZoomInfo lookup. Select records on this page and add them straight into an Email Automation list.
+            </p>
+          </div>
+        </div>
 
-      <div className="mt-4 flex gap-2 rounded-[10px] bg-[#f0f3f9] p-1" style={{ width: "fit-content" }}>
-        <button
-          type="button"
-          onClick={() => setMode("contacts")}
-          className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "contacts" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"}`}
-        >
-          Contacts
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("companies")}
-          className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"}`}
-        >
-          Companies
-        </button>
+        <div className="flex gap-1 rounded-[10px] bg-[#edf2f8] p-1">
+          <button
+            type="button"
+            onClick={() => setMode("contacts")}
+            className={`rounded-[8px] px-4 py-2 text-[13px] font-semibold transition ${mode === "contacts" ? "bg-white text-[#102246] shadow-[0_1px_5px_rgba(30,48,87,0.14)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
+          >
+            Contacts
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("companies")}
+            className={`rounded-[8px] px-4 py-2 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_1px_5px_rgba(30,48,87,0.14)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
+          >
+            Companies
+          </button>
+        </div>
       </div>
 
       {mode === "companies" ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <EditField label="Company Name" value={companyFilters.companyName} onChange={(v) => setCompanyFilters((c) => ({ ...c, companyName: v }))} placeholder="e.g. Salesforce" />
           <EditField label="Industry" value={companyFilters.industryKeywords} onChange={(v) => setCompanyFilters((c) => ({ ...c, industryKeywords: v }))} placeholder="e.g. Software" />
           <EditField label="Employees min" value={companyFilters.employeeRangeMin} onChange={(v) => setCompanyFilters((c) => ({ ...c, employeeRangeMin: v }))} placeholder="e.g. 50" />
@@ -1761,7 +1770,7 @@ function ZoomInfoSearchPanel({
         </div>
       ) : (
         <div className="mt-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <EditField label="Job Title" value={contactFilters.jobTitle} onChange={(v) => setContactFilters((c) => ({ ...c, jobTitle: v }))} placeholder="e.g. Chief Executive Officer" />
             <EditField label="Industry" value={contactFilters.industryKeywords} onChange={(v) => setContactFilters((c) => ({ ...c, industryKeywords: v }))} placeholder="e.g. Software" />
             <EditField label="Company Name" value={contactFilters.companyName} onChange={(v) => setContactFilters((c) => ({ ...c, companyName: v }))} placeholder="e.g. Salesforce" />
@@ -1770,7 +1779,7 @@ function ZoomInfoSearchPanel({
             <LookupSelect label="State" value={contactFilters.state} onChange={(v) => setContactFilters((c) => ({ ...c, state: v }))} options={states} />
             <LookupSelect label="Country" value={contactFilters.country} onChange={(v) => setContactFilters((c) => ({ ...c, country: v }))} options={countries} />
           </div>
-          <div>
+          <div className="rounded-[12px] border border-[#e2e9f3] bg-white px-3 py-3">
             <p className="mb-1.5 text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Management Level</p>
             <div className="flex flex-wrap gap-2">
               {MANAGEMENT_LEVEL_OPTIONS.map((level) => {
@@ -1785,7 +1794,7 @@ function ZoomInfoSearchPanel({
                         managementLevel: checked ? c.managementLevel.filter((l) => l !== level) : [...c.managementLevel, level]
                       }))
                     }
-                    className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${checked ? "bg-[#3046b2] text-white" : "border border-[#d6deea] bg-white text-[#4f6181] hover:bg-[#f4f7fb]"}`}
+                    className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${checked ? "bg-[#3046b2] text-white shadow-[0_4px_12px_rgba(48,70,178,0.22)]" : "border border-[#d6deea] bg-white text-[#4f6181] hover:border-[#b8c5dd] hover:bg-[#f4f7fb]"}`}
                   >
                     {level}
                   </button>
@@ -1796,16 +1805,16 @@ function ZoomInfoSearchPanel({
         </div>
       )}
 
-      <div className="mt-4 flex items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <ActionButton label={searching ? "Searching…" : "Search"} icon={GlobeIcon} primary onClick={() => onSearch(1)} disabled={searching} />
-        {totalResults > 0 ? <p className="text-[13px] text-[#8592ab]">{totalResults.toLocaleString()} real match(es) on ZoomInfo</p> : null}
+        {totalResults > 0 ? <span className="rounded-full bg-[#eef3ff] px-3 py-1.5 text-[12px] font-semibold text-[#3046b2]">{totalResults.toLocaleString()} real match(es)</span> : null}
       </div>
 
       {error ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
 
       {results.length > 0 ? (
         <div className="mt-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#d6deea] bg-white px-4 py-3 shadow-[0_8px_24px_rgba(16,34,70,0.05)]">
             <label className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#435471]">
               <input
                 type="checkbox"
@@ -1927,9 +1936,9 @@ function ZoomInfoSearchPanel({
           </div>
         </div>
       ) : !searching && !error && hasSearched ? (
-        <p className="mt-4 text-[13px] text-[#9aa6ba]">No matches on ZoomInfo for these filters — try broadening them.</p>
+        <p className="mt-4 rounded-[12px] border border-dashed border-[#d6deea] bg-white px-4 py-3 text-[13px] text-[#9aa6ba]">No matches on ZoomInfo for these filters — try broadening them.</p>
       ) : !searching && !error ? (
-        <p className="mt-4 text-[13px] text-[#9aa6ba]">No search run yet — set some filters above and click Search.</p>
+        <p className="mt-4 rounded-[12px] border border-dashed border-[#d6deea] bg-white px-4 py-3 text-[13px] text-[#9aa6ba]">No search run yet — set some filters above and click Search.</p>
       ) : null}
     </div>
   );
