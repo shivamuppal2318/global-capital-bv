@@ -641,24 +641,6 @@ export function CampaignsTab({ mailing }) {
                 </p>
               </Field>
 
-              <Field label="Template Label">
-                <input
-                  value={automationForm.template}
-                  onChange={(event) => handleFormChange("template", event.target.value)}
-                  list="template-label-options"
-                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
-                />
-                <datalist id="template-label-options">
-                  <option value="Cold intro — Renewables founder" />
-                  <option value="Follow-up — Sector teaser" />
-                  <option value="Portfolio quarterly update" />
-                </datalist>
-                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
-                  A short descriptive name for this campaign's approach (not an email subject line, and not the
-                  email body) — shown in campaign lists.
-                </p>
-              </Field>
-
               <Field label="From Email">
                 <input
                   value={resolvedFromAddress}

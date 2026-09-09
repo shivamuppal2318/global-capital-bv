@@ -26,7 +26,10 @@ const DEFAULT_CAMPAIGN_NAME = SEED_CAMPAIGNS[0][0];
 const DEFAULT_AUTOMATION_FORM = {
   campaignName: DEFAULT_CAMPAIGN_NAME,
   audience: "Renewables founders",
-  template: "Cold intro — Renewables founder",
+  // No standalone UI for this anymore (see CampaignsTab) — the campaign's
+  // own Name doubles as its label, filled in at save time below when this
+  // is blank. Edit mode still round-trips a real saved value here.
+  template: "",
   delayDays: "3",
   followUpCount: "3",
   dailyLimit: "2000",
@@ -999,7 +1002,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     const delayDays = Number(automationForm.delayDays) || 3;
     const payload = {
       audience: automationForm.audience,
-      template: automationForm.template,
+      template: automationForm.template?.trim() || automationForm.campaignName,
       dailyLimit,
       delayDays,
       followUpCount,
