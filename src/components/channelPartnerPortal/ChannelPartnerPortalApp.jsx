@@ -216,6 +216,7 @@ const referralInitialForm = {
 
 function ReferLeadView({ partnerUser }) {
   const [form, setForm] = useState(referralInitialForm);
+  const [lastSubmitted, setLastSubmitted] = useState(null);
   const [doeOptions, setDoeOptions] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -237,8 +238,10 @@ function ReferLeadView({ partnerUser }) {
     setError(null);
     setNotice(null);
     try {
+      const submitted = { ...form };
       const lead = await channelPartnerPortalAuthApi.referLead(form);
       setNotice(`${lead.name} referred successfully${form.doe ? ` to ${form.doe}` : ""}.`);
+      setLastSubmitted({ ...submitted, id: lead.id, submittedAt: new Date().toISOString() });
       setForm(referralInitialForm);
       loadMetrics();
     } catch (err) {
@@ -268,12 +271,16 @@ function ReferLeadView({ partnerUser }) {
         </div>
       </section>
 
-      <Card className="px-5 py-5">
-        <div className="mb-5">
-          <h2 className="text-[18px] font-semibold text-[#102246]">Lead details</h2>
-          <p className="mt-1 text-[13px] text-[#8592ab]">Company, contact, size, funding ask, and DOE routing.</p>
+      <div className="grid gap-4 xl:grid-cols-[1fr_0.55fr]">
+      <Card className="px-5 py-4">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[18px] font-semibold text-[#102246]">Lead details</h2>
+            <p className="mt-1 text-[13px] text-[#8592ab]">Company, contact, size, funding ask, and DOE routing.</p>
+          </div>
+          {lastSubmitted ? <Badge tone="green">Last referral saved</Badge> : null}
         </div>
-        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
+        <form onSubmit={handleSubmit} className="grid gap-3 lg:grid-cols-2">
           <PortalField label="Contact name" value={form.name} onChange={setField("name")} required placeholder="e.g. Vimal Patel" />
           <PortalField label="Company name" value={form.company} onChange={setField("company")} required placeholder="e.g. EXL India" />
           <PortalField label="Email" value={form.email} onChange={setField("email")} type="email" placeholder="name@company.com" />
@@ -297,7 +304,7 @@ function ReferLeadView({ partnerUser }) {
           <label className="block lg:col-span-2">
             <p className={labelClass}>Notes</p>
             <textarea
-              className={`${inputClass} min-h-[120px]`}
+              className={`${inputClass} min-h-[86px]`}
               value={form.notes}
               onChange={(e) => setField("notes")(e.target.value)}
               placeholder="Context, source, funding need, warm intro details..."
@@ -316,7 +323,50 @@ function ReferLeadView({ partnerUser }) {
           </div>
         </form>
       </Card>
+
+      <Card className="px-5 py-4">
+        <h2 className="text-[18px] font-semibold text-[#102246]">Latest submitted referral</h2>
+        {lastSubmitted ? (
+          <div className="mt-4 space-y-3">
+            <div className="rounded-[14px] border border-[#dfe7f2] bg-[#f8fbff] px-4 py-3">
+              <p className="text-[15px] font-semibold text-[#102246]">{lastSubmitted.name}</p>
+              <p className="mt-0.5 text-[13px] text-[#6a7790]">{lastSubmitted.company}</p>
+              <div className="mt-3 grid gap-x-4 gap-y-2 text-[12px] sm:grid-cols-2 xl:grid-cols-1">
+                <SubmittedField label="DOE" value={lastSubmitted.doe || "Unassigned"} />
+                <SubmittedField label="Email" value={lastSubmitted.email || "—"} />
+                <SubmittedField label="Mobile" value={lastSubmitted.mobile || "—"} />
+                <SubmittedField label="Capital ask" value={lastSubmitted.capitalAsk || "Not specified"} />
+                <SubmittedField label="Territory" value={lastSubmitted.territory || "—"} />
+                <SubmittedField label="Industry" value={lastSubmitted.industry || "—"} />
+                <SubmittedField label="Company size" value={lastSubmitted.companySize || "—"} />
+                <SubmittedField label="Revenue" value={lastSubmitted.revenue || "—"} />
+                <SubmittedField label="Website" value={lastSubmitted.website || "—"} />
+              </div>
+              {lastSubmitted.notes ? (
+                <div className="mt-3 rounded-[10px] bg-white px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8b97ad]">Notes</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[12px] leading-5 text-[#334463]">{lastSubmitted.notes}</p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[13px] text-[#8592ab]">
+            Your submitted referral summary will appear here.
+          </p>
+        )}
+      </Card>
+      </div>
     </div>
+  );
+}
+
+function SubmittedField({ label, value }) {
+  return (
+    <p>
+      <span className="block uppercase tracking-[0.08em] text-[#8b97ad]">{label}</span>
+      <span className="font-semibold text-[#102246]">{value}</span>
+    </p>
   );
 }
 
