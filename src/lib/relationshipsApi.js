@@ -88,6 +88,7 @@ export const channelPartnersApi = {
   commissionTiers: () => apiFetch(`${channelPartnersBase}/commission-tiers`),
   estimateCommission: (id, borrowingAmount) =>
     apiFetch(`${channelPartnersBase}/${id}/estimate-commission?borrowingAmount=${encodeURIComponent(borrowingAmount)}`),
+  commissionLedger: (id) => apiFetch(`${channelPartnersBase}/${id}/commission-ledger`),
   // Real signed link to the public agreement-signing page (routes/
   // channelPartnerAgreement.js) — copy it and send it to the partner
   // however you want; nothing auto-sends.
