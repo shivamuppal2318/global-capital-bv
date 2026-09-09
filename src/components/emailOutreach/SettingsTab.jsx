@@ -36,6 +36,20 @@ export function SettingsTab({ mailing, availableTabs }) {
     }
   }
 
+  // A DOE adding their own mailbox has no way to know it's misconfigured
+  // (wrong port, bad password, host typo) until a real cold email silently
+  // fails later — confirmed live, a mailbox with a port/TLS mismatch failed
+  // every single send for days before anyone noticed. Running the same
+  // real SMTP check the manual "Test" button already does, right away, means
+  // the DOE sees a pass/fail on the mailbox they just added without an
+  // extra step to remember.
+  async function handleAddMailboxAndTest() {
+    const account = await handleAddEmailAccount();
+    if (account) {
+      handleTestAccount(account.id);
+    }
+  }
+
   async function toggleActivity(accountId) {
     if (activityOpenId === accountId) {
       setActivityOpenId(null);
@@ -292,7 +306,7 @@ export function SettingsTab({ mailing, availableTabs }) {
           <input placeholder="SMTP password" type="password" value={newAccountForm.smtpPass} onChange={(event) => setNewAccountForm((current) => ({ ...current, smtpPass: event.target.value }))} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[14px] text-[#102246] outline-none" />
         </div>
         <div className="mt-3">
-          <ActionButton label="Add mailbox" icon={PlusIcon} primary onClick={handleAddEmailAccount} />
+          <ActionButton label="Add mailbox" icon={PlusIcon} primary onClick={handleAddMailboxAndTest} />
         </div>
       </div>
     </section>

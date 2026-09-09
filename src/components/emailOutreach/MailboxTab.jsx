@@ -1,11 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "../ui.jsx";
-import { RefreshIcon, CogIcon, InboxIcon, SearchIcon, PlusIcon } from "../Icons.jsx";
+import { RefreshIcon, CogIcon, InboxIcon, SearchIcon, PlusIcon, CheckCircleIcon } from "../Icons.jsx";
 import { emailAccountsApi } from "../../lib/emailAccountsApi.js";
 import { RepliesTab } from "./RepliesTab.jsx";
 
 export function MailboxTab({ mailing, onNavigateTab }) {
   const { emailAccounts, repliedLeads, handleAddEmailAccount, newAccountForm, setNewAccountForm } = mailing;
+  // Same "test it right away, don't make the DOE guess" discipline as
+  // Settings' own mailbox form (see SettingsTab.jsx) — this quick-setup
+  // shortcut is the one a DOE hits first, before ever seeing the full
+  // Settings screen, so it needs the same real pass/fail feedback.
+  const [quickSetupResult, setQuickSetupResult] = useState(null);
+  async function handleQuickAddMailbox() {
+    setQuickSetupResult(null);
+    const account = await handleAddEmailAccount();
+    if (!account) return;
+    setQuickSetupResult({ pending: true });
+    try {
+      setQuickSetupResult(await emailAccountsApi.test(account.id));
+    } catch (err) {
+      setQuickSetupResult({ success: false, message: err.message });
+    }
+  }
   const [activeMailboxTab, setActiveMailboxTab] = useState("inbox");
   const [searchText, setSearchText] = useState("");
   // Which mailbox's inbox to show — "" means all of them combined. Matched
@@ -271,11 +287,19 @@ export function MailboxTab({ mailing, onNavigateTab }) {
             <input placeholder="Label" value={newAccountForm.label} onChange={(event) => setNewAccountForm((current) => ({ ...current, label: event.target.value }))} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[14px] text-[#102246] outline-none" />
             <input placeholder="From address" type="email" value={newAccountForm.fromAddress} onChange={(event) => setNewAccountForm((current) => ({ ...current, fromAddress: event.target.value }))} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[14px] text-[#102246] outline-none" />
             <input placeholder="SMTP host" value={newAccountForm.smtpHost} onChange={(event) => setNewAccountForm((current) => ({ ...current, smtpHost: event.target.value }))} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[14px] text-[#102246] outline-none" />
+            <input placeholder="Port (465 or 587)" value={newAccountForm.smtpPort} onChange={(event) => setNewAccountForm((current) => ({ ...current, smtpPort: event.target.value }))} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[14px] text-[#102246] outline-none" />
             <input placeholder="SMTP username" value={newAccountForm.smtpUser} onChange={(event) => setNewAccountForm((current) => ({ ...current, smtpUser: event.target.value }))} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[14px] text-[#102246] outline-none" />
+            <input placeholder="SMTP password" type="password" value={newAccountForm.smtpPass} onChange={(event) => setNewAccountForm((current) => ({ ...current, smtpPass: event.target.value }))} className="w-full rounded-[12px] border border-[#d6deea] bg-[#f8faff] px-3 py-2 text-[14px] text-[#102246] outline-none" />
           </div>
           <div className="mt-3">
-            <ActionButton label="Add mailbox" icon={PlusIcon} primary onClick={handleAddEmailAccount} />
+            <ActionButton label="Add mailbox" icon={PlusIcon} primary onClick={handleQuickAddMailbox} />
           </div>
+          {quickSetupResult ? (
+            <p className={`mt-2 flex items-start gap-1.5 text-[13px] ${quickSetupResult.pending ? "text-[#6a7790]" : quickSetupResult.success ? "text-[#2b9b60]" : "text-[#c94b6b]"}`}>
+              {quickSetupResult.success ? <CheckCircleIcon className="mt-0.5 size-3.5 shrink-0" /> : null}
+              {quickSetupResult.pending ? "Testing the connection…" : quickSetupResult.message}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </section>

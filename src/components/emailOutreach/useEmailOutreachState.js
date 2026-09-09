@@ -899,8 +899,10 @@ export function useEmailOutreachState({ demoData = true } = {}) {
         country: ""
       });
       setAutomationNotice(`Mailbox "${account.label}" added — assign it to a campaign below.`);
+      return account;
     } catch (error) {
       setAutomationNotice(`Could not add mailbox via the backend (${error.message}). No local-only fallback for this action.`);
+      return null;
     }
   }
 
