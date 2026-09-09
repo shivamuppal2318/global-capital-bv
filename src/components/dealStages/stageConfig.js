@@ -1,0 +1,118 @@
+// Per-stage presentation for the shared DealStageModule. The stages share
+// one table and one screen; this is the only place they differ.
+//
+// `fields` lists which of the record's optional columns this stage actually
+// uses, so an IOI form shows amount/valuation and a field visit shows
+// location/attendees instead of every stage showing all of them.
+
+export const STAGE_CONFIG = {
+  NDA: {
+    label: "NDA",
+    accent: "bg-[#eef1ff] text-[#3046b2]",
+    blurb: "Non-disclosure agreements sent, signed and on file — the gate before anything confidential is shared.",
+    scheduledLabel: "Sent on",
+    completedLabel: "Signed on",
+    fields: ["counterparty", "scheduledAt", "completedAt", "owner", "document", "notes"],
+    emptyHint: "Record an NDA against a lead to start tracking who has signed."
+  },
+  IOI: {
+    label: "IOI",
+    accent: "bg-[#efe5ff] text-[#8853d0]",
+    blurb: "Indications of interest — the non-binding range put to each counterparty, and what came back.",
+    scheduledLabel: "Submitted on",
+    completedLabel: "Answered on",
+    fields: ["amount", "valuation", "counterparty", "scheduledAt", "completedAt", "owner", "document", "notes"],
+    emptyHint: "Log an IOI once you've put a range to a counterparty."
+  },
+  VISIT_PLANNING: {
+    label: "Visit Planning",
+    accent: "bg-[#ffe9d0] text-[#c47f1a]",
+    blurb: "Arranging site visits — when, where, and who's going.",
+    scheduledLabel: "Planned for",
+    completedLabel: "Confirmed on",
+    fields: ["location", "attendees", "scheduledAt", "completedAt", "owner", "notes"],
+    emptyHint: "Plan a visit to put a date, location and attendee list against a lead."
+  },
+  FIELD_VISIT: {
+    label: "Field Visit",
+    accent: "bg-[#dff5e7] text-[#2b9b60]",
+    blurb: "The visits themselves and what came out of them.",
+    scheduledLabel: "Visit date",
+    completedLabel: "Report filed",
+    fields: ["location", "attendees", "scheduledAt", "completedAt", "owner", "visitReport", "notes"],
+    emptyHint: "Record a visit once it's happened, with findings in the notes.",
+    // A visit only really has two real states — hasn't happened yet, or
+    // has — unlike NDA/IOI/Term Sheet, which can genuinely be declined or
+    // put on hold mid-negotiation. Reuses the existing NOT_STARTED/
+    // COMPLETED enum values (no schema change) rather than adding a real
+    // "PLANNED" status — just restricted to these two here, everywhere
+    // this stage shows status, and relabeled so it reads naturally.
+    statuses: ["NOT_STARTED", "COMPLETED"],
+    statusLabels: { NOT_STARTED: "Planned" },
+    plannedNote: "Not yet visited"
+  },
+  TERM_SHEET: {
+    label: "Term Sheet",
+    accent: "bg-[#dff2ff] text-[#2995db]",
+    blurb: "Binding terms issued, negotiated and signed.",
+    scheduledLabel: "Issued on",
+    completedLabel: "Signed on",
+    fields: ["amount", "valuation", "counterparty", "scheduledAt", "completedAt", "owner", "document", "notes"],
+    emptyHint: "Add a term sheet once terms have gone out.",
+    // Same "just two real states" simplification as Field Visit, at the
+    // user's request — negotiation/decline are no longer tracked as
+    // separate statuses for this stage, only whether it's signed yet.
+    statuses: ["NOT_STARTED", "COMPLETED"],
+    statusLabels: { NOT_STARTED: "Visit Planned", COMPLETED: "Termsheet signed" },
+    plannedNote: "Visit planned",
+    completedNote: "Termsheet signed"
+  }
+};
+
+// Which sidebar id opens which stage. Zoom Call and Data Room deliberately
+// aren't here — they keep their existing purpose-built screens.
+// NDA, IOI and Visit Planning are deliberately absent: they have their own
+// tables and their own screens (src/components/relationships/). Leaving them
+// here would route them back to the generic stage view.
+export const MODULE_TO_STAGE = {
+  "field-visit": "FIELD_VISIT",
+  "term-sheet": "TERM_SHEET"
+};
+
+export const STATUS_TONE = {
+  NOT_STARTED: "slate",
+  IN_PROGRESS: "amber",
+  COMPLETED: "green",
+  DECLINED: "red",
+  ON_HOLD: "blue"
+};
+
+export const STATUS_LABEL = {
+  NOT_STARTED: "Not started",
+  IN_PROGRESS: "In progress",
+  COMPLETED: "Completed",
+  DECLINED: "Declined",
+  ON_HOLD: "On hold"
+};
+
+export const FIELD_LABEL = {
+  amount: "Amount",
+  valuation: "Valuation",
+  location: "Location",
+  attendees: "Attendees",
+  counterparty: "Counterparty contact",
+  owner: "Owner",
+  clientRating: "Client rating (0–5)",
+  notes: "Notes"
+};
+
+export const FIELD_PLACEHOLDER = {
+  amount: "$2-4M",
+  valuation: "$18M pre-money",
+  location: "Rotterdam site",
+  attendees: "Rahul R, Meera S",
+  counterparty: "Name of who signed / negotiated",
+  owner: "Who owns this stage",
+  clientRating: "e.g. 4.5",
+  notes: "Anything worth remembering"
+};

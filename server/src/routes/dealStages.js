@@ -1,0 +1,267 @@
+import { Router } from "express";
+import { z } from "zod";
+import { prisma } from "../db.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
+import { DEAL_STAGES, DEAL_STAGE_IDS, DEAL_STAGE_STATUSES } from "../lib/dealStages.js";
+import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { hasChannelPartnerModule } from "../lib/channelPartnerPermissions.js";
+import { generateStageReport, dealStageReportFacts, DEAL_STAGE_REPORT_LABEL } from "../lib/stageCompletionReports.js";
+
+export const dealStagesRouter = Router();
+
+// A Channel Partner's Deal Stages access is scoped to their own referred
+// leads, and limited to the two stages that don't already have a dedicated,
+// separately-scoped router. This one route serves all seven stages by query
+// param, so without this check a partner granted only "field-visit" could
+// pull ?stage=NDA rows too.
+const CHANNEL_PARTNER_DEAL_STAGES = { FIELD_VISIT: "field-visit", TERM_SHEET: "term-sheet" };
+
+function ensureChannelPartnerStage(req, res, next) {
+  if (!req.channelPartner) return next();
+  const stage = String(req.query.stage ?? req.body.stage ?? "");
+  const requiredModule = CHANNEL_PARTNER_DEAL_STAGES[stage];
+  if (!requiredModule || !hasChannelPartnerModule(req.channelPartner, requiredModule)) {
+    return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+  }
+  next();
+}
+
+function publicRecord(r) {
+  return {
+    id: r.id,
+    stage: r.stage,
+    status: r.status,
+    scheduledAt: r.scheduledAt,
+    completedAt: r.completedAt,
+    amount: r.amount,
+    valuation: r.valuation,
+    location: r.location,
+    attendees: r.attendees,
+    counterparty: r.counterparty,
+    notes: r.notes,
+    owner: r.owner,
+    clientRating: r.clientRating,
+    reportSubmitted: r.reportSubmitted,
+    reportAt: r.reportAt,
+    document: r.document ? { id: r.document.id, originalName: r.document.originalName } : null,
+    lead: r.lead ? { id: r.lead.id, name: r.lead.name, company: r.lead.company, status: r.lead.status, leadSource: r.lead.leadSource } : null,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt
+  };
+}
+
+const include = {
+  lead: { select: { id: true, name: true, company: true, status: true, leadSource: true } },
+  document: { select: { id: true, originalName: true } }
+};
+
+// `wasCompleted` is the status BEFORE this write -- callers fetch that
+// themselves before the create/update, so a re-save of an already-completed
+// record (or a POST upsert that only touched other fields) never re-fires.
+// Only Field Visit and Term Sheet trigger a report from this shared table --
+// NDA/IOI/Visit Planning have their own dedicated routers and models (see
+// ndaRecords.js, ioiRecords.js, visitPlans.js), and Data Room isn't a
+// DealStageRecord at all; dealStageReportFacts returns null for anything else.
+function maybeGenerateStageReport(record, wasCompleted) {
+  if (wasCompleted || record.status !== "COMPLETED") return;
+  const facts = dealStageReportFacts(record);
+  if (!facts) return;
+  generateStageReport({
+    leadId: record.leadId,
+    dedupKey: record.stage,
+    stageLabel: DEAL_STAGE_REPORT_LABEL[record.stage],
+    ownerName: record.owner,
+    facts
+  }).catch(() => {});
+}
+
+// The stage catalogue, served from the backend so the UI's field config and
+// the API's validation can't disagree about what a stage is.
+dealStagesRouter.get("/catalogue", (_req, res) => res.json({ stages: DEAL_STAGES, statuses: DEAL_STAGE_STATUSES }));
+
+// Progress across every stage for every lead — powers the summary strip at
+// the top of each stage screen.
+dealStagesRouter.get("/summary", asyncHandler(async (req, res) => {
+  const [grouped, leadCount] = await Promise.all([
+    prisma.dealStageRecord.findMany({ where: relatedLeadOwnerWhereClause(req), select: { stage: true, status: true } }),
+    prisma.lead.count({ where: req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {} })
+  ]);
+
+  const byStage = Object.fromEntries(
+    DEAL_STAGE_IDS.map((id) => [id, { total: 0, NOT_STARTED: 0, IN_PROGRESS: 0, COMPLETED: 0, DECLINED: 0, ON_HOLD: 0 }])
+  );
+  for (const row of grouped) {
+    byStage[row.stage].total += 1;
+    byStage[row.stage][row.status] += 1;
+  }
+
+  res.json({ leadCount, byStage });
+}));
+
+dealStagesRouter.get("/", asyncHandler(async (req, res) => {
+  const { stage, status, q, leadId, owner } = req.query;
+  if (stage && !DEAL_STAGE_IDS.includes(String(stage))) {
+    return res.status(400).json({ error: `Unknown stage "${stage}".` });
+  }
+
+  if (req.channelPartner) {
+    const requiredModule = CHANNEL_PARTNER_DEAL_STAGES[String(stage)];
+    if (!requiredModule || !hasChannelPartnerModule(req.channelPartner, requiredModule)) {
+      return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+    }
+  }
+
+  const records = await prisma.dealStageRecord.findMany({
+    where: {
+      ...relatedLeadOwnerWhereClause(req),
+      ...(stage ? { stage: String(stage) } : {}),
+      ...(status && status !== "All" ? { status: String(status) } : {}),
+      ...(leadId ? { leadId: String(leadId) } : {}),
+      ...(owner ? { owner: String(owner) } : {}),
+      ...(q
+        ? {
+            OR: [
+              { lead: { name: { contains: String(q), mode: "insensitive" } } },
+              { lead: { company: { contains: String(q), mode: "insensitive" } } },
+              { counterparty: { contains: String(q), mode: "insensitive" } },
+              { location: { contains: String(q), mode: "insensitive" } },
+              { attendees: { contains: String(q), mode: "insensitive" } },
+              { owner: { contains: String(q), mode: "insensitive" } },
+              { notes: { contains: String(q), mode: "insensitive" } }
+            ]
+          }
+        : {})
+    },
+    include,
+    orderBy: [{ status: "asc" }, { updatedAt: "desc" }]
+  });
+
+  res.json(records.map(publicRecord));
+}));
+
+const upsertSchema = z.object({
+  leadId: z.string().min(1),
+  stage: z.enum(DEAL_STAGE_IDS),
+  status: z.enum(DEAL_STAGE_STATUSES).optional(),
+  // Dates arrive as ISO strings or "" from date inputs; "" clears the field
+  // rather than being coerced to the epoch.
+  scheduledAt: z.string().nullable().optional(),
+  completedAt: z.string().nullable().optional(),
+  amount: z.string().nullable().optional(),
+  valuation: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  attendees: z.string().nullable().optional(),
+  counterparty: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  owner: z.string().nullable().optional(),
+  documentId: z.string().nullable().optional(),
+  clientRating: z.number().min(0).max(5).nullable().optional(),
+  reportSubmitted: z.boolean().optional()
+});
+
+const toDate = (v) => (v ? new Date(v) : null);
+const toText = (v) => (v === undefined ? undefined : v && String(v).trim() ? String(v).trim() : null);
+
+// Upsert rather than create: a stage is a property of a lead, and the
+// unique [leadId, stage] constraint means "record the NDA for this lead"
+// should update the existing row rather than fail on a second attempt.
+dealStagesRouter.post("/", ensureChannelPartnerStage, asyncHandler(async (req, res) => {
+  const parsed = upsertSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const { leadId, stage, ...rest } = parsed.data;
+
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, ...(req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {}) } });
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+  const data = {
+    ...(rest.status !== undefined ? { status: rest.status } : {}),
+    ...(rest.scheduledAt !== undefined ? { scheduledAt: toDate(rest.scheduledAt) } : {}),
+    ...(rest.completedAt !== undefined ? { completedAt: toDate(rest.completedAt) } : {}),
+    amount: toText(rest.amount),
+    valuation: toText(rest.valuation),
+    location: toText(rest.location),
+    attendees: toText(rest.attendees),
+    counterparty: toText(rest.counterparty),
+    notes: toText(rest.notes),
+    owner: toText(rest.owner),
+    ...(rest.documentId !== undefined ? { documentId: rest.documentId || null } : {}),
+    ...(rest.clientRating !== undefined ? { clientRating: rest.clientRating } : {}),
+    ...(rest.reportSubmitted !== undefined ? { reportSubmitted: rest.reportSubmitted } : {})
+  };
+  // Strip keys explicitly set to undefined so they don't clear stored values.
+  for (const k of Object.keys(data)) if (data[k] === undefined) delete data[k];
+  // Submitting a report is what sets its timestamp — same convention as
+  // VisitPlan's own reportSubmitted/reportAt pair.
+  if (data.reportSubmitted === true) data.reportAt = new Date();
+  if (data.reportSubmitted === false) data.reportAt = null;
+
+  const before = await prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage } }, select: { status: true } });
+
+  const record = await prisma.dealStageRecord.upsert({
+    where: { leadId_stage: { leadId, stage } },
+    create: { leadId, stage, ...data },
+    update: data,
+    include
+  });
+  maybeGenerateStageReport(record, before?.status === "COMPLETED");
+
+  res.status(201).json(publicRecord(record));
+}));
+
+dealStagesRouter.patch("/:id", asyncHandler(async (req, res) => {
+  const parsed = upsertSchema.partial({ leadId: true, stage: true }).safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const { leadId, stage, ...rest } = parsed.data;
+
+  const data = {};
+  if (rest.status !== undefined) data.status = rest.status;
+  if (rest.scheduledAt !== undefined) data.scheduledAt = toDate(rest.scheduledAt);
+  if (rest.completedAt !== undefined) data.completedAt = toDate(rest.completedAt);
+  for (const key of ["amount", "valuation", "location", "attendees", "counterparty", "notes", "owner"]) {
+    if (rest[key] !== undefined) data[key] = toText(rest[key]);
+  }
+  if (rest.documentId !== undefined) data.documentId = rest.documentId || null;
+  if (rest.clientRating !== undefined) data.clientRating = rest.clientRating;
+  if (rest.reportSubmitted !== undefined) data.reportSubmitted = rest.reportSubmitted;
+  if (data.reportSubmitted === true) data.reportAt = new Date();
+  if (data.reportSubmitted === false) data.reportAt = null;
+
+  const existing = await prisma.dealStageRecord.findFirst({
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) },
+    select: { status: true, stage: true }
+  });
+  if (!existing) return res.status(404).json({ error: "Stage record not found" });
+  if (req.channelPartner) {
+    const requiredModule = CHANNEL_PARTNER_DEAL_STAGES[existing.stage];
+    if (!requiredModule || !hasChannelPartnerModule(req.channelPartner, requiredModule)) {
+      return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+    }
+  }
+
+  const record = await prisma.dealStageRecord.update({ where: { id: req.params.id }, data, include }).catch(() => null);
+  if (!record) return res.status(404).json({ error: "Stage record not found" });
+  maybeGenerateStageReport(record, existing.status === "COMPLETED");
+
+  res.json(publicRecord(record));
+}));
+
+dealStagesRouter.delete("/:id", asyncHandler(async (req, res) => {
+  const existing = await prisma.dealStageRecord.findFirst({
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) },
+    select: { id: true, stage: true }
+  });
+  if (!existing) return res.status(404).json({ error: "Stage record not found" });
+  if (req.channelPartner) {
+    const requiredModule = CHANNEL_PARTNER_DEAL_STAGES[existing.stage];
+    if (!requiredModule || !hasChannelPartnerModule(req.channelPartner, requiredModule)) {
+      return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+    }
+  }
+  const deleted = await prisma.dealStageRecord.delete({ where: { id: req.params.id } }).catch(() => null);
+  if (!deleted) return res.status(404).json({ error: "Stage record not found" });
+  res.status(204).end();
+}));

@@ -1,14 +1,20 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { encryptSecret, decryptSecret } from "../src/lib/credentialCrypto.js";
+import { initEncryptionKey, encryptSecret, decryptSecret } from "../src/lib/credentialCrypto.js";
 
+// initEncryptionKey() resolves the key once at boot (see the module's own
+// comment) and caches it — with ENCRYPTION_KEY set, that resolution is
+// env-only and never touches the database, so these tests don't need a
+// real Postgres connection the way the DB-fallback path would.
 let original;
-before(() => {
+before(async () => {
   original = process.env.ENCRYPTION_KEY;
   process.env.ENCRYPTION_KEY = "test-encryption-key";
+  await initEncryptionKey();
 });
-after(() => {
+after(async () => {
   process.env.ENCRYPTION_KEY = original;
+  await initEncryptionKey();
 });
 
 test("a secret round-trips through encrypt/decrypt unchanged", () => {
@@ -40,19 +46,11 @@ test("a tampered ciphertext fails to decrypt instead of silently returning garba
   assert.throws(() => decryptSecret(tampered));
 });
 
-test("decrypting with the wrong key fails instead of returning wrong plaintext", () => {
+test("decrypting with the wrong key fails instead of returning wrong plaintext", async () => {
   const ciphertext = encryptSecret("password123");
   process.env.ENCRYPTION_KEY = "a-completely-different-key";
+  await initEncryptionKey();
   assert.throws(() => decryptSecret(ciphertext));
   process.env.ENCRYPTION_KEY = "test-encryption-key";
-});
-
-test("encryptSecret throws a clear error when ENCRYPTION_KEY is unset", () => {
-  const saved = process.env.ENCRYPTION_KEY;
-  delete process.env.ENCRYPTION_KEY;
-  try {
-    assert.throws(() => encryptSecret("x"), /ENCRYPTION_KEY is not set/);
-  } finally {
-    process.env.ENCRYPTION_KEY = saved;
-  }
+  await initEncryptionKey();
 });

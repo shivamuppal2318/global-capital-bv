@@ -1,11 +1,10 @@
-// Exa Search — https://exa.ai. No account available here; endpoint and
-// response shape below are written from their public docs and NOT
-// verified against a live call. Adjust normalizeExaResult() against a real
-// response before relying on this.
-const REQUIRED_ENV = "EXA_API_KEY";
+// Exa Search — https://exa.ai. Verified against a real live call
+// (2026-08-22): response shape matches exactly, real results return full
+// article text (thousands of words), not just a headline/snippet.
+import { getProviderKey, isProviderConfigured } from "../../marketIntelligenceSettings.js";
 
-export function isExaConfigured() {
-  return Boolean(process.env[REQUIRED_ENV]);
+export async function isExaConfigured() {
+  return isProviderConfigured("exa");
 }
 
 // Pure — testable without any network access or API key.
@@ -20,13 +19,14 @@ export function normalizeExaResult(result) {
 }
 
 export async function fetchExaSignals({ query = "company acquisition funding round" } = {}) {
-  if (!isExaConfigured()) {
-    throw new Error(`Exa Search is not configured — set ${REQUIRED_ENV}.`);
+  const { apiKey } = await getProviderKey("exa");
+  if (!apiKey) {
+    throw new Error("Exa Search is not configured — add a key under Admin Panel → Market Intelligence.");
   }
 
   const response = await fetch("https://api.exa.ai/search", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": process.env[REQUIRED_ENV] },
+    headers: { "Content-Type": "application/json", "x-api-key": apiKey },
     body: JSON.stringify({
       query,
       numResults: 25,

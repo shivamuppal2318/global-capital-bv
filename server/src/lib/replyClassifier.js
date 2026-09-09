@@ -15,6 +15,12 @@ export function matchReplyRule(text) {
   return replyRules.find((rule) => rule.keywords.some((keyword) => lower.includes(keyword))) ?? null;
 }
 
+// Only ever called with a real, actually-received reply's text (see
+// replyRecorder.js) -- "NO_REPLY" would be a lie here even when no
+// keyword rule matches, since a reply plainly did happen. "OTHER" is the
+// honest fallback: a genuine reply that just didn't match a recognized
+// keyword (e.g. a plain "Ok"). NO_REPLY stays reserved for a lead's
+// default DB value before any reply ever arrives.
 export function classifyReply(text) {
-  return matchReplyRule(text)?.replyType ?? "NO_REPLY";
+  return matchReplyRule(text)?.replyType ?? "OTHER";
 }

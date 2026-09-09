@@ -14,34 +14,34 @@ after(() => {
   process.env.APP_BASE_URL = originalBase;
 });
 
-test("trackingPixelUrl builds a URL under /track/open/ with the activity id and a signed token", () => {
+test("trackingPixelUrl builds a URL under /api/track/open/ with the activity id and a signed token", () => {
   const url = trackingPixelUrl("activity-123");
-  assert.match(url, /^https:\/\/crm\.example\.com\/track\/open\/activity-123\/[0-9a-f]{64}$/);
+  assert.match(url, /^https:\/\/crm\.example\.com\/api\/track\/open\/activity-123\/[0-9a-f]{64}$/);
 });
 
-test("trackingClickUrl builds a URL under /track/click/ carrying the encoded destination", () => {
+test("trackingClickUrl builds a URL under /api/track/click/ carrying the encoded destination", () => {
   const url = trackingClickUrl("activity-123", "https://calendly.com/globalcapitalbv/intro-call");
-  assert.match(url, /^https:\/\/crm\.example\.com\/track\/click\/activity-123\/[0-9a-f]{64}\?url=/);
+  assert.match(url, /^https:\/\/crm\.example\.com\/api\/track\/click\/activity-123\/[0-9a-f]{64}\?url=/);
   assert.ok(url.includes(encodeURIComponent("https://calendly.com/globalcapitalbv/intro-call")));
 });
 
 test("injectTrackingPixel inserts the pixel just before </body>", () => {
   const html = "<html><body><p>Hi</p></body></html>";
   const result = injectTrackingPixel(html, "activity-123");
-  assert.match(result, /<img src="https:\/\/crm\.example\.com\/track\/open\/activity-123\/[0-9a-f]{64}" width="1" height="1"[^>]*\/><\/body>/);
+  assert.match(result, /<img src="https:\/\/crm\.example\.com\/api\/track\/open\/activity-123\/[0-9a-f]{64}" width="1" height="1"[^>]*\/><\/body>/);
 });
 
 test("injectTrackingPixel appends to the end when there's no </body> tag", () => {
   const html = "<p>Just a fragment</p>";
   const result = injectTrackingPixel(html, "activity-123");
   assert.ok(result.startsWith(html));
-  assert.match(result, /<img src="https:\/\/crm\.example\.com\/track\/open\//);
+  assert.match(result, /<img src="https:\/\/crm\.example\.com\/api\/track\/open\//);
 });
 
 test("wrapLinksForClickTracking rewrites http(s) links to go through the click-tracking redirect", () => {
   const html = '<a href="https://calendly.com/intro">Book a call</a>';
   const result = wrapLinksForClickTracking(html, "activity-123");
-  assert.match(result, /href="https:\/\/crm\.example\.com\/track\/click\/activity-123\/[0-9a-f]{64}\?url=/);
+  assert.match(result, /href="https:\/\/crm\.example\.com\/api\/track\/click\/activity-123\/[0-9a-f]{64}\?url=/);
   assert.ok(result.includes(encodeURIComponent("https://calendly.com/intro")));
 });
 

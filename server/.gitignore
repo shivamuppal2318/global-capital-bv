@@ -1,4 +1,7 @@
-node_modules/
+node_modules
 .env
 *.db
-*.db-journal
+.pgdata
+# Tesseract.js downloads its OCR language model here on first use and
+# caches it for reuse — a runtime artifact, not something to commit.
+*.traineddata

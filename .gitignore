@@ -1,7 +1,7 @@
-node_modules/
-dist/
+node_modules
+dist
 .env
+.env.local
 vite-dev*.log
-vite-dev*.err*
-*.tar.gz
-MOM-UIUX-Global-Capital-copy.docx
+vite-dev*.err
+*.log

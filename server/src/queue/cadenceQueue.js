@@ -4,7 +4,11 @@ import { prisma } from "../lib/prisma.js";
 import { getEmailProvider } from "../lib/emailProvider.js";
 import { isUnderDailyCap } from "../lib/sendCap.js";
 import { isAccountUnderDailyCap } from "../lib/accountSendCap.js";
+import { resolveEmailAccount } from "../lib/accountRouting.js";
 import { isLeadEligibleForCadenceStep } from "../lib/cadenceEligibility.js";
+import { unsubscribeUrlFor, appendInterestButton, plainTextToHtml } from "../lib/leadSender.js";
+import { injectTrackingPixel, wrapLinksForClickTracking } from "../lib/emailTracking.js";
+import { sendCampaignBlastEmail } from "../lib/campaignBlastSender.js";
 
 const QUEUE_NAME = "cadence-steps";
 
@@ -52,6 +56,28 @@ export async function enqueueCadenceStep({ leadId, campaignId, stepIndex, subjec
   );
 }
 
+// A campaign's own composed one-time blast (see routes/emailCampaigns.js's
+// POST /:id/send-now) — a distinct job name on the same queue/worker rather
+// than new infra, but NOT routed through the "send-step" cadence logic
+// below: that logic skips leads who already replied and force-converts the
+// body via plainTextToHtml + an injected "I'm Interested" button, neither of
+// which is right for a one-time blast of real authored HTML.
+export async function enqueueCampaignBlast({ leadId, campaignId, delayMs }) {
+  const q = getCadenceQueue();
+  if (!q) {
+    throw new Error("Cadence queue is disabled (REDIS_URL not set).");
+  }
+  await q.add(
+    "send-blast",
+    { leadId, campaignId },
+    {
+      delay: delayMs,
+      attempts: 3,
+      backoff: { type: "exponential", delay: 60_000 }
+    }
+  );
+}
+
 export function startCadenceWorker() {
   if (!isQueueEnabled()) {
     console.log("[cadence-worker] REDIS_URL not set — worker not started.");
@@ -66,14 +92,21 @@ export function startCadenceWorker() {
   worker = new Worker(
     QUEUE_NAME,
     async (job) => {
+      if (job.name === "send-blast") {
+        await sendCampaignBlastEmail(job.data.leadId, job.data.campaignId);
+        return;
+      }
+
       const { leadId, campaignId, subject, body } = job.data;
-      const lead = await prisma.lead.findUniqueOrThrow({ where: { id: leadId } });
-      const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: campaignId }, include: { emailAccount: true } });
+      const lead = await prisma.emailLead.findUniqueOrThrow({ where: { id: leadId } });
+      const campaign = await prisma.emailCampaign.findUniqueOrThrow({ where: { id: campaignId }, include: { emailAccount: true } });
       // Resolved per-job, not once at worker startup — a global provider
-      // grabbed once would ignore any campaign-specific EmailAccount and
-      // silently send every cadence step through the default mailbox
-      // regardless of which account the campaign was actually assigned.
-      const emailProvider = getEmailProvider(campaign.emailAccount);
+      // grabbed once would ignore per-lead country routing (a match on
+      // EmailLead.country overrides the campaign's assigned EmailAccount,
+      // see accountRouting.js) and silently send every cadence step through
+      // the same default mailbox regardless of the lead's own country.
+      const resolvedAccount = await resolveEmailAccount(lead, campaign);
+      const emailProvider = getEmailProvider(resolvedAccount);
 
       // The actual "stop the no-reply cadence once they reply" check — a
       // job that was enqueued 3 days ago for "Day 3 follow-up" still fires
@@ -83,7 +116,7 @@ export function startCadenceWorker() {
       const { eligible, reason } = isLeadEligibleForCadenceStep(lead);
       if (!eligible) {
         console.log(`[cadence-worker] skipping step for lead ${leadId}: ${reason}`);
-        await prisma.activityLog.create({
+        await prisma.emailActivityLog.create({
           data: {
             leadId,
             kind: "SEND_BLOCKED",
@@ -104,22 +137,45 @@ export function startCadenceWorker() {
         throw new Error("Daily send cap reached for this campaign.");
       }
 
-      const accountWithinCap = await isAccountUnderDailyCap(campaign.emailAccount);
+      const accountWithinCap = await isAccountUnderDailyCap(resolvedAccount);
       if (!accountWithinCap) {
         // Same TODO as above: only retries for a few minutes, not until
         // tomorrow's reset.
-        throw new Error(`Daily send cap reached for mailbox "${campaign.emailAccount.label}".`);
+        throw new Error(`Daily send cap reached for mailbox "${resolvedAccount.label}".`);
       }
 
-      const { providerMessageId } = await emailProvider.send({ to: lead.email, subject, body });
+      // The activity row has to exist *before* sending — open/click tracking
+      // and the "I'm Interested" button both embed this row's own id in
+      // their URLs. Previously this only got created *after* a successful
+      // send, which also meant these cadence emails went out as bare plain
+      // text with no HTML at all: no open/click tracking, no unsubscribe
+      // header, and no way to add the Interested button — unlike every
+      // other send path in this app (see leadSender.js's sendRawEmail/
+      // sendTemplateEmail, which this now mirrors).
+      const pendingActivity = await prisma.emailActivityLog.create({
+        data: { leadId, kind: "BRANCH_EMAIL_SENT", title: subject, detail: "Sending…", emailAccountId: resolvedAccount?.id ?? null }
+      });
 
-      await prisma.activityLog.create({
-        data: {
-          leadId,
-          kind: "BRANCH_EMAIL_SENT",
-          title: subject,
-          detail: `Sent via ${emailProvider.name} provider (message id ${providerMessageId}).`
-        }
+      const unsubscribeUrl = unsubscribeUrlFor(leadId);
+      const htmlWithClickTracking = wrapLinksForClickTracking(
+        appendInterestButton(plainTextToHtml(body), leadId),
+        pendingActivity.id,
+        { skipUrl: unsubscribeUrl }
+      );
+      const html = injectTrackingPixel(htmlWithClickTracking, pendingActivity.id);
+
+      const { providerMessageId } = await emailProvider.send({
+        to: lead.email,
+        subject,
+        body,
+        html,
+        unsubscribeUrl,
+        replyTo: campaign.replyTo
+      });
+
+      await prisma.emailActivityLog.update({
+        where: { id: pendingActivity.id },
+        data: { detail: `Sent via ${emailProvider.name} provider (message id ${providerMessageId}).` }
       });
     },
     { connection: workerConnection }

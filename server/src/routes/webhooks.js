@@ -30,7 +30,7 @@ webhooksRouter.post("/inbound-email", requireWebhookSecret, asyncHandler(async (
   }
   const { fromEmail, textBody } = parsed.data;
 
-  const lead = await prisma.lead.findFirst({ where: { email: fromEmail } });
+  const lead = await prisma.emailLead.findFirst({ where: { email: fromEmail } });
   if (!lead) {
     // Not necessarily an error: could be a reply from an address that
     // doesn't match any known lead (forwarded thread, CC'd colleague...).

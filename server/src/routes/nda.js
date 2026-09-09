@@ -50,7 +50,7 @@ function pageShell(body) {
 
 // The link a lead clicks from the "interested" auto-response email.
 ndaRouter.get("/:leadId/:token", requireValidToken, asyncHandler(async (req, res) => {
-  const lead = await prisma.lead.findUnique({ where: { id: req.params.leadId } });
+  const lead = await prisma.emailLead.findUnique({ where: { id: req.params.leadId } });
   if (!lead) {
     return res.status(404).send(pageShell("<p>Unknown recipient.</p>"));
   }
@@ -94,7 +94,7 @@ ndaRouter.post("/:leadId/:token", requireValidToken, asyncHandler(async (req, re
     return res.status(400).send(pageShell("<p>Please provide your name and agree to the terms.</p>"));
   }
 
-  const lead = await prisma.lead.findUnique({ where: { id: req.params.leadId } });
+  const lead = await prisma.emailLead.findUnique({ where: { id: req.params.leadId } });
   if (!lead) {
     return res.status(404).send(pageShell("<p>Unknown recipient.</p>"));
   }
@@ -105,12 +105,12 @@ ndaRouter.post("/:leadId/:token", requireValidToken, asyncHandler(async (req, re
   const ip = (req.headers["x-forwarded-for"]?.toString().split(",")[0] ?? req.socket.remoteAddress ?? "unknown").trim();
   const signedAt = new Date();
 
-  await prisma.lead.update({
+  await prisma.emailLead.update({
     where: { id: lead.id },
     data: { ndaSignedAt: signedAt, ndaSignedName: parsed.data.fullName, ndaSignedIp: ip, stage: "NDA Signed" }
   });
 
-  await prisma.activityLog.create({
+  await prisma.emailActivityLog.create({
     data: {
       leadId: lead.id,
       kind: "NDA_SIGNED",

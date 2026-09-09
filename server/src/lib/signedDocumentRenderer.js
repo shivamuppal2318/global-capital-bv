@@ -1,0 +1,388 @@
+// Renders the real NDA/IOI document text -- extracted verbatim from the
+// actual NDA PDF / LOI docx into assets/*-template-body.txt -- in two
+// forms:
+//   - renderSignedNda/Ioi: a downloadable read-only copy with the client's
+//     submitted values filled into the blanks as plain text, used when
+//     they accepted online (no uploaded file exists to hand back instead).
+//   - ndaFillFormFragment/ioiFillFormFragment: the SAME document text, but
+//     with the blanks turned into live <input> fields the client edits
+//     right there in the client portal, so "fill in your details online"
+//     looks like the actual agreement rather than a generic form.
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { escapeHtml } from "./clientPortalPage.js";
+import { LOGO_DATA_URI } from "./brandLogo.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ASSETS_DIR = path.join(__dirname, "..", "..", "assets");
+
+export function slugify(text) {
+  return (
+    String(text ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "record"
+  );
+}
+
+function fmtDate(value) {
+  if (!value) return "____________";
+  return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function fmtDateTime(value) {
+  if (!value) return "____________";
+  return new Date(value).toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+}
+
+function fillTokens(text, tokens) {
+  return text.replace(/\{\{(\w+)\}\}/g, (match, key) => (key in tokens ? tokens[key] : match));
+}
+
+function toParagraphHtml(part, substitute) {
+  return part
+    .trim()
+    .split(/\r?\n(?:[ \t]*\r?\n)+/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => {
+      if (/^-\s/.test(block)) {
+        const items = block.split(/\n(?=-\s)/).map((line) => `<li>${substitute(line.replace(/^-\s*/, ""))}</li>`);
+        return `<ul>${items.join("")}</ul>`;
+      }
+      return `<p>${substitute(block).replace(/\n/g, "<br/>")}</p>`;
+    })
+    .join("\n");
+}
+
+function renderBody(rawText) {
+  const [mainPart, signaturePart] = rawText.split("===SIGNATURE_BLOCK===");
+  const substitute = (block) => escapeHtml(block);
+  return { mainHtml: toParagraphHtml(mainPart, substitute), signatureHtml: toParagraphHtml(signaturePart, substitute) };
+}
+
+// Mirrors the real letterhead template (Global Capital BV -- Reciprocal NDA
+// Template.pdf, and the equivalent IOI docx): a bordered page frame with a
+// centered logo/brand header under a rule, and a matching address footer --
+// rather than a plain unstyled scroll of paragraphs. The PDF repeats that
+// header/footer on every physical page; this is one continuous HTML
+// document, so each is shown once rather than faked per-page.
+function documentShell({ title, mainHtml, signatureHtml, footerNote, showInitialsLine = false }) {
+  const logo = LOGO_DATA_URI;
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(title)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 16px; background: #eef1f6; font-family: Georgia, "Times New Roman", serif; color: #16213e; line-height: 1.6; }
+  .doc-page { max-width: 780px; margin: 0 auto; background: #fff; border: 2px solid #21439b; border-radius: 6px; padding: 40px 56px; }
+  .doc-body > p:first-child { text-align: center; font-weight: 700; font-size: 17px; letter-spacing: 0.01em; margin: 0 0 24px; }
+  p { margin: 0 0 14px; font-size: 13.5px; text-align: justify; }
+  ul { margin: 0 0 14px; padding-left: 22px; }
+  li { font-size: 13.5px; margin-bottom: 6px; }
+  .header { text-align: center; border-bottom: 2px solid #21439b; padding-bottom: 16px; margin-bottom: 28px; }
+  .header img { height: 48px; width: auto; margin-bottom: 8px; }
+  .brand { display: block; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-weight: 800; font-size: 19px; color: #16213e; letter-spacing: 0.02em; }
+  .tag { display: block; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-weight: 700; font-size: 11px; color: #21439b; text-transform: uppercase; letter-spacing: 0.07em; margin-top: 3px; }
+  .initials-line { display: flex; justify-content: flex-end; margin: -10px 0 22px; font-size: 12px; color: #16213e; }
+  .signature { margin-top: 32px; padding-top: 20px; border-top: 1px solid #d6deea; }
+  .doc-footer { margin-top: 40px; padding-top: 16px; border-top: 2px solid #21439b; text-align: center; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+  .doc-footer p { text-align: center; font-size: 11px; color: #5c6b87; margin: 0 0 3px; }
+  .doc-footer .company { font-weight: 700; color: #21439b; font-size: 12px; }
+  .footer-note { margin-top: 16px; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #9aa6bd; text-align: center; }
+  @media print { body { padding: 0; background: #fff; } .doc-page { border-width: 1px; } }
+</style>
+</head>
+<body>
+  <div class="doc-page">
+    <div class="header">
+      <img src="${logo}" alt="Global Capital BV" />
+      <span class="brand">GLOBAL CAPITAL BV</span>
+      <span class="tag">Building Financial Dreams Together</span>
+    </div>
+    ${showInitialsLine ? '<div class="initials-line">_______________Initials</div>' : ""}
+    <div class="doc-body">${mainHtml}</div>
+    <div class="signature">${signatureHtml}</div>
+    <div class="doc-footer">
+      <p class="company">Global Capital B.V.</p>
+      <p>Groen v Prinstererstraat 38, 3354 BD Papendrecht, Zuid Holland, Netherlands</p>
+      <p>www.globalcapitalbv.com&nbsp;|&nbsp;info@globalcapitalbv.com&nbsp;|&nbsp;CCI 96239735</p>
+    </div>
+    <p class="footer-note">${escapeHtml(footerNote)}</p>
+  </div>
+</body>
+</html>`;
+}
+
+// A short internal dossier for the moment a deal stage finishes (NDA
+// signed, IOI signed, Data Room complete, a visit completed, Field Visit or
+// Term Sheet completed) -- distinct from documentShell above, which renders
+// a long legal agreement. This is a label/value summary of what just
+// happened, generated automatically the moment it happens (see
+// lib/stageCompletionReports.js), not something anyone filled in or signed.
+export function renderStageCompletionReport({ stageLabel, lead, facts, generatedAt }) {
+  const logo = LOGO_DATA_URI;
+  const title = `${stageLabel} completed — ${lead.company}`;
+  const rows = facts
+    .filter((f) => f.value)
+    .map((f) => `<div class="fact"><dt>${escapeHtml(f.label)}</dt><dd>${escapeHtml(String(f.value))}</dd></div>`)
+    .join("");
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(title)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 16px; background: #eef1f6; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #16213e; line-height: 1.5; }
+  .doc-page { max-width: 640px; margin: 0 auto; background: #fff; border: 2px solid #21439b; border-radius: 6px; padding: 40px 48px; }
+  .header { text-align: center; border-bottom: 2px solid #21439b; padding-bottom: 16px; margin-bottom: 24px; }
+  .header img { height: 48px; width: auto; margin-bottom: 8px; }
+  .brand { display: block; font-weight: 800; font-size: 19px; color: #16213e; letter-spacing: 0.02em; }
+  .tag { display: block; font-weight: 700; font-size: 11px; color: #21439b; text-transform: uppercase; letter-spacing: 0.07em; margin-top: 3px; }
+  .stage-label { display: inline-block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #147a52; background: #e3f5ec; border-radius: 100px; padding: 4px 12px; margin-bottom: 10px; }
+  h1 { font-size: 19px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .subline { font-size: 13px; color: #5c6b87; margin: 0 0 24px; }
+  .facts { margin: 0; }
+  .fact { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-top: 1px solid #e7edf5; }
+  .fact:first-child { border-top: none; }
+  .fact dt { font-size: 12.5px; color: #5c6b87; margin: 0; }
+  .fact dd { font-size: 13.5px; font-weight: 600; color: #16213e; margin: 0; text-align: right; }
+  .doc-footer { margin-top: 32px; padding-top: 16px; border-top: 2px solid #21439b; text-align: center; }
+  .doc-footer p { text-align: center; font-size: 11px; color: #5c6b87; margin: 0 0 3px; }
+  .doc-footer .company { font-weight: 700; color: #21439b; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="doc-page">
+    <div class="header">
+      <img src="${logo}" alt="Global Capital BV" />
+      <span class="brand">GLOBAL CAPITAL BV</span>
+      <span class="tag">Building Financial Dreams Together</span>
+    </div>
+    <span class="stage-label">${escapeHtml(stageLabel)} &middot; completed</span>
+    <h1>${escapeHtml(lead.company)}</h1>
+    <p class="subline">Generated automatically on ${fmtDateTime(generatedAt)}</p>
+    <dl class="facts">${rows}</dl>
+    <div class="doc-footer">
+      <p class="company">Global Capital B.V.</p>
+      <p>Groen v Prinstererstraat 38, 3354 BD Papendrecht, Zuid Holland, Netherlands</p>
+      <p>www.globalcapitalbv.com&nbsp;|&nbsp;info@globalcapitalbv.com&nbsp;|&nbsp;CCI 96239735</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+export async function renderSignedNda(nda) {
+  const raw = await fs.readFile(path.join(ASSETS_DIR, "nda-template-body.txt"), "utf8");
+  const signerName = nda.signerName || nda.signatoryName || "the counterparty";
+  const filled = fillTokens(raw, {
+    AGREEMENT_DATE: fmtDate(nda.agreementDate),
+    COUNTERPARTY_NAME: nda.counterpartyLegalName || "[counterparty name not provided]",
+    COUNTERPARTY_COUNTRY: nda.counterpartyCountry || "[country not provided]",
+    COUNTERPARTY_ADDRESS: nda.counterpartyAddress || "[address not provided]",
+    SIGNATORY_NAME: nda.signatoryName || nda.signerName || "[signatory not provided]",
+    SIGNATORY_TITLE: nda.signatoryTitle || "Authorized Signatory",
+    COMPANY_SIGNATURE_STATUS: `signed electronically by Amol Kadam on ${fmtDateTime(nda.signedAt)}`,
+    SIGNATURE_STATUS: `signed electronically by ${signerName} on ${fmtDateTime(nda.signedAt)}`
+  });
+  const { mainHtml, signatureHtml } = renderBody(filled);
+  return documentShell({
+    title: `Signed NDA — ${nda.counterpartyLegalName || nda.lead?.company || "Global Capital BV"}`,
+    mainHtml,
+    signatureHtml,
+    footerNote: `Accepted online via the Global Capital BV client portal by ${nda.signerName ?? "the client"} on ${fmtDateTime(nda.signedAt)}. This copy reflects the details the client submitted at acceptance.`,
+    showInitialsLine: true
+  });
+}
+
+export async function renderSignedIoi(ioi) {
+  const raw = await fs.readFile(path.join(ASSETS_DIR, "ioi-template-body.txt"), "utf8");
+  const investmentAmount = ioi.value ? `${ioi.valueCurrency ?? "USD"} ${Number(ioi.value).toLocaleString("en-US")}` : "____________";
+  const filled = fillTokens(raw, {
+    COUNTERPARTY_NAME: ioi.counterparty || ioi.lead?.company || "[borrower name not provided]",
+    JURISDICTION: ioi.counterpartyJurisdiction || "[jurisdiction not provided]",
+    PROJECT_COST: ioi.totalProjectCost || "[amount not provided]",
+    BORROWER_EQUITY: ioi.borrowerEquity || "[amount not provided]",
+    INVESTMENT_AMOUNT: investmentAmount,
+    ISSUE_DATE: fmtDate(ioi.agreementDate ?? ioi.generatedAt),
+    SIGNATORY_NAME: ioi.signatoryName || "[signatory not provided]",
+    SIGNATORY_ADDRESS: ioi.signatoryAddress || "[address not provided]",
+    SIGNATORY_PHONE: ioi.signatoryPhone || "[phone not provided]",
+    SIGNATORY_EMAIL: ioi.signatoryEmail || "[email not provided]",
+    SIGNATURE_STATUS: `signed electronically on ${fmtDateTime(ioi.signedAt)}`
+  });
+  const { mainHtml, signatureHtml } = renderBody(filled);
+  return documentShell({
+    title: `Signed IOI — ${ioi.counterparty || ioi.lead?.company || "Global Capital BV"}`,
+    mainHtml,
+    signatureHtml,
+    footerNote: `Accepted online via the Global Capital BV client portal on ${fmtDateTime(ioi.signedAt)}. This copy reflects the details the client submitted at acceptance.`
+  });
+}
+
+// Same "nothing to hand back but the recorded field values" case as
+// renderSignedNda/Ioi above, for a Channel Partner who signed via "fill in
+// the blanks online" rather than uploading their own scanned copy (see
+// routes/channelPartnerAgreement.js -- a real upload skips this entirely,
+// the frontend downloads that file directly via ChannelPartner.agreementDocumentId).
+// There's no separate "agreement date" field on ChannelPartner the way NDA
+// has agreementDate; agreementSignedAt is the only real timestamp recorded,
+// so it doubles as both.
+export async function renderSignedChannelPartnerAgreement(partner) {
+  const raw = await fs.readFile(path.join(ASSETS_DIR, "channel-partner-agreement-template-body.txt"), "utf8");
+  const filled = fillTokens(raw, {
+    AGREEMENT_DATE: fmtDate(partner.agreementSignedAt),
+    PARTNER_NAME: partner.name,
+    PARTNER_ADDRESS: partner.agreementAddress || "[address not provided]",
+    TERRITORY: partner.region || "[territory not provided]",
+    PAYMENT_SCHEDULE: partner.agreementPaymentSchedule || "[payment schedule not provided]",
+    COMPANY_SIGNATURE_STATUS: `signed electronically by Amol Kadam on ${fmtDateTime(partner.agreementSignedAt)}`,
+    PARTNER_TITLE: "Channel Partner",
+    SIGNATURE_STATUS: `signed electronically by ${partner.agreementSignedName ?? "the partner"} on ${fmtDateTime(partner.agreementSignedAt)}`
+  });
+  const { mainHtml, signatureHtml } = renderBody(filled);
+  return documentShell({
+    title: `Signed Channel Partner Agreement — ${partner.name}`,
+    mainHtml,
+    signatureHtml,
+    footerNote: `Accepted online via the Channel Partner Agreement signing page by ${partner.agreementSignedName ?? "the partner"} on ${fmtDateTime(partner.agreementSignedAt)}. This copy reflects the details submitted at acceptance.`
+  });
+}
+
+// --- Interactive "fill in your details online" document, embedded in the
+// client portal's Option 1 (see clientPortal.js's ndaSignFormHtml /
+// ioiRespondFormHtml) -----------------------------------------------------
+
+// A token that appears more than once in the source text (a company name
+// named both in the opening paragraph and again in the signature block,
+// say) gets ONE real <input> at its first occurrence and a read-only
+// mirror <span> at every later one, kept in sync client-side by a tiny
+// generated <script> -- so the document still reads naturally without a
+// second form field fighting the first over what value actually submits.
+function renderInteractiveBody(rawText, fieldSpecs) {
+  const seen = new Map();
+  const mirrors = [];
+
+  function substitute(block) {
+    return escapeHtml(block).replace(/\{\{(\w+)\}\}/g, (match, key) => {
+      const spec = fieldSpecs[key];
+      if (!spec) return match;
+      if (!spec.editable) return escapeHtml(spec.text ?? "");
+
+      if (!seen.has(key)) {
+        seen.set(key, true);
+        const type = spec.type ?? "text";
+        return `<input type="${type}" id="gcf-${key}" name="${escapeHtml(spec.name)}" value="${escapeHtml(spec.value ?? "")}" placeholder="${escapeHtml(spec.placeholder ?? "")}" required class="gc-doc-input" />`;
+      }
+      const mirrorId = `gcf-mirror-${key}-${mirrors.length}`;
+      mirrors.push({ key, mirrorId });
+      return `<span id="${mirrorId}" class="gc-doc-mirror">${escapeHtml(spec.value ?? "") || "…"}</span>`;
+    });
+  }
+
+  const [mainPart, signaturePart] = rawText.split("===SIGNATURE_BLOCK===");
+  const mainHtml = toParagraphHtml(mainPart, substitute);
+  const signatureHtml = toParagraphHtml(signaturePart, substitute);
+
+  const script = mirrors.length
+    ? `<script>${mirrors
+        .map(
+          ({ key, mirrorId }) =>
+            `document.getElementById('gcf-${key}')?.addEventListener('input', function (e) { var el = document.getElementById('${mirrorId}'); if (el) el.textContent = e.target.value || '…'; });`
+        )
+        .join("\n")}</script>`
+    : "";
+
+  return { mainHtml, signatureHtml, script };
+}
+
+function fillFormShell({ mainHtml, signatureHtml, script }) {
+  const logo = LOGO_DATA_URI;
+  return `
+    <div class="gc-doc-frame">
+      <div class="gc-doc-scroll">
+        <div class="gc-doc-header">
+          <img src="${logo}" alt="Global Capital BV" />
+          <span class="gc-doc-header-brand">GLOBAL CAPITAL BV</span>
+          <span class="gc-doc-header-tag">Building Financial Dreams Together</span>
+        </div>
+        <div class="gc-doc-body">${mainHtml}</div>
+        <div class="gc-doc-signature">${signatureHtml}</div>
+        <div class="gc-doc-footer">
+          <p class="gc-doc-footer-company">Global Capital B.V.</p>
+          <p>Groen v Prinstererstraat 38, 3354 BD Papendrecht, Zuid Holland, Netherlands</p>
+          <p>www.globalcapitalbv.com&nbsp;|&nbsp;info@globalcapitalbv.com&nbsp;|&nbsp;CCI 96239735</p>
+        </div>
+      </div>
+    </div>
+    ${script}`;
+}
+
+export async function ndaFillFormFragment(filled, companyName) {
+  const raw = await fs.readFile(path.join(ASSETS_DIR, "nda-template-body.txt"), "utf8");
+  const specs = {
+    AGREEMENT_DATE: { editable: true, name: "agreementDate", type: "date", value: filled.agreementDate ?? "" },
+    COUNTERPARTY_NAME: {
+      editable: true,
+      name: "counterpartyLegalName",
+      value: filled.counterpartyLegalName || companyName || "",
+      placeholder: "Your company's legal name"
+    },
+    COUNTERPARTY_COUNTRY: { editable: true, name: "counterpartyCountry", value: filled.counterpartyCountry ?? "", placeholder: "Country of registration" },
+    COUNTERPARTY_ADDRESS: { editable: true, name: "counterpartyAddress", value: filled.counterpartyAddress ?? "", placeholder: "Registered office address" },
+    SIGNATORY_NAME: { editable: true, name: "signatoryName", value: filled.signatoryName ?? "", placeholder: "Signatory name" },
+    SIGNATORY_TITLE: { editable: true, name: "signatoryTitle", value: filled.signatoryTitle ?? "", placeholder: "Signatory title" },
+    COMPANY_SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" },
+    SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" }
+  };
+  return fillFormShell(renderInteractiveBody(raw, specs));
+}
+
+// Same pattern one level down for the Channel Partner Agreement (see
+// routes/channelPartnerAgreement.js) — previously a read-only <pre> block
+// of the full text followed by a generic "type your name to sign" form,
+// leaving every real blank ([Partner's Address], [monthly/quarterly])
+// unresolved in the actual signed record. PARTNER_NAME is pre-filled and
+// non-editable here (unlike NDA's COUNTERPARTY_NAME): ChannelPartner.name
+// is already the canonical identity used everywhere else in the app
+// (lead-matching, campaign ownership), so letting it diverge here would
+// just create a second, disconnected name for the same partner.
+export async function channelPartnerAgreementFillFormFragment(partner) {
+  const raw = await fs.readFile(path.join(ASSETS_DIR, "channel-partner-agreement-template-body.txt"), "utf8");
+  const specs = {
+    AGREEMENT_DATE: { editable: false, text: fmtDate(new Date()) },
+    PARTNER_NAME: { editable: false, text: partner.name },
+    PARTNER_ADDRESS: { editable: true, name: "partnerAddress", value: partner.agreementAddress ?? "", placeholder: "Your company's principal office address" },
+    TERRITORY: { editable: true, name: "territory", value: partner.region ?? "", placeholder: "e.g. worldwide, or specific countries/regions" },
+    PAYMENT_SCHEDULE: { editable: true, name: "paymentSchedule", value: partner.agreementPaymentSchedule ?? "", placeholder: "Monthly or Quarterly" },
+    COMPANY_SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" },
+    PARTNER_TITLE: { editable: false, text: "Channel Partner" },
+    SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" }
+  };
+  return fillFormShell(renderInteractiveBody(raw, specs));
+}
+
+export async function ioiFillFormFragment(filled, companyName, ioi) {
+  const raw = await fs.readFile(path.join(ASSETS_DIR, "ioi-template-body.txt"), "utf8");
+  const investmentAmount = ioi?.value ? `${ioi.valueCurrency ?? "USD"} ${Number(ioi.value).toLocaleString("en-US")}` : "to be confirmed";
+  const specs = {
+    COUNTERPARTY_NAME: { editable: true, name: "counterpartyLegalName", value: filled.counterpartyLegalName || companyName || "", placeholder: "Your company's legal name" },
+    JURISDICTION: { editable: true, name: "counterpartyJurisdiction", value: filled.counterpartyJurisdiction ?? "", placeholder: "Jurisdiction of domicile" },
+    PROJECT_COST: { editable: true, name: "totalProjectCost", value: filled.totalProjectCost ?? "", placeholder: "Total acquisition / project cost (USD)" },
+    BORROWER_EQUITY: { editable: true, name: "borrowerEquity", value: filled.borrowerEquity ?? "", placeholder: "Equity provided by borrower (USD)" },
+    INVESTMENT_AMOUNT: { editable: false, text: investmentAmount },
+    ISSUE_DATE: { editable: true, name: "agreementDate", type: "date", value: filled.agreementDate ?? "" },
+    SIGNATORY_NAME: { editable: true, name: "signatoryName", value: filled.signatoryName ?? "", placeholder: "Signatory name" },
+    SIGNATORY_ADDRESS: { editable: true, name: "signatoryAddress", value: filled.signatoryAddress ?? "", placeholder: "Signatory address" },
+    SIGNATORY_PHONE: { editable: true, name: "signatoryPhone", type: "tel", value: filled.signatoryPhone ?? "", placeholder: "Signatory phone" },
+    SIGNATORY_EMAIL: { editable: true, name: "signatoryEmail", type: "email", value: filled.signatoryEmail ?? "", placeholder: "Signatory email" },
+    SIGNATURE_STATUS: { editable: false, text: "will be recorded electronically upon submission" }
+  };
+  return fillFormShell(renderInteractiveBody(raw, specs));
+}

@@ -1,9 +1,11 @@
 import { sendTemplateEmail } from "./leadSender.js";
 
 // Maps a classified reply straight to the template that answers it:
-// interested -> NDA, wants a call -> Calendly invite, wants more info ->
-// brochure/teaser. NO_REPLY is deliberately absent — there's nothing to
-// auto-send in response to "no reply happened."
+// interested (even one who mentioned the NDA) -> Calendly invite, since
+// every lead gets a Zoom call before the NDA goes out; wants a call ->
+// Calendly invite; wants more info -> brochure/teaser. NO_REPLY is
+// deliberately absent — there's nothing to auto-send in response to
+// "no reply happened."
 const REPLY_TYPE_TO_TEMPLATE_KEY = {
   INTERESTED: "interested",
   ZOOM_REQUEST: "zoom-request",

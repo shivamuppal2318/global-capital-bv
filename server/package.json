@@ -1,32 +1,49 @@
 {
-  "name": "global-capital-crm-server",
+  "name": "whatsapp-business-server",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node --watch src/index.js",
+    "dev": "nodemon src/index.js",
     "start": "node src/index.js",
+    "test": "node --test",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "node prisma/seed.js",
-    "test": "node --test"
+    "prisma:studio": "prisma studio",
+    "db:seed": "node prisma/seed.js && node prisma/seedEmail.js && node prisma/ensureDefaults.js",
+    "db:reset": "prisma migrate reset",
+    "db:start": "node scripts/start-local-db.mjs start",
+    "db:stop": "node scripts/start-local-db.mjs stop",
+    "redis:start": "node scripts/start-local-redis.mjs"
   },
   "prisma": {
-    "seed": "node prisma/seed.js"
+    "seed": "node prisma/seed.js && node prisma/seedEmail.js && node prisma/ensureDefaults.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
     "@prisma/client": "^6.2.1",
+    "bcryptjs": "^2.4.3",
     "bullmq": "^5.34.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.7.0",
     "imapflow": "^1.7.1",
     "ioredis": "^5.4.2",
+    "jsonwebtoken": "^9.0.2",
     "mailparser": "^3.9.15",
+    "mammoth": "^1.12.1",
+    "multer": "^2.2.0",
     "nodemailer": "^9.0.5",
+    "pdf-parse": "^2.4.5",
+    "prisma": "^6.2.1",
+    "tesseract.js": "^7.0.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "prisma": "^6.2.1"
+    "embedded-postgres": "^18.4.0-beta.17",
+    "nodemon": "^3.1.4",
+    "pg": "^8.23.0",
+    "redis-memory-server": "^0.17.1"
   }
 }

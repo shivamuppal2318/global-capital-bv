@@ -10,23 +10,46 @@ import { isGoogleNewsConfigured } from "../lib/marketIntelligence/sources/google
 import { isApolloConfigured } from "../lib/marketIntelligence/sources/apolloSource.js";
 import { isAiProcessorConfigured } from "../lib/marketIntelligence/aiProcessor.js";
 import { askChatAssistant, isChatAssistantConfigured } from "../lib/marketIntelligence/chatAssistant.js";
+import { getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
+import { getAccessToken } from "../lib/zoominfoClient.js";
+import { lookupCompanyAndContactInZoomInfo, hasAnyZoomInfoMatch } from "../lib/zoominfoEnrichment.js";
 
 export const marketIntelligenceRouter = Router();
+
+// ZoomInfo enrichment spends real API credits — staff-only, same reasoning
+// as leads.js's POST /:id/enrich.
+function blockChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    return res.status(403).json({ error: "Your account has read-only access to captured signals." });
+  }
+  next();
+}
 
 // No real inbound trigger exists yet (no source has a webhook wired up the
 // way the email/Calendly integrations do) — this is a manual/cron-callable
 // trigger. Point an actual cron job (or CronCreate-style scheduler) at this
 // once it's worth running unattended.
-marketIntelligenceRouter.get("/status", (_req, res) => {
+marketIntelligenceRouter.get("/status", asyncHandler(async (_req, res) => {
+  // All the *Configured() checks below are async now that a data-source key
+  // can come from the database rather than only the environment (see
+  // lib/marketIntelligenceSettings.js / lib/aiSettings.js).
+  const [newsApi, exa, firecrawl, apollo, aiProcessor] = await Promise.all([
+    isNewsApiConfigured(),
+    isExaConfigured(),
+    isFirecrawlConfigured(),
+    isApolloConfigured(),
+    isAiProcessorConfigured()
+  ]);
   res.json({
-    newsApi: isNewsApiConfigured(),
-    exa: isExaConfigured(),
-    firecrawl: isFirecrawlConfigured(),
+    newsApi,
+    exa,
+    firecrawl,
     googleNews: isGoogleNewsConfigured(),
-    apollo: isApolloConfigured(),
-    aiProcessor: isAiProcessorConfigured()
+    apollo,
+    aiProcessor,
+    zoomInfo: Boolean(await getZoomInfoCredentials())
   });
-});
+}));
 
 const runSchema = z.object({
   query: z.string().optional(),
@@ -45,13 +68,61 @@ marketIntelligenceRouter.post("/run", asyncHandler(async (req, res) => {
 }));
 
 marketIntelligenceRouter.get("/signals", asyncHandler(async (req, res) => {
-  const where = req.query.status ? { status: String(req.query.status) } : {};
+  // The screen hides FAILED rows from the main feed, so the default API
+  // response should not spend its 100-row window on a recent failed batch
+  // and leave the visible list empty while older usable signals exist.
+  const where = req.query.status ? { status: String(req.query.status) } : { status: { in: ["PROCESSED", "IGNORED", "PENDING"] } };
   const signals = await prisma.marketSignal.findMany({
     where,
     orderBy: { fetchedAt: "desc" },
     take: 100
   });
   res.json(signals);
+}));
+
+// Real ZoomInfo company profile + recent buying-trigger activity + a real
+// contact for one captured signal, looked up by its entityName directly —
+// independent of whether it ever matched/created an EmailLead (plenty of
+// real signals, e.g. IGNORED with no default campaign to route into, never
+// get one). Mirrors leads.js's POST /:id/enrich: check credentials
+// configured, mint one token, look up, persist on a match.
+marketIntelligenceRouter.post("/signals/:id/enrich", blockChannelPartner, asyncHandler(async (req, res) => {
+  const signal = await prisma.marketSignal.findUnique({ where: { id: req.params.id } });
+  if (!signal) return res.status(404).json({ error: "Signal not found" });
+
+  if (!signal.entityName) {
+    return res.status(400).json({ error: "This signal hasn't been identified yet — there's no company name to look up in ZoomInfo." });
+  }
+
+  const credentials = await getZoomInfoCredentials();
+  if (!credentials) {
+    return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
+  }
+
+  const token = await getAccessToken(credentials);
+  const result = await lookupCompanyAndContactInZoomInfo({ token, companyName: signal.entityName });
+
+  if (!hasAnyZoomInfoMatch(result)) {
+    return res.json({ matched: false, message: `No confident ZoomInfo match found for "${signal.entityName}".` });
+  }
+
+  const updated = await prisma.marketSignal.update({
+    where: { id: signal.id },
+    data: {
+      ...(result.companyAttributes ? { zoomInfoCompanyData: result.companyAttributes } : {}),
+      ...(result.contactAttributes ? { zoomInfoContactData: result.contactAttributes } : {}),
+      ...(result.scoops.length ? { zoomInfoScoops: result.scoops } : {}),
+      zoomInfoEnrichedAt: new Date()
+    }
+  });
+
+  res.json({
+    matched: true,
+    companyMatched: Boolean(result.companyAttributes),
+    contactMatched: Boolean(result.contactAttributes),
+    scoopsMatched: result.scoops.length > 0,
+    signal: updated
+  });
 }));
 
 const chatMessageSchema = z.object({
@@ -67,14 +138,14 @@ const chatSchema = z.object({
 });
 
 // Grounded in whatever's actually in the MarketSignal table (see
-// chatAssistant.js's system prompt) — same ANTHROPIC_API_KEY as the AI
-// processing stage, not a separate credential. Checked up front (rather
+// chatAssistant.js's system prompt) — same Claude credentials as the AI
+// processing stage, not a separate one. Checked up front (rather
 // than letting askChatAssistant's own throw fall through to the generic
 // 500 handler in index.js) so the frontend gets a clear, actionable 503
 // instead of an opaque "Internal server error".
 marketIntelligenceRouter.post("/chat", asyncHandler(async (req, res) => {
-  if (!isChatAssistantConfigured()) {
-    return res.status(503).json({ error: "AI processing is not configured — set ANTHROPIC_API_KEY on the server." });
+  if (!(await isChatAssistantConfigured())) {
+    return res.status(503).json({ error: "AI processing is not configured — add a Claude API key under Admin Panel → AI Assistant." });
   }
 
   const parsed = chatSchema.safeParse(req.body ?? {});
@@ -82,7 +153,12 @@ marketIntelligenceRouter.post("/chat", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
+  // PROCESSED/IGNORED are the only statuses carrying real AI-extracted
+  // fields (entityName/signalType/relevanceScore/aiSummary) — PENDING/
+  // FAILED/DUPLICATE rows would otherwise crowd out real context with
+  // near-empty entries once a backlog of unprocessed signals exists.
   const signals = await prisma.marketSignal.findMany({
+    where: { status: { in: ["PROCESSED", "IGNORED"] } },
     orderBy: { fetchedAt: "desc" },
     take: 40
   });

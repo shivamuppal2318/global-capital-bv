@@ -2,15 +2,1089 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// NOTE: local-dev only — swapped to sqlite because no Postgres/Docker was
-// reachable on this machine. Production/real deployment should point this
-// back at "postgresql" with a real DATABASE_URL (see .env.example).
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
+enum ConversationStatus {
+  NEW
+  ASSIGNED
+  REPLIED
+  RESOLVED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  // Auto-set when a cold-outreach EmailLead's reply is classified
+  // INTERESTED (see lib/replyRecorder.js) and it's auto-converted into a
+  // tracked CRM Lead — distinct from QUALIFIED, which still means a rep
+  // has actually reviewed the opportunity, not just that the prospect
+  // replied positively.
+  INTERESTED
+  QUALIFIED
+  NEGOTIATION
+  CONVERTED
+  LOST
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum TemplateCategory {
+  MARKETING
+  UTILITY
+  AUTHENTICATION
+}
+
+enum TemplateStatus {
+  APPROVED
+  IN_REVIEW
+  REJECTED
+}
+
 enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+}
+
+enum SequenceStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum MatchType {
+  CONTAINS
+  EXACT
+}
+
+enum RuleStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum FlowStepType {
+  TRIGGER
+  MESSAGE
+  QUESTION
+  CONDITION
+  ACTION
+}
+
+enum TriggerStatus {
+  ACTIVE
+  DRAFT
+}
+
+enum AgentStatus {
+  ONLINE
+  AWAY
+  OFFLINE
+}
+
+// Server-managed secrets that must survive restarts but should never live in
+// the repo or a compose file — currently just the JWT signing key, which is
+// generated on first boot when JWT_SECRET isn't supplied via the environment.
+model AppSecret {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+}
+
+enum UserRole {
+  ADMIN
+  EMPLOYEE
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+// A real login account (bcrypt-hashed password, JWT auth) — distinct from
+// Agent above, which is just a display/assignment label for WhatsApp
+// conversations and predates this model having no credentials of its own.
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         UserRole   @default(EMPLOYEE)
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // Module ids (see src/lib/permissions.js) this employee may open. Only
+  // consulted for EMPLOYEE — an ADMIN always has every module, so revoking
+  // an admin's access means demoting them first.
+  permissions String[] @default([])
+
+  // The Zoom user this employee schedules meetings as (must be a licensed
+  // user under the account tied to ZoomSettings' Server-to-Server app).
+  // Null falls back to ZoomSettings.hostEmail, so meetings keep working for
+  // employees no one has assigned a Zoom seat to yet.
+  zoomHostEmail String?
+
+  // Personal SMTP mailboxes this employee owns (see EmailAccount.ownerId).
+  emailAccounts EmailAccount[]
+  emailCampaigns EmailCampaign[]
+  passwordResets PasswordResetToken[]
+  documents      Document[]
+  verifiedDocuments Document[] @relation("DocumentVerifiedBy")
+  auditLogs      AuditLog[]
+}
+
+// Who did what, when — logins, admin actions (employee/permission changes,
+// credential edits), and the higher-stakes MailX actions (campaigns,
+// mailboxes, lead deletion). Written by src/lib/auditLog.js, never edited
+// or deleted through the app itself; that's what makes it useful as a real
+// record instead of just another mutable table.
+model AuditLog {
+  id     String @id @default(cuid())
+  // Kept even if the actor's account is later deleted — an audit trail
+  // that goes blank the moment someone is removed defeats its own purpose,
+  // so the actor's name/email are snapshotted at write time (actor* below)
+  // rather than only ever joined live off User.
+  actor      User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorId    String?
+  actorName  String
+  actorEmail String
+  // Dot-namespaced (e.g. "campaign.paused", "employee.permissions_updated")
+  // so the Admin Panel's filter can match a whole namespace or one exact
+  // action.
+  action     String
+  entityType String?
+  entityId   String?
+  detail     String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([action])
+}
+
+// Single row holding the company-wide "system" mailbox used for
+// transactional mail the app sends about itself — password resets and new
+// account handoffs. Deliberately separate from EmailAccount, which is for
+// outbound sales campaigns: those are per-user and get rotated/paused, and
+// password reset delivery must not depend on a salesperson's mailbox.
+model SystemEmailSettings {
+  id                String   @id @default(cuid())
+  smtpHost          String
+  smtpPort          Int      @default(587)
+  smtpSecure        Boolean  @default(false)
+  smtpUser          String
+  // AES-256-GCM ciphertext, same scheme as EmailAccount (lib/credentialCrypto.js).
+  smtpPassEncrypted String
+  fromAddress       String
+  fromName          String   @default("Global Capital BV")
+  lastTestedAt      DateTime?
+  updatedAt         DateTime @updatedAt
+}
+
+// Claude credentials for the AI Assistant and Market Intelligence, set
+// from Admin Panel → AI Assistant. Stored here rather than relying on
+// ANTHROPIC_API_KEY because env vars set in Coolify's UI don't reliably
+// reach the container — see src/lib/aiSettings.js for the lookup order.
+model AiSettings {
+  id String @id @default(cuid())
+  // AES-256-GCM ciphertext, same scheme as EmailAccount (lib/credentialCrypto.js).
+  apiKeyEncrypted String
+  model           String   @default("claude-sonnet-5")
+  lastTestedAt    DateTime?
+  updatedAt       DateTime @updatedAt
+
+  // Which parts of the database the assistant may read (ids from
+  // src/lib/aiDataSources.js). Empty means "everything" only on a fresh
+  // install — the API writes the full default list on first save so an
+  // admin unticking every box genuinely means none.
+  dataSources String[] @default([])
+
+  // Free-text company background pasted in by an admin. Always sent with
+  // every question, unlike Data Room documents which are retrieved per
+  // question — this is for the standing facts the assistant should never
+  // have to look up.
+  companyProfile String?
+}
+
+// Market Intelligence's data-source API keys (Exa, NewsAPI.ai, Firecrawl,
+// Apollo), set from Admin Panel → Market Intelligence — same reasoning as
+// AiSettings above: Coolify env vars don't reliably reach the container, so
+// the DB is the path that actually works in production. Each key is
+// optional (a source simply stays unconfigured/skipped until its key is
+// set) and env vars remain a fallback for local dev — see
+// src/lib/marketIntelligenceSettings.js for the lookup order.
+model MarketIntelSettings {
+  id                     String    @id @default(cuid())
+  exaApiKeyEncrypted     String?
+  newsApiKeyEncrypted    String?
+  firecrawlApiKeyEncrypted String?
+  apolloApiKeyEncrypted  String?
+  updatedAt              DateTime  @updatedAt
+}
+
+// Company documents in the Data Room. The file itself lives on disk (a
+// Docker volume — see docker-compose.coolify.yml), not in Postgres; only
+// metadata and extracted text are stored here so the table stays small
+// enough to query and to feed the AI assistant.
+model Document {
+  id           String   @id @default(cuid())
+  originalName String
+  // Random on-disk name. Never the uploaded filename — that would let a
+  // crafted name escape the uploads directory or collide with another file.
+  storedName String @unique
+  mimeType   String
+  sizeBytes  Int
+  category   String  @default("General")
+  description String?
+
+  // Plain text pulled out at upload time (PDF/DOCX/plaintext). Null for
+  // formats we can't read, e.g. images — those are still listed and
+  // downloadable, they just can't be answered from.
+  extractedText String?
+  // Set when extraction was attempted but produced nothing usable, so the
+  // UI can say why rather than silently showing an unsearchable file.
+  extractionNote String?
+
+  // Pinned documents are sent with every question rather than only when
+  // keywords match — for the handful of files the assistant should always
+  // know (company profile, product sheet, standard terms).
+  pinnedToAi Boolean @default(false)
+
+  uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedById String?
+
+  // Which deal this document belongs to. Null = the general company-wide
+  // library (company profile, standard terms, etc. — not deal-specific,
+  // used to ground the AI Assistant generally), same "null means legacy/
+  // unscoped" convention as EmailCampaign.ownerChannelPartnerId. SetNull
+  // rather than Cascade so deleting a Lead doesn't delete/orphan-on-disk a
+  // real uploaded file — it just falls back into the unscoped library.
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  leadId String?
+
+  // Data Room KPI framework's status flow is Requested → Received →
+  // Verified (see KPI Framework doc) — a document is "Received" the moment
+  // it's uploaded, but only counts toward the completion % once someone
+  // has actually reviewed and verified it. Separate from pinnedToAi: a
+  // document can be AI-searchable and unverified at the same time.
+  verified     Boolean   @default(false)
+  verifiedAt   DateTime?
+  verifiedBy   User?     @relation("DocumentVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifiedById String?
+
+  dealStages              DealStageRecord[]
+  ndaDocuments            NdaRecord[]      @relation("NdaDocument")
+  visitReports            VisitPlan[]      @relation("VisitReport")
+  ioiDocuments            IoiRecord[]      @relation("IoiDocument")
+  channelPartnerAgreement ChannelPartner[] @relation("ChannelPartnerAgreementDocument")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([createdAt])
+  @@index([leadId])
+}
+
+// The deal progression a lead moves through: NDA -> Zoom call -> Data Room
+// -> IOI -> visit planning -> field visit -> term sheet.
+//
+// One table rather than seven, because the stages share a lifecycle
+// (owner, status, planned/actual dates, notes, an optional document) and
+// differ only in which of a handful of extra fields apply — amount and
+// valuation for IOI/term sheet, location and attendees for the visits.
+// Seven near-identical tables would mean seven of every query, route and
+// screen; the per-stage differences are handled by field config in the UI
+// (see src/components/dealStages/stageConfig.js).
+enum DealStage {
+  NDA
+  ZOOM_CALL
+  DATA_ROOM
+  IOI
+  VISIT_PLANNING
+  FIELD_VISIT
+  TERM_SHEET
+}
+
+enum DealStageStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+  ON_HOLD
+}
+
+model DealStageRecord {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  stage  DealStage
+  status DealStageStatus @default(NOT_STARTED)
+
+  // Planned vs actual. scheduledAt is the intended date (NDA sent, visit
+  // booked, term sheet issued); completedAt is when it actually happened
+  // (signed, visited, accepted) — keeping both is what makes "overdue" and
+  // "how long did this take" answerable later.
+  scheduledAt DateTime?
+  completedAt DateTime?
+
+  // IOI / term sheet money. Free text rather than a numeric type: these
+  // arrive as "EUR 2–4M" or "TBC" as often as a single figure, and forcing
+  // a number would lose that.
+  amount    String?
+  valuation String?
+
+  // Visit stages.
+  location  String?
+  attendees String?
+
+  counterparty String?
+  notes        String?
+  owner        String?
+
+  // Field Visit KPI framework's "Client Rating" target (4.5+) — out of 5,
+  // decimals allowed (4.5). Only meaningful once a visit is actually
+  // reported back, but stored generically since a future stage could
+  // reasonably want it too.
+  clientRating Float?
+
+  // Optional supporting file, reusing the Data Room rather than a separate
+  // upload path — a signed NDA or term sheet belongs in both places.
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  documentId String?
+
+  // Field Visit's own report toggle — same shape as VisitPlan.reportSubmitted/
+  // reportAt, kept independent of `document` above since a visit report can
+  // be marked submitted before (or without) a file actually being attached.
+  reportSubmitted Boolean   @default(false)
+  reportAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One record per lead per stage; re-running a stage updates it rather
+  // than silently creating a second row that queries would double-count.
+  @@unique([leadId, stage])
+  @@index([stage, status])
+}
+
+model PasswordResetToken {
+  id String @id @default(cuid())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  // Only the SHA-256 of the emailed token is stored, so a database leak
+  // can't be replayed to take over accounts.
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Agent {
+  id              String         @id @default(cuid())
+  name            String
+  role            String
+  status          AgentStatus    @default(OFFLINE)
+  assignedCount   Int            @default(0)
+  resolvedCount   Int            @default(0)
+  avgResponseMins Int            @default(0)
+  csat            Float          @default(0)
+  conversations   Conversation[]
+  createdAt       DateTime       @default(now())
+}
+
+model Contact {
+  id            String         @id @default(cuid())
+  initials      String
+  name          String
+  company       String?
+  phone         String         @unique
+  stage         String?
+  owner         String?
+  tone          String         @default("blue")
+  conversations Conversation[]
+  createdAt     DateTime       @default(now())
+}
+
+model Lead {
+  id               String     @id @default(cuid())
+  initials         String
+  name             String
+  company          String
+  email            String?
+  mobile           String?
+  capitalAsk       String
+  status           LeadStatus @default(NEW)
+  qualified        Boolean    @default(false)
+  tone             String     @default("blue")
+  owner            String?
+  leadSource       String?
+  territory        String?
+  engagementStage  String?
+  consentGdpr      String?
+  notes            String?
+  rawPayload       Json?
+
+  // --- Universal Filters fields --------------------------------------
+  // Everything below backs one of the 14 cross-report filter dimensions
+  // (see lib/universalFilters.js). All nullable and manually set — none
+  // of this arrives from the inbound webhook today, so a lead is filable
+  // and searchable from day one without any of it being filled in yet.
+  industry       String? // Industry filter
+  channelPartner String? // Channel Partner filter
+  temperature    LeadTemperature? // Hot/Warm/Cold filter — deliberately separate
+  // from the decorative `tone` field above, which only ever picks an
+  // avatar colour and has never meant anything about lead quality.
+  teamLeader String? // Team Leader filter
+  manager    String? // Manager filter
+  // Deal Originator Executive — the rep who first engaged this prospect.
+  // Free text, deliberately separate from `owner` (who currently holds the
+  // account, which can change hands after the deal originates).
+  doe String?
+
+  // Free-text labels a rep applies from the lead panel's "Tags" button
+  // (e.g. "Priority", "Referral") — unlike temperature/industry above,
+  // these aren't a fixed vocabulary tied to a filter dimension.
+  tags String[] @default([])
+
+  // Raw company attributes from a ZoomInfo enrichment lookup (see
+  // lib/zoominfoClient.js) — display-only, not queried on, so a single Json
+  // blob is enough rather than a column per field (matches rawPayload's
+  // precedent above for arbitrary upstream data). Set only when a match was
+  // actually found; a lead a rep clicked "Enrich" on with no ZoomInfo match
+  // stays null rather than storing an empty/fake result.
+  zoomInfoData        Json?
+  // A separate, independent match — the same "Enrich" action also looks up
+  // this lead's actual named contact (firstName/lastName split from `name`
+  // + `company`), since ZoomInfo's contact and company records are matched
+  // and can succeed/fail independently of each other.
+  zoomInfoContactData Json?
+  // Recent company-change signals (funding, leadership hire, expansion,
+  // etc.) from ZoomInfo's Scoops feed — display-only, always replaced
+  // wholesale by the latest fetch (unlike industry/territory, nothing here
+  // is rep-editable data worth protecting from being overwritten).
+  zoomInfoScoops     Json?
+  zoomInfoEnrichedAt DateTime?
+
+  meetings   Meeting[]
+  dealStages DealStageRecord[]
+  ndaRecord  NdaRecord?
+  visitPlans VisitPlan[]
+  ioiRecord  IoiRecord?
+  clientUser ClientUser?
+  documents  Document[]
+  activity   LeadActivityLog[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status])
+}
+
+enum LeadActivityKind {
+  EMAIL_SENT
+  STATUS_CHANGED
+}
+
+// A per-lead interaction/communication log for CRM Workspace -- direct
+// communications with this lead (Send Mail sends, status changes), kept
+// separate from the company-wide staff AuditLog (logins, permission
+// changes -- a different concern entirely) and from ActivityLog (an
+// unwired, unwritten dashboard decoration -- see its own schema comment).
+// Mirrors EmailActivityLog's shape, scoped to Lead instead of EmailLead.
+model LeadActivityLog {
+  id        String           @id @default(cuid())
+  lead      Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId    String
+  kind      LeadActivityKind
+  title     String
+  detail    String
+  createdAt DateTime         @default(now())
+
+  @@index([leadId, createdAt])
+}
+
+// A login for the counterparty themselves — separate identity system from
+// User (staff). One per lead: registering claims that specific deal's
+// portal, so the dashboard has exactly one lead's progression to show,
+// never a menu of deals to pick from.
+model ClientUser {
+  id           String           @id @default(cuid())
+  lead         Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId       String           @unique
+  name         String
+  email        String           @unique
+  phone        String?
+  passwordHash String
+  status       ClientUserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  passwordResets ClientPasswordResetToken[]
+}
+
+// Mirrors PasswordResetToken (staff) — kept as its own model rather than a
+// shared/polymorphic table since ClientUser and User already have no other
+// shared relations anywhere in this schema.
+model ClientPasswordResetToken {
+  id           String     @id @default(cuid())
+  clientUser   ClientUser @relation(fields: [clientUserId], references: [id], onDelete: Cascade)
+  clientUserId String
+  tokenHash    String     @unique
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([clientUserId])
+}
+
+enum ClientUserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum LeadTemperature {
+  HOT
+  WARM
+  COLD
+}
+
+// A directory of referring/introducing partner organisations — distinct
+// from Lead.channelPartner (a plain string filter tag on the lead itself).
+// This is the partner as its own entity: who to contact there, what they're
+// owed, whether the relationship is still active. Matched to leads by name
+// rather than a foreign key, since Lead.channelPartner predates this model
+// and stays free text everywhere else (Universal Filters, the CRM edit
+// form) — adding a hard relation there would mean migrating every existing
+// value and would block a lead from citing a partner not yet in this list.
+model ChannelPartner {
+  id            String               @id @default(cuid())
+  name          String               @unique
+  contactName   String?
+  contactEmail  String?
+  contactPhone  String?
+  region        String?
+  commissionPct Float?
+  status        ChannelPartnerStatus @default(ACTIVE)
+  notes         String?
+
+  // Same lightweight "clickwrap" e-signature as EmailLead's NDA flow (typed
+  // name + IP + timestamp, see routes/channelPartnerAgreement.js) — not a
+  // certified e-signature, but enough to record that whoever held the
+  // signed link asserted agreement to the standard Channel Partner
+  // Agreement.
+  agreementSignedAt   DateTime?
+  agreementSignedName String?
+  agreementSignedIp   String?
+
+  // Filled in by the partner directly in the agreement text itself at
+  // signing time (see lib/signedDocumentRenderer.js's
+  // channelPartnerAgreementFillFormFragment) — the blanks the template
+  // otherwise leaves as "[Partner's Address]" / "[monthly/quarterly]".
+  // region already covers the Territory blank, so no separate field for
+  // that.
+  agreementAddress         String?
+  agreementPaymentSchedule String?
+
+  // Set only when the partner chose "upload your own signed copy" instead
+  // of filling in the blanks online (see routes/channelPartnerAgreement.js's
+  // upload route) — null for the fill-in-the-blanks path, same as
+  // NdaRecord.documentId's own null-means-clickwrap-not-upload convention.
+  agreementDocument   Document? @relation("ChannelPartnerAgreementDocument", fields: [agreementDocumentId], references: [id], onDelete: SetNull)
+  agreementDocumentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  portalUser     ChannelPartnerUser?
+  ownedCampaigns EmailCampaign[]
+  emailAccounts  EmailAccount[]
+
+  @@index([status])
+}
+
+// A Channel Partner's own login to their portal (see routes/
+// channelPartnerAgreement.js and the frontend's separate portal SPA shell)
+// — created in the same step as signing the agreement, never before.
+// Mirrors ClientUser's shape (1:1 with its real-world record, email +
+// passwordHash, no role/permissions system — a partner always gets the
+// same fixed slice of the app, not a configurable one like staff).
+model ChannelPartnerUser {
+  id               String                   @id @default(cuid())
+  channelPartner   ChannelPartner           @relation(fields: [channelPartnerId], references: [id], onDelete: Cascade)
+  channelPartnerId String                   @unique
+  name             String
+  email            String                   @unique
+  passwordHash     String
+  status           ChannelPartnerUserStatus @default(ACTIVE)
+  lastLoginAt      DateTime?
+
+  // Optional extras beyond the always-included Dashboard/Campaigns/Leads/
+  // Automation baseline (ids from lib/channelPartnerPermissions.js) --
+  // those four are one shared API surface every portal account gets
+  // unconditionally, not separately gatable, so they're never in this
+  // array. Empty = exactly today's behavior.
+  permissions String[] @default([])
+
+  passwordResets ChannelPartnerPasswordResetToken[]
+
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+}
+
+enum ChannelPartnerUserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+// Mirrors PasswordResetToken/ClientPasswordResetToken's shape exactly —
+// same reasoning (only the token's SHA-256 is stored, so a database leak
+// alone can't be replayed) and same one-time-use/expiry mechanics, one
+// level down for the Channel Partner tier.
+model ChannelPartnerPasswordResetToken {
+  id                   String             @id @default(cuid())
+  channelPartnerUser   ChannelPartnerUser @relation(fields: [channelPartnerUserId], references: [id], onDelete: Cascade)
+  channelPartnerUserId String
+  tokenHash            String             @unique
+  expiresAt            DateTime
+  usedAt               DateTime?
+  createdAt            DateTime           @default(now())
+
+  @@index([channelPartnerUserId])
+}
+
+enum ChannelPartnerStatus {
+  ACTIVE
+  INACTIVE
+  PROSPECTIVE
+}
+
+model ZoomSettings {
+  id           String    @id @default(cuid())
+  accountId    String?
+  clientId     String?
+  clientSecret String?
+  hostEmail    String?
+  connected    Boolean   @default(false)
+  lastTestedAt DateTime?
+}
+
+// ZoomInfo's GTM API (OAuth2 client_credentials against api.zoominfo.com) —
+// unrelated to Zoom video/meetings above despite the similar name. Used for
+// CRM Workspace's "Enrich" action (lib/zoominfoClient.js), not the classic
+// Zoom video-call product. clientSecret stored encrypted (see
+// credentialCrypto.js), unlike ZoomSettings above which predates that
+// convention — new credentials in this app follow the encrypted pattern.
+model ZoomInfoSettings {
+  id                    String    @id @default(cuid())
+  clientId              String?
+  clientSecretEncrypted String?
+  connected             Boolean   @default(false)
+  lastTestedAt          DateTime?
+}
+
+model Meeting {
+  id              String    @id @default(cuid())
+  leadId          String?
+  lead            Lead?     @relation(fields: [leadId], references: [id])
+  topic           String
+  startTime       DateTime
+  durationMinutes Int       @default(30)
+  zoomMeetingId   String?
+  joinUrl         String?
+  startUrl        String?
+  status          String    @default("Scheduled")
+  createdAt       DateTime  @default(now())
+
+  // --- Qualitative capture (Zoom Call module) ---------------------------
+  // Everything below is filled in after the call, so all of it is optional:
+  // a meeting exists from the moment it's booked, long before there's
+  // anything to record about it.
+
+  // Who from the client side actually attended — often differs from who was
+  // invited, and that difference is itself worth knowing.
+  clientAttendees String?
+  // Our own attendees (date-of-engagement contact / deal owner side).
+  ourAttendees String?
+  // Actual minutes, as opposed to durationMinutes which is what was booked.
+  actualDurationMinutes Int?
+  notes                 String?
+  // Generated from notes by Claude on request (see POST /:id/summarise) —
+  // stored so it isn't regenerated (and re-billed) on every page load.
+  aiSummary          String?
+  aiSummaryUpdatedAt DateTime?
+  nextAction         String?
+  nextActionDueAt    DateTime?
+  // Whether a further meeting came out of this one — drives the
+  // "next meeting scheduled %" KPI.
+  nextMeetingScheduled Boolean @default(false)
+  recordingLink        String?
+  // 1-5, set by hand. Deliberately not inferred from the notes: a satisfaction
+  // score a model guessed would look like data while being opinion.
+  clientSatisfaction Int?
+
+  // --- Zoom Cloud Recording transcript (separate from the above) --------
+  // aiSummary above is generated from a rep's own typed notes; this is
+  // generated from Zoom's own auto-transcript of what was actually said —
+  // different provenance, kept as its own pair rather than overloading
+  // aiSummary/aiSummaryUpdatedAt. Filled in either by the recording.completed
+  // webhook (routes/zoomWebhook.js) once Zoom finishes processing, or by
+  // manually clicking "Fetch Transcript" (POST /:id/fetch-transcript) for
+  // whenever the webhook hasn't fired yet.
+  zoomRecordingUuid          String?   @unique
+  transcriptText             String?
+  transcriptFetchedAt        DateTime?
+  transcriptSummary          String?
+  transcriptSummaryUpdatedAt DateTime?
+
+  @@index([startTime])
+}
+
+// NDA tracking. Split out of DealStageRecord because chasing signatures has
+// its own shape — two reminder timestamps, and the signing-time and
+// reminder-effectiveness metrics that depend on them — which the shared
+// stage table has no room for without becoming a wide grab-bag.
+model NdaRecord {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String @unique
+
+  // SENT -> REMINDER_1 -> REMINDER_2 -> SIGNED, or DECLINED/EXPIRED.
+  status NdaStatus @default(DRAFT)
+
+  sentAt       DateTime?
+  reminder1At  DateTime?
+  reminder2At  DateTime?
+  signedAt     DateTime?
+  expiresAt    DateTime?
+
+  signerName  String?
+  signerEmail String?
+  owner       String?
+  notes       String?
+
+  // Filled in by the client via the "fill in your details online" option
+  // (server/src/routes/clientPortal.js's POST /nda/fill-details) — the
+  // reciprocal NDA template's actual blanks (see assets/nda-template.pdf).
+  // signerName/signerEmail above stay as the authenticated account that
+  // took the action; these are the legal signatory named on the document,
+  // which can be a different person. Null for the other two acceptance
+  // paths (checkbox accept, upload a document) — there's nothing to fill.
+  counterpartyLegalName String?
+  counterpartyCountry   String?
+  counterpartyAddress   String?
+  agreementDate         DateTime?
+  signatoryName         String?
+  signatoryTitle        String?
+
+  // The signed copy, kept in the Data Room rather than a second upload path.
+  document   Document? @relation("NdaDocument", fields: [documentId], references: [id], onDelete: SetNull)
+  documentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+enum NdaStatus {
+  DRAFT
+  SENT
+  REMINDER_1
+  REMINDER_2
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+// Site-visit planning. Separate from FIELD_VISIT (the visit itself) because
+// planning is about travel efficiency — cost, geography, clustering — and
+// several planned visits can share one trip.
+model VisitPlan {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String
+
+  status VisitPlanStatus @default(PLANNED)
+
+  plannedFor  DateTime?
+  completedAt DateTime?
+
+  // Free text, plus a coarse region used to cluster visits. Region is what
+  // makes "how many trips could be combined" answerable without geocoding
+  // every address — see lib/visitMetrics.js.
+  location String?
+  region   String?
+  country  String?
+
+  attendees String?
+  purpose   String?
+  notes     String?
+  owner     String?
+
+  // Actual spend, in whole currency units. Numeric here (unlike IOI/term
+  // sheet amounts) because cost-per-visit has to be averaged.
+  costAmount   Float?
+  costCurrency String  @default("USD")
+
+  travelMode String?
+
+  reportSubmitted Boolean   @default(false)
+  reportAt        DateTime?
+  report          Document? @relation("VisitReport", fields: [reportId], references: [id], onDelete: SetNull)
+  reportId        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([plannedFor])
+  @@index([region])
+}
+
+enum VisitPlanStatus {
+  PLANNED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  contactId     String
+  contact       Contact            @relation(fields: [contactId], references: [id])
+  agentId       String?
+  agent         Agent?             @relation(fields: [agentId], references: [id])
+  status        ConversationStatus @default(NEW)
+  lastPreview   String?
+  lastMessageAt DateTime           @default(now())
+  unreadCount   Int                @default(0)
+  messages      Message[]
+  createdAt     DateTime           @default(now())
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
+  direction      MessageDirection
+  body           String
+  templateName   String?
+  status         MessageStatus    @default(SENT)
+  sentAt         DateTime         @default(now())
+
+  @@index([sentAt])
+  @@index([conversationId])
+}
+
+model Template {
+  id         String           @id @default(cuid())
+  name       String           @unique
+  category   TemplateCategory
+  language   String           @default("English")
+  status     TemplateStatus   @default(IN_REVIEW)
+  bodyText   String
+  footerText String?
+  uses       Int              @default(0)
+  readRate   Float            @default(0)
+  replyRate  Float            @default(0)
+  lastSentAt DateTime?
+  campaigns  Campaign[]
+  createdAt  DateTime         @default(now())
+}
+
+model Campaign {
+  id             String         @id @default(cuid())
+  name           String
+  templateId     String
+  template       Template       @relation(fields: [templateId], references: [id])
+  audienceLabel  String
+  status         CampaignStatus @default(DRAFT)
+  sentCount      Int            @default(0)
+  deliveredCount Int            @default(0)
+  readCount      Int            @default(0)
+  repliedCount   Int            @default(0)
+  scheduledAt    DateTime?
+  createdAt      DateTime       @default(now())
+}
+
+model DripSequence {
+  id             String         @id @default(cuid())
+  name           String
+  trigger        String
+  enrolledCount  Int            @default(0)
+  completionRate Float          @default(0)
+  status         SequenceStatus @default(ACTIVE)
+  steps          DripStep[]
+  createdAt      DateTime       @default(now())
+}
+
+model DripStep {
+  id             String       @id @default(cuid())
+  sequenceId     String
+  sequence       DripSequence @relation(fields: [sequenceId], references: [id])
+  stepOrder      Int
+  title          String
+  delayLabel     String
+  message        String
+  engagementRate Float        @default(0)
+}
+
+model AutoReplySettings {
+  id              String  @id @default(cuid())
+  greetingEnabled Boolean @default(true)
+  greetingMessage String
+  awayEnabled     Boolean @default(true)
+  awayMessage     String
+  awayHours       String
+}
+
+model AutoReplyRule {
+  id        String     @id @default(cuid())
+  keyword   String
+  matchType MatchType  @default(CONTAINS)
+  reply     String
+  status    RuleStatus @default(ACTIVE)
+  triggered Int        @default(0)
+  createdAt DateTime   @default(now())
+}
+
+model BotFlow {
+  id             String        @id @default(cuid())
+  name           String
+  trigger        String
+  completionRate Float?
+  active         Boolean       @default(true)
+  usersCount     Int           @default(0)
+  steps          BotFlowStep[]
+  createdAt      DateTime      @default(now())
+}
+
+model BotFlowStep {
+  id        String       @id @default(cuid())
+  flowId    String
+  flow      BotFlow      @relation(fields: [flowId], references: [id])
+  stepOrder Int
+  type      FlowStepType
+  label     String
+  detail    String
+}
+
+model CrmTrigger {
+  id              String        @id @default(cuid())
+  event           String
+  action          String
+  status          TriggerStatus @default(ACTIVE)
+  lastTriggeredAt DateTime?
+  createdAt       DateTime      @default(now())
+}
+
+model AutomationRule {
+  id         String  @id @default(cuid())
+  name       String
+  condition  String
+  action     String
+  enabled    Boolean @default(true)
+  executions Int     @default(0)
+  createdAt  DateTime @default(now())
+}
+
+model BusinessSettings {
+  id          String   @id @default(cuid())
+  phone       String
+  displayName String
+  category    String
+  wabaId      String
+  tier        String
+  quality     String
+  status      String   @default("Connected")
+  webhookUrl  String
+  webhookVerifyToken String
+  appIdMasked String
+  tokenStatus String
+  lastPingAt  DateTime @default(now())
+
+  // WhatsApp Cloud API connection (Embedded Signup / manual credentials)
+  embeddedSignupConfigId String?
+  phoneNumberId          String?
+  accessToken            String?
+  appId                  String?
+  appSecret              String?
+  campaignBatchSize      Int     @default(50)
+
+  // Defaults applied when auto-creating a CRM lead from an unknown inbound number
+  autoCreateLead        Boolean @default(false)
+  leadDefaultStatus      String  @default("Default")
+  leadDefaultSource      String  @default("Default")
+  leadDefaultAssignedTo  String  @default("Default")
+
+  // API key external platforms use to POST leads into /api/leads/inbound
+  leadWebhookApiKey String?
+}
+
+model WhatsappPhoneNumber {
+  id            String   @id @default(cuid())
+  phoneNumber   String
+  displayName   String
+  qualityRating String   @default("Unknown")
+  status        String   @default("Connected")
+  isSending     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+model BusinessHour {
+  id         String @id @default(cuid())
+  dayLabel   String
+  hoursLabel String
+  sortOrder  Int    @default(0)
+}
+
+model NotificationPreference {
+  id      String  @id @default(cuid())
+  label   String
+  enabled Boolean @default(true)
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  who       String
+  what      String
+  tone      String   @default("blue")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ============================================================================
+// Email cold-outreach domain (campaigns/leads/cadence/templates/market
+// intelligence) — merged in from the `crm` branch. Named distinctly from the
+// WhatsApp-domain models above (EmailCampaign vs. Campaign, EmailLead vs.
+// Lead, EmailTemplate vs. Template, EmailActivityLog vs. ActivityLog) even
+// though the concepts rhyme, because the two are genuinely different data
+// shapes for different channels — collapsing them into one model would lose
+// real fields on both sides. EmailAccount/CadenceStep/ReplyEvent/MarketSignal
+// had no name collision and keep their original names.
+// ============================================================================
+
+enum EmailCampaignStatus {
   DRAFT
   SCHEDULED
   SENDING
@@ -21,10 +1095,16 @@ enum ReplyType {
   INTERESTED
   ZOOM_REQUEST
   INFO_REQUEST
+  // A genuine reply that classifyReply.js's keyword rules don't recognize
+  // (e.g. a plain "Ok") -- distinct from NO_REPLY, which means no reply has
+  // arrived at all. Conflating the two meant a lead who *did* reply, just
+  // not with a recognized keyword, still showed up everywhere ("no reply
+  // yet") as if they'd never responded.
+  OTHER
   NO_REPLY
 }
 
-enum ActivityKind {
+enum EmailActivityKind {
   BULK_INTRO_SENT
   REPLY_RECEIVED
   BRANCH_EMAIL_QUEUED
@@ -39,6 +1119,10 @@ enum ActivityKind {
   CALL_COMPLETED
   EMAIL_OPENED
   LINK_CLICKED
+  // A campaign's own composed content (subject/bodyHtml), sent via
+  // POST /:id/send-now — distinct from BULK_INTRO_SENT, which is logged on
+  // lead-add regardless of whether a cadence step actually fired.
+  CAMPAIGN_BLAST_SENT
 }
 
 enum BounceKind {
@@ -47,56 +1131,108 @@ enum BounceKind {
   COMPLAINT
 }
 
-model Campaign {
-  id            String         @id @default(cuid())
+model EmailCampaign {
+  id            String              @id @default(cuid())
   name          String
-  status        CampaignStatus @default(DRAFT)
+  status        EmailCampaignStatus @default(DRAFT)
   audience      String
   template      String
-  dailyLimit    Int            @default(2000)
-  delayDays     Int            @default(3)
-  followUpCount Int            @default(3)
-  abTest        Boolean        @default(true)
-  autoPause     Boolean        @default(true)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  dailyLimit    Int                 @default(2000)
+  delayDays     Int                 @default(3)
+  followUpCount Int                 @default(3)
+  abTest        Boolean             @default(true)
+  autoPause     Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  // Where a lead's reply should land — set this when it needs to differ
+  // from the sending mailbox itself (e.g. routing replies to a shared
+  // team inbox instead of the individual account a campaign sends
+  // through). Null = replies just go to whichever mailbox actually sent
+  // the email, the normal email behavior with no header override.
+  replyTo String?
+
+  // This campaign's own composed one-time blast content — sent to its own
+  // leads (optionally narrowed by a Segment) via POST /:id/send-now. Null =
+  // nothing composed yet; distinct from the per-reply-type EmailTemplate
+  // bodies, which drive the reply-classification cadence instead.
+  subject  String?
+  bodyHtml String?
 
   // Which mailbox this campaign sends through. Null = fall back to the
-  // single global EMAIL_PROVIDER/.env-configured provider (unchanged
-  // behavior from before multi-account support existed) — this keeps
-  // every campaign that predates this feature working exactly as before.
+  // single global EMAIL_PROVIDER/.env-configured provider.
   emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id])
   emailAccountId String?
 
-  leads         Lead[]
-  cadenceSteps  CadenceStep[]
+  // Null = an admin/shared staff campaign. Set = created by an employee,
+  // so that employee sees only their own Email Automation workspace instead
+  // of the admin/shared mailbox campaign history.
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId String?
+
+  // Null = an admin-owned campaign (all existing data, unchanged
+  // behavior). Set = created by a Channel Partner through their own
+  // portal (see lib/channelPartnerScope.js) — every list/create/dashboard
+  // query for that portal is scoped to this field, so a partner only ever
+  // sees their own campaigns (and, transitively, their own leads).
+  ownerChannelPartner   ChannelPartner? @relation(fields: [ownerChannelPartnerId], references: [id], onDelete: Cascade)
+  ownerChannelPartnerId String?
+
+  leads        EmailLead[]
+  cadenceSteps CadenceStep[]
+  segments     EmailSegment[]
 
   @@index([status])
+  @@index([ownerId])
+  @@index([ownerChannelPartnerId])
 }
 
 model EmailAccount {
-  id          String   @id @default(cuid())
-  label       String
-  smtpHost    String
-  smtpPort    Int
-  smtpSecure  Boolean  @default(true)
-  smtpUser    String
+  id         String  @id @default(cuid())
+  label      String
+  smtpHost   String
+  smtpPort   Int
+  smtpSecure Boolean @default(true)
+  smtpUser   String
   // AES-256-GCM ciphertext (see src/lib/credentialCrypto.js), never the
   // plaintext password — decrypted in memory only at the moment of
   // building an SMTP transporter.
   smtpPassEncrypted String
-  fromAddress String
-  dailyLimit  Int      @default(500)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  fromAddress       String
+  dailyLimit        Int      @default(500)
+  isActive          Boolean  @default(true)
+  // Which country/region this mailbox represents (e.g. "IN", "AE", "NL") —
+  // matched case-insensitively against EmailLead.country at send time (see
+  // src/lib/accountRouting.js) so a lead automatically sends through the
+  // mailbox for their own country instead of always using whatever single
+  // mailbox is assigned to the whole campaign. Null = no country match,
+  // this account is only used when directly assigned to a campaign (or as
+  // the global fallback).
+  country   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  campaigns Campaign[]
+  // null owner + null ownerChannelPartner = a shared/company mailbox
+  // (managed by an Admin, usable in staff campaigns). ownerId = a personal
+  // employee mailbox. ownerChannelPartnerId = a Channel Partner portal
+  // mailbox, visible/editable only to that partner.
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId String?
+  ownerChannelPartner   ChannelPartner? @relation(fields: [ownerChannelPartnerId], references: [id], onDelete: Cascade)
+  ownerChannelPartnerId String?
+
+  campaigns EmailCampaign[]
+  sentActivity EmailActivityLog[]
+  replyEvents  ReplyEvent[]
+
+  @@index([ownerId])
+  @@index([ownerChannelPartnerId])
+  @@index([country])
 }
 
 model CadenceStep {
-  id           String   @id @default(cuid())
-  campaign     Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  id           String        @id @default(cuid())
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   campaignId   String
   stepIndex    Int
   title        String
@@ -106,24 +1242,28 @@ model CadenceStep {
   @@unique([campaignId, stepIndex])
 }
 
-model Lead {
+model EmailLead {
   id           String    @id @default(cuid())
   name         String
   company      String
   email        String
   owner        String
-  campaign     Campaign  @relation(fields: [campaignId], references: [id])
+  source       String    @default("Manual / CSV")
+  // Which country this lead is in — drives automatic sending-mailbox
+  // routing (see src/lib/accountRouting.js): matched case-insensitively
+  // against EmailAccount.country. Null = no country-based routing, this
+  // lead just uses whatever mailbox the campaign is assigned to.
+  country      String?
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id])
   campaignId   String
   replyType    ReplyType @default(NO_REPLY)
   stage        String    @default("Reminder Pending")
   unsubscribed Boolean   @default(false)
   // A hard bounce or spam complaint suppresses this lead permanently; a
   // soft bounce (mailbox full, temp DNS failure) does not — see
-  // src/routes/bounces.js. Repeatedly emailing addresses that hard-bounce
-  // is one of the fastest ways to tank sender reputation and land the
-  // whole domain in spam, so this is enforced at send time, not advisory.
-  bounced      Boolean   @default(false)
-  bounceKind   BounceKind?
+  // src/routes/bounces.js.
+  bounced    Boolean     @default(false)
+  bounceKind BounceKind?
   // A lightweight "clickwrap" e-signature (typed name + IP + timestamp),
   // not a certified signature the way DocuSign/HelloSign produce one — see
   // routes/nda.js for what this actually captures and its limits.
@@ -133,50 +1273,82 @@ model Lead {
   // Calendly tells you a meeting was booked (invitee.created) or canceled
   // (invitee.canceled) via webhook — it does NOT tell you whether anyone
   // actually showed up. callCompletedAt is a manual confirmation
-  // (POST /leads/:id/mark-call-completed), not something Calendly reports.
+  // (POST /email/leads/:id/mark-call-completed), not something Calendly reports.
   callBookedAt     DateTime?
   callScheduledFor DateTime?
   callCanceledAt   DateTime?
   callCompletedAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  // Set once a rep converts this cold-outreach contact into a real CRM Lead
+  // (POST /api/leads/from-email-lead/:emailLeadId) — a plain id, not a
+  // formal relation, so the "already converted" guard still holds even if
+  // that Lead is later deleted. The portal invite only fires at this point,
+  // not on the original cold email: there's no deal to show progress on
+  // until a Lead exists (see the onDelete/relation note on ClientUser).
+  convertedToLeadId String?
+  convertedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  replyEvents  ReplyEvent[]
-  activityLog  ActivityLog[]
-  matchedBySignals MarketSignal[] @relation("MarketSignalMatchedLead")
-  createdBySignals MarketSignal[] @relation("MarketSignalCreatedLead")
+  replyEvents      ReplyEvent[]
+  activityLog      EmailActivityLog[]
+  matchedBySignals MarketSignal[]     @relation("MarketSignalMatchedLead")
+  createdBySignals MarketSignal[]     @relation("MarketSignalCreatedLead")
+  aiReplyDrafts    AiReplyDraft[]
 
   @@index([campaignId])
   @@index([email])
+  @@index([source])
 }
 
 model ReplyEvent {
   id          String    @id @default(cuid())
-  lead        Lead      @relation(fields: [leadId], references: [id])
+  lead        EmailLead @relation(fields: [leadId], references: [id])
   leadId      String
   rawBody     String
   matchedRule String?
   replyType   ReplyType
   receivedAt  DateTime  @default(now())
+
+  // Which mailbox's real inbox this reply was actually fetched from (see
+  // imapPoller.js's pollAccount) — null for a reply recorded via the
+  // inbound webhook or "Simulate reply" test action, neither of which polls
+  // a specific mailbox. Backs the Mailbox tab's per-account inbox filter:
+  // without this, there was no way to know which of several configured
+  // mailboxes a given real reply belonged to.
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  emailAccountId String?
+
+  @@index([emailAccountId])
 }
 
-model ActivityLog {
-  id        String       @id @default(cuid())
-  lead      Lead         @relation(fields: [leadId], references: [id])
+model EmailActivityLog {
+  id        String            @id @default(cuid())
+  lead      EmailLead         @relation(fields: [leadId], references: [id])
   leadId    String
-  kind      ActivityKind
+  kind      EmailActivityKind
   title     String
   detail    String
-  createdAt DateTime     @default(now())
+  createdAt DateTime          @default(now())
+
+  // Which mailbox a real send actually went out through — set only on
+  // BRANCH_EMAIL_SENT rows (see src/lib/leadSender.js and
+  // src/queue/cadenceQueue.js). This is what the per-mailbox daily cap
+  // (src/lib/accountSendCap.js) counts against; it deliberately doesn't
+  // infer the account from the campaign's assignment, since country-based
+  // routing (src/lib/accountRouting.js) can resolve a different account
+  // per lead than whatever the campaign itself is assigned to.
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  emailAccountId String?
 
   @@index([leadId, createdAt])
+  @@index([emailAccountId, kind, createdAt])
 }
 
-model Template {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  subject   String
-  body      String
+model EmailTemplate {
+  id      String  @id @default(cuid())
+  key     String  @unique
+  subject String
+  body    String
   // Optional branded HTML version. When null, the send path wraps `body`
   // in a default branded shell (see src/lib/renderTemplate.js) rather than
   // sending plain text with no company identity/unsubscribe link.
@@ -203,55 +1375,224 @@ enum SignalType {
   OTHER
 }
 
+// Admin-editable point values behind Market Signal's relevanceScore (see
+// lib/scoringCriteria.js) — "how many points for X" made literal rather
+// than buried in a prompt string. The AI only ever extracts facts (which
+// signal type, whether concrete detail/a named entity is present); this
+// table is what turns those facts into the actual 0-100 number, so an
+// admin can retune scoring without a code change or redeploy.
+model ScoringCriterion {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  points    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 enum SignalStatus {
-  PENDING       // fetched, not yet AI-processed
-  PROCESSED     // AI-processed, routed (matched existing lead or created new one)
-  DUPLICATE     // matched contentHash of an already-seen signal, discarded
-  IGNORED       // processed but below relevance threshold / no entity match, no action taken
-  FAILED        // a source or AI-processing error stopped this signal short — see failureReason
+  PENDING // fetched, not yet AI-processed
+  PROCESSED // AI-processed, routed (matched existing lead or created new one)
+  DUPLICATE // matched contentHash of an already-seen signal, discarded
+  IGNORED // processed but below relevance threshold / no entity match, no action taken
+  FAILED // a source or AI-processing error stopped this signal short — see failureReason
 }
 
 // One row per raw item pulled from a source, carrying it through AI
-// processing and routing. Deliberately NOT normalized into a separate
-// "Company" entity — matches against the existing Lead.company free-text
-// field, since that's the only company concept this schema has today. A
-// real "many market signals about one company" story would want a proper
-// Company model; out of scope for this first pass.
+// processing and routing. Matches against EmailLead.company free-text.
 model MarketSignal {
-  id              String       @id @default(cuid())
-  source          SignalSource
-  sourceUrl       String
-  rawTitle        String
-  rawContent      String
-  rawPublishedAt  DateTime?
-  fetchedAt       DateTime     @default(now())
+  id             String       @id @default(cuid())
+  source         SignalSource
+  sourceUrl      String
+  rawTitle       String
+  rawContent     String
+  rawPublishedAt DateTime?
+  fetchedAt      DateTime     @default(now())
 
   // SHA-256 of source + normalized rawTitle, used for dedup (see
-  // lib/marketIntelligence/dedup.js) — two sources reporting the same
-  // event with slightly different article text would otherwise both
-  // create signals.
-  contentHash     String       @unique
+  // lib/marketIntelligence/dedup.js).
+  contentHash String @unique
 
-  status          SignalStatus @default(PENDING)
-  failureReason   String?
+  status        SignalStatus @default(PENDING)
+  failureReason String?
 
   // Filled in by AI processing (lib/marketIntelligence/aiProcessor.js) —
   // null until status moves past PENDING.
-  entityName      String?
-  signalType      SignalType?
-  relevanceScore  Int?         // 0-100
-  aiSummary       String?
+  entityName     String?
+  signalType     SignalType?
+  relevanceScore Int? // 0-100
+  aiSummary      String?
+  // True when the article says the company is currently looking to raise
+  // (in talks, exploring options, engaged advisors) as opposed to reporting
+  // a round that already closed — the single highest-value distinction for
+  // deal sourcing, since a company mid-raise is an active, reachable
+  // opportunity today. See lib/marketIntelligence/aiProcessor.js.
+  isSeekingFunding Boolean?
 
-  // Routing outcome (lib/marketIntelligence/companyMatcher.js): either an
-  // existing lead this signal updated, or a newly-created one from an
-  // Apollo lookup — never both.
-  matchedLeadId   String?
-  matchedLead     Lead?        @relation("MarketSignalMatchedLead", fields: [matchedLeadId], references: [id])
-  createdLeadId   String?
-  createdLead     Lead?        @relation("MarketSignalCreatedLead", fields: [createdLeadId], references: [id])
+  // Real ZoomInfo company profile + recent buying-trigger activity
+  // ("Scoops"), looked up by entityName directly — independent of
+  // matchedLeadId/createdLeadId below, since plenty of real signals
+  // (IGNORED: no lead match, no default campaign to create one in) never
+  // get an EmailLead at all. Manual, one-click action (POST
+  // /signals/:id/enrich), not automatic — same "real API credits spent is
+  // a rep's explicit choice" reasoning as the Lead enrichment action.
+  zoomInfoCompanyData Json?
+  // A real person at this company, found by searching ZoomInfo contacts by
+  // companyName (entityName is a company, not a person, so there's no name
+  // to enrich directly the way a Lead's own zoomInfoContactData lookup can
+  // — see lib/zoominfoEnrichment.js's lookupCompanyAndContactInZoomInfo).
+  zoomInfoContactData Json?
+  zoomInfoScoops      Json?
+  zoomInfoEnrichedAt  DateTime?
 
-  createdAt       DateTime     @default(now())
+  // Routing outcome: either an existing lead this signal updated, or a
+  // newly-created one from an Apollo lookup — never both.
+  matchedLeadId String?
+  matchedLead   EmailLead? @relation("MarketSignalMatchedLead", fields: [matchedLeadId], references: [id])
+  createdLeadId String?
+  createdLead   EmailLead? @relation("MarketSignalCreatedLead", fields: [createdLeadId], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@index([status])
   @@index([entityName])
+}
+
+// Indications of interest. Like the NDA, this outgrew DealStageRecord: the
+// spec wants an average IOI value in euros and distributions by industry
+// and geography, none of which the shared table can express (its `amount`
+// is free text, and it carries no industry or geography at all).
+model IoiRecord {
+  id     String @id @default(cuid())
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String @unique
+
+  status IoiStatus @default(DRAFT)
+
+  generatedAt DateTime?
+  sentAt      DateTime?
+  signedAt    DateTime?
+  expiresAt   DateTime?
+
+  // Numeric, deliberately unlike DealStageRecord.amount which is free text.
+  // "EUR 2-4M" cannot be averaged, and the spec asks for an average value.
+  // Where a range is genuinely all that is known, record the midpoint here
+  // and put the range itself in notes.
+  value         Float?
+  valueCurrency String @default("USD")
+
+  // The spec asks for IOI-by-industry and IOI-by-geography distributions.
+  // Lead carries neither (it has `territory`, which is a sales region, not
+  // the counterparty's geography), so both live here.
+  industry  String?
+  geography String?
+
+  counterparty String?
+  owner        String?
+  notes        String?
+
+  // Filled in by the client via the "fill in your details online" option —
+  // the LOI template's actual blanks (see assets/ioi-template.docx): the
+  // borrower's jurisdiction, project cost and equity contribution, plus
+  // the signature block. `counterparty` above stays the company name;
+  // these are the individual signatory's own details, which can differ.
+  counterpartyJurisdiction String?
+  totalProjectCost         String?
+  borrowerEquity           String?
+  signatoryName            String?
+  signatoryAddress         String?
+  signatoryPhone           String?
+  signatoryEmail           String?
+  agreementDate            DateTime?
+
+  document   Document? @relation("IoiDocument", fields: [documentId], references: [id], onDelete: SetNull)
+  documentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([industry])
+  @@index([geography])
+}
+
+enum IoiStatus {
+  DRAFT
+  GENERATED
+  SENT
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+// ============================================================================
+// Segments (Email Automation → Segments tab) — a saved filter over EmailLead
+// rows within a list (campaign), evaluated live rather than snapshotted, so
+// matchingCount always reflects the current lead data instead of drifting
+// stale the moment a lead's stage/reply changes. `conditions` is a small JSON
+// array ({ field, operator, value }[]) rather than one row per condition —
+// there's no need to query/join on a single condition independently, and the
+// UI always reads/writes the whole list as one unit (see
+// lib/segmentMatching.js for the matching logic and the fixed field/operator
+// vocabulary it accepts).
+// ============================================================================
+
+enum SegmentMatchType {
+  ALL
+  ANY
+}
+
+model EmailSegment {
+  id         String           @id @default(cuid())
+  name       String
+  // Null = spans every list, not just one campaign's leads.
+  campaign   EmailCampaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignId String?
+  matchType  SegmentMatchType @default(ALL)
+  conditions Json
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([campaignId])
+}
+
+// ============================================================================
+// AI Agent (Email Automation → AI Agent tab) — drafts a reply for a lead who
+// has actually replied (using the real inbound text off their most recent
+// ReplyEvent, see lib/aiReplyAgent.js), holds it for human review, and only
+// sends it through the existing leadSender.js pipeline once a person clicks
+// Send — never automatically. Regenerating while still DRAFT overwrites the
+// same row (see routes/emailAiAgent.js); once QUEUED/SENT/SKIPPED/FAILED the
+// row is a historical record and a fresh generate creates a new one instead.
+// ============================================================================
+
+enum AiReplyDraftStatus {
+  DRAFT
+  SENT
+  SKIPPED
+  FAILED
+}
+
+model AiReplyDraft {
+  id       String @id @default(cuid())
+  lead     EmailLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId   String
+  subject  String
+  body     String
+  status   AiReplyDraftStatus @default(DRAFT)
+  // Which model actually produced this draft — admin-configurable (Admin
+  // Panel → AI Assistant), so this can differ per draft over time.
+  model    String?
+  // Set only on a FAILED send attempt (leadSender.js threw) — kept instead
+  // of silently reverting to DRAFT, so a suppressed/capped-out send is
+  // visible rather than looking like it's still just waiting for review.
+  error    String?
+  // The EmailActivityLog row leadSender.js created for the real send —
+  // lets the UI link straight from a SENT draft to its actual send record.
+  sentActivityId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([status])
 }

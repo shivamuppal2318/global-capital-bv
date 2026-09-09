@@ -1,24 +1,58 @@
 // Real LLM call (per explicit choice over a rule-based heuristic) — uses
-// the Claude Messages API. No ANTHROPIC_API_KEY is configured in this
-// environment, so the actual network call has never run; the prompt
-// format and response-parsing below ARE fully tested against realistic
-// mock model output, just not against a real model response.
-const REQUIRED_ENV = "ANTHROPIC_API_KEY";
+// the Claude Messages API. Credentials come from Admin Panel → AI
+// Assistant, falling back to ANTHROPIC_API_KEY (see lib/aiSettings.js).
+// The prompt format and response-parsing below are fully tested against
+// realistic mock model output.
+import { getAiConfig, isAiConfigured, extractResponseText } from "../aiSettings.js";
+import { getScoringCriteria, computeRelevanceScore } from "../scoringCriteria.js";
+
 const VALID_SIGNAL_TYPES = ["FUNDING", "ACQUISITION", "EXPANSION", "LEADERSHIP_CHANGE", "DISTRESS", "OTHER"];
 
 export function isAiProcessorConfigured() {
-  return Boolean(process.env[REQUIRED_ENV]);
+  return isAiConfigured();
 }
 
-// Pure — testable without any network access or API key.
-export function buildProcessingPrompt(rawSignal) {
+// The AI only ever extracts facts — which signal type, and four yes/no
+// flags — never a raw 0-100 number itself. relevanceScore is computed
+// afterwards, deterministically, from admin-editable points (Admin Panel →
+// Market Intelligence → Signal scoring, see lib/scoringCriteria.js). That
+// split is what makes "why did this score 82" answerable, and what lets an
+// admin retune scoring without touching this prompt or redeploying.
+function buildFlagQuestions(criteria) {
+  const label = (key) => criteria.find((c) => c.key === key)?.label ?? key;
+  return `Also determine these four yes/no facts:
+- hasConcreteDetail: ${label("HAS_CONCRETE_DETAIL")}?
+- hasRealContent: ${label("HAS_REAL_CONTENT")}?
+- entityClearlyNamed: ${label("ENTITY_CLEARLY_NAMED")}?
+- isSeekingFunding: ${label("SEEKING_FUNDING")}?
+  Judge this one on tense/status, not just topic — a company IS seeking
+  funding when the text says it's currently looking to raise, is in talks
+  with investors, has engaged advisors to explore a raise, or is exploring
+  strategic/financing options ("is seeking", "is looking to raise", "is in
+  discussions with", "is exploring a Series B", "has hired bankers to
+  explore a sale/raise"). It is NOT seeking funding — even though the
+  article is about funding — when a round has already happened ("raised",
+  "closed", "secured", "completed its Series B"); that's history, not a
+  live opportunity. When genuinely ambiguous, answer false rather than
+  guessing yes.`;
+}
+
+// Pure — testable without any network access or API key. `criteria` is
+// optional (defaults used when omitted) purely so the existing tests below
+// don't all need to construct a criteria list just to check title/content
+// interpolation.
+export function buildProcessingPrompt(rawSignal, criteria = []) {
   return `You are analyzing a news/web signal for a private equity deal-sourcing CRM. Extract the following from the article below.
 
 Title: ${rawSignal.rawTitle}
 Content: ${rawSignal.rawContent.slice(0, 4000)}
 
+If Content adds nothing beyond Title (they're the same or nearly so), base your answer on the headline alone — do not invent a deal size, valuation, investor names, or other specifics that aren't actually stated. That also means hasConcreteDetail and hasRealContent should both be false in that case.
+
+${buildFlagQuestions(criteria)}
+
 Return ONLY valid JSON, no other text, in exactly this shape:
-{"entityName": "the primary company this signal is about", "signalType": one of ${JSON.stringify(VALID_SIGNAL_TYPES)}, "relevanceScore": integer 0-100 (how relevant this is to a PE firm sourcing deals), "summary": "one sentence summary"}`;
+{"entityName": "the primary company this signal is about", "signalType": one of ${JSON.stringify(VALID_SIGNAL_TYPES)}, "hasConcreteDetail": boolean, "hasRealContent": boolean, "entityClearlyNamed": boolean, "isSeekingFunding": boolean, "summary": "one sentence summary, stating only what the headline/content actually says"}`;
 }
 
 // Pure — testable with any mock LLM response string, real or fabricated.
@@ -40,34 +74,42 @@ export function parseProcessingResponse(rawResponseText) {
   if (!VALID_SIGNAL_TYPES.includes(parsed.signalType)) {
     throw new Error(`AI response has an invalid signalType: ${parsed.signalType}`);
   }
-  if (typeof parsed.relevanceScore !== "number" || parsed.relevanceScore < 0 || parsed.relevanceScore > 100) {
-    throw new Error(`AI response has an invalid relevanceScore: ${parsed.relevanceScore}`);
+  for (const flag of ["hasConcreteDetail", "hasRealContent", "entityClearlyNamed", "isSeekingFunding"]) {
+    if (typeof parsed[flag] !== "boolean") {
+      throw new Error(`AI response has an invalid ${flag}: ${parsed[flag]}`);
+    }
   }
 
   return {
     entityName: parsed.entityName.trim(),
     signalType: parsed.signalType,
-    relevanceScore: Math.round(parsed.relevanceScore),
+    hasConcreteDetail: parsed.hasConcreteDetail,
+    hasRealContent: parsed.hasRealContent,
+    entityClearlyNamed: parsed.entityClearlyNamed,
+    isSeekingFunding: parsed.isSeekingFunding,
     summary: typeof parsed.summary === "string" ? parsed.summary : ""
   };
 }
 
 export async function processSignalWithAi(rawSignal) {
-  if (!isAiProcessorConfigured()) {
-    throw new Error(`AI processor is not configured — set ${REQUIRED_ENV}.`);
+  const { apiKey, model } = await getAiConfig();
+  if (!apiKey) {
+    throw new Error("AI processor is not configured — add a Claude API key under Admin Panel → AI Assistant.");
   }
+
+  const criteria = await getScoringCriteria();
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
-      "x-api-key": process.env[REQUIRED_ENV],
+      "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      model: "claude-sonnet-5",
+      model,
       max_tokens: 500,
-      messages: [{ role: "user", content: buildProcessingPrompt(rawSignal) }]
+      messages: [{ role: "user", content: buildProcessingPrompt(rawSignal, criteria) }]
     })
   });
 
@@ -76,6 +118,13 @@ export async function processSignalWithAi(rawSignal) {
   }
 
   const data = await response.json();
-  const text = data?.content?.[0]?.text ?? "";
-  return parseProcessingResponse(text);
+  const extracted = parseProcessingResponse(extractResponseText(data));
+
+  return {
+    entityName: extracted.entityName,
+    signalType: extracted.signalType,
+    relevanceScore: computeRelevanceScore(criteria, extracted),
+    isSeekingFunding: extracted.isSeekingFunding,
+    summary: extracted.summary
+  };
 }
