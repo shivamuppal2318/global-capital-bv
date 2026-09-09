@@ -96,17 +96,10 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   const activity = allActivity.filter((a) => leadIds.has(a.leadId));
 
   const top = outreachMetrics(leads);
-  // The per-row breakdown only makes sense for real people -- EmailLead.owner
-  // is free text (see /facets' own comment above), so grouping by every
-  // distinct value here would give a "DOE" row to leftover demo/seed owner
-  // names that were never a real employee. overall (the "All DOEs" combined
-  // total) below is intentionally still computed over every real lead
-  // regardless of owner, since that total is meant to be everyone's
-  // combined activity, not just the named employees'.
-  const employeeNames = new Set(
-    (await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } })).map((e) => e.name)
-  );
-  const scorecard = doeScorecard(leads.filter((l) => employeeNames.has(l.owner)), activity);
+  // The compression table should reflect the real owners recorded on the
+  // outreach rows, including historical/imported owner names. Filtering this
+  // down to currently-active employee accounts can hide valid campaign data.
+  const scorecard = doeScorecard(leads, activity);
   const overall = doeOverallMetrics(leads, activity);
   const callsBooked = leads.filter((l) => l.callBookedAt).length;
 
