@@ -1060,6 +1060,10 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       setAutomationNotice("Add a subject and body before sending.");
       return;
     }
+    if (!automationForm.targetCampaignId) {
+      setAutomationNotice("Pick a list to send to before sending.");
+      return;
+    }
 
     const saved = await handleSaveAutomation();
     if (!saved) {

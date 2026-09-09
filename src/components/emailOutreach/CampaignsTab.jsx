@@ -633,17 +633,16 @@ export function CampaignsTab({ mailing }) {
                   onChange={(event) => handleFormChange("targetCampaignId", event.target.value)}
                   className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
                 >
-                  <option value="">All leads in this campaign</option>
+                  <option value="" disabled>Select a list…</option>
                   {campaigns.filter((c) => c.id !== selectedCampaignId).map((c) => (
                     <option key={c.id} value={c.id}>Send to list: {c.name}</option>
                   ))}
                 </select>
-                {targetListName ? (
-                  <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
-                    Sends this campaign's composed subject/body to every lead in <strong>{targetListName}</strong>
-                    instead of this campaign's own.
-                  </p>
-                ) : null}
+                <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                  {targetListName
+                    ? <>Sends this campaign's composed subject/body to every lead in <strong>{targetListName}</strong>.</>
+                    : "Every lead in the list you pick gets this email — no partial sends."}
+                </p>
               </Field>
 
               <Field label="Schedule (leave empty to send now)">
