@@ -606,13 +606,13 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // lead creation) so every API credit spent is a rep's explicit choice.
   const [enriching, setEnriching] = useState(false);
   const [enrichResult, setEnrichResult] = useState(null);
-  // "Find Companies (ZoomInfo)" — real prospecting search (not enrich: no
+  // "Find Contacts (ZoomInfo)" — real prospecting search (not enrich: no
   // existing lead needed), see server/src/lib/zoominfoClient.js's
   // searchCompanies/searchContacts. Search itself is explicit (a "Search"
   // click, real API credits). Results can be sent straight into Email
   // Automation lists, but they no longer pre-fill CRM Lead creation here.
   const [zoomInfoPanelOpen, setZoomInfoPanelOpen] = useState(false);
-  const [zoomInfoMode, setZoomInfoMode] = useState("companies");
+  const [zoomInfoMode, setZoomInfoMode] = useState("contacts");
   const [zoomInfoCompanyFilters, setZoomInfoCompanyFilters] = useState({
     companyName: "", industryKeywords: "", employeeRangeMin: "", employeeRangeMax: "",
     revenueMin: "", revenueMax: "", state: "", country: ""
@@ -1368,7 +1368,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                 ))}
               </select>
               <ActionButton
-                label="Find Companies (ZoomInfo)"
+                label="Find Contacts (ZoomInfo)"
                 icon={GlobeIcon}
                 small
                 active={zoomInfoPanelOpen}
@@ -1726,7 +1726,7 @@ function ZoomInfoSearchPanel({
 
   return (
     <div>
-      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Find Companies (ZoomInfo)</p>
+      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Find Contacts (ZoomInfo)</p>
       <p className="mt-1 text-[13px] text-[#6a7790]">
         Real search against ZoomInfo's database — a genuine API lookup, not a preview. Results can be added to a list.
       </p>
@@ -1734,17 +1734,17 @@ function ZoomInfoSearchPanel({
       <div className="mt-4 flex gap-2 rounded-[10px] bg-[#f0f3f9] p-1" style={{ width: "fit-content" }}>
         <button
           type="button"
-          onClick={() => setMode("companies")}
-          className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"}`}
-        >
-          Companies
-        </button>
-        <button
-          type="button"
           onClick={() => setMode("contacts")}
           className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "contacts" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"}`}
         >
           Contacts
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("companies")}
+          className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"}`}
+        >
+          Companies
         </button>
       </div>
 
