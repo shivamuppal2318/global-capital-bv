@@ -23,6 +23,7 @@ export const channelPartnerPortalAuthApi = {
   agreement: () => apiFetch(`${API_BASE_URL}/agreement`),
   doeOptions: () => apiFetch(`${API_BASE_URL}/doe-options`),
   referralMetrics: () => apiFetch(`${API_BASE_URL}/referral-metrics`),
+  latestReferral: () => apiFetch(`${API_BASE_URL}/latest-referral`),
   referLead: (body) => apiFetch(`${API_BASE_URL}/refer-lead`, { method: "POST", body }),
   downloadAgreement: async () => {
     const token = getToken();

@@ -179,6 +179,61 @@ channelPartnerPortalAuthRouter.get(
   })
 );
 
+channelPartnerPortalAuthRouter.get(
+  "/latest-referral",
+  requireChannelPartnerAuth,
+  asyncHandler(async (req, res) => {
+    const lead = await prisma.lead.findFirst({
+      where: { channelPartner: req.channelPartner.businessName },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        company: true,
+        email: true,
+        mobile: true,
+        capitalAsk: true,
+        territory: true,
+        industry: true,
+        doe: true,
+        owner: true,
+        notes: true,
+        createdAt: true
+      }
+    });
+    if (!lead) return res.json(null);
+
+    const details = {};
+    const freeNotes = [];
+    for (const line of String(lead.notes ?? "").split(/\r?\n/).filter(Boolean)) {
+      const match = /^([^:]+):\s*(.*)$/.exec(line);
+      if (!match) {
+        freeNotes.push(line);
+        continue;
+      }
+      details[match[1].trim().toLowerCase()] = match[2].trim();
+    }
+
+    res.json({
+      id: lead.id,
+      name: lead.name,
+      company: lead.company,
+      email: lead.email,
+      mobile: lead.mobile,
+      capitalAsk: lead.capitalAsk,
+      territory: lead.territory,
+      industry: lead.industry,
+      doe: lead.doe || lead.owner,
+      jobTitle: details["job title"] ?? "",
+      companySize: details["company size"] ?? "",
+      revenue: details.revenue ?? "",
+      website: details.website ?? "",
+      notes: details.notes ?? freeNotes.join("\n"),
+      submittedAt: lead.createdAt
+    });
+  })
+);
+
 channelPartnerPortalAuthRouter.post(
   "/refer-lead",
   requireChannelPartnerAuth,

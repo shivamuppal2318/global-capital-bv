@@ -227,6 +227,7 @@ function ReferLeadView({ partnerUser }) {
 
   useEffect(() => {
     channelPartnerPortalAuthApi.doeOptions().then(setDoeOptions).catch(() => setDoeOptions([]));
+    channelPartnerPortalAuthApi.latestReferral().then(setLastSubmitted).catch(() => {});
     loadMetrics();
   }, []);
 
