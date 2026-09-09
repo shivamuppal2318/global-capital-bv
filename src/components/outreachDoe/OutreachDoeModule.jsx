@@ -10,7 +10,7 @@ const has = (v) => v !== null && v !== undefined;
 const fmtPct = (v) => (has(v) ? `${v}%` : "—");
 const fmtNum = (v) => (has(v) ? String(v) : "—");
 
-const EMPTY_FILTERS = { doe: "", geography: "", dateFrom: "", dateTo: "", industry: "" };
+const EMPTY_FILTERS = { doe: "", geography: "", leadSource: "", dateFrom: "", dateTo: "", industry: "" };
 
 export function OutreachDoeModule() {
   const [facets, setFacets] = useState(null);
@@ -152,6 +152,17 @@ export function OutreachDoeModule() {
               {(facets?.geographies ?? []).map((g) => (
                 <option key={g} value={g}>
                   {g}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Lead Source</label>
+            <select className={inputClass} value={filters.leadSource} onChange={(e) => set("leadSource")(e.target.value)}>
+              <option value="">All</option>
+              {(facets?.leadSources ?? []).map((source) => (
+                <option key={source} value={source}>
+                  {source}
                 </option>
               ))}
             </select>

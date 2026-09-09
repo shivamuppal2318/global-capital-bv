@@ -23,7 +23,7 @@ const TARGETS = {
 outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
   const emailLeadWhere = req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {};
   const crmLeadWhere = req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {};
-  const leads = await prisma.emailLead.findMany({ where: emailLeadWhere, select: { owner: true, country: true } });
+  const leads = await prisma.emailLead.findMany({ where: emailLeadWhere, select: { owner: true, country: true, source: true } });
 
   // A Channel Partner's own DOE list is just the real owners already on
   // their own referred EmailLeads. Staff sees real employees only (Admin
@@ -38,6 +38,7 @@ outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
   res.json({
     does,
     geographies: [...new Set(leads.map((l) => l.country).filter(Boolean))].sort(),
+    leadSources: [...new Set(leads.map((l) => l.source).filter(Boolean))].sort(),
     // Real CRM Lead attributes (see the "/" handler's convertedLeadById
     // note), same fixed option lists Universal Filters already uses —
     // one source of truth for what "Industry" etc. even mean.
@@ -48,12 +49,12 @@ outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
 }));
 
 outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
-  const { doe, geography, dateFrom, dateTo, industry, ticketSizeBand, temperature } = req.query;
+  const { doe, geography, dateFrom, dateTo, industry, ticketSizeBand, temperature, leadSource } = req.query;
 
   const [allLeads, allActivity, agents, allMeetings] = await Promise.all([
     prisma.emailLead.findMany({
       where: req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {},
-      select: { id: true, owner: true, country: true, replyType: true, callBookedAt: true, createdAt: true, convertedToLeadId: true }
+      select: { id: true, owner: true, country: true, source: true, replyType: true, callBookedAt: true, createdAt: true, convertedToLeadId: true }
     }),
     prisma.emailActivityLog.findMany({ select: { leadId: true, kind: true, createdAt: true } }),
     prisma.agent.findMany({ select: { assignedCount: true, resolvedCount: true } }),
@@ -78,6 +79,7 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   const leads = allLeads.filter((l) => {
     if (doe && l.owner !== doe) return false;
     if (geography && l.country !== geography) return false;
+    if (leadSource && l.source !== leadSource) return false;
     if (dateFrom && l.createdAt < new Date(dateFrom)) return false;
     if (dateTo && l.createdAt > new Date(dateTo)) return false;
 
