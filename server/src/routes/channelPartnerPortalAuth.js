@@ -209,11 +209,11 @@ channelPartnerPortalAuthRouter.post(
           owner: data.doe || null,
           leadSource: "Channel Partner Referral",
           territory: data.territory || null,
-          notes: details.join("\n") || null
+          notes: details.join("\n") || null,
+          doe: data.doe || null,
+          channelPartner: req.channelPartner.businessName
         }),
         industry: data.industry || null,
-        doe: data.doe || null,
-        channelPartner: req.channelPartner.businessName,
         status: "INTERESTED"
       }
     });
