@@ -15,6 +15,7 @@ import { universalFiltersApi } from "../../lib/universalFiltersApi";
 import { parseCrmLeadsCsv } from "../../lib/csvCrmLeads";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi";
 import { emailLeadsApi } from "../../lib/emailLeadsApi";
+import { useOptionalAuth } from "../../context/AuthContext";
 
 const avatarToneClass = {
   blue: "bg-[#dff1ff] text-[#2f96da]",
@@ -529,6 +530,8 @@ function ReportsList({ loading, reports }) {
 }
 
 export function CrmWorkspaceModule({ partnerMode = false } = {}) {
+  const auth = useOptionalAuth();
+  const zoomInfoOwner = auth?.user?.role === "EMPLOYEE" ? auth.user.name : "Unassigned";
   const [leads, setLeads] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -824,7 +827,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
               skipped += 1;
               continue;
             }
-            rows.push({ name: contact.name || "Unknown contact", company, email: contact.email, owner: "Unassigned" });
+            rows.push({ name: contact.name || "Unknown contact", company, email: contact.email, owner: zoomInfoOwner });
           } catch {
             skipped += 1;
             continue;
@@ -842,7 +845,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
               skipped += 1;
               continue;
             }
-            rows.push({ name, company, email: revealed.email, owner: "Unassigned" });
+            rows.push({ name, company, email: revealed.email, owner: zoomInfoOwner });
           } catch {
             skipped += 1;
             continue;
@@ -906,7 +909,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       const listName = zoomInfoAddToListCampaigns.find((c) => c.id === zoomInfoAddToListCampaignId)?.name ?? "the list";
       const bulkResult = await emailLeadsApi.bulkCreate(
         zoomInfoAddToListCampaignId,
-        [{ name, company, email, owner: "Unassigned" }],
+        [{ name, company, email, owner: zoomInfoOwner }],
         { skipCadence: true, source: "ZoomInfo" }
       );
 

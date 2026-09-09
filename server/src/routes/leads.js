@@ -2,6 +2,7 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { prisma } from "../db.js";
 import { buildLeadCreateData } from "../lib/leadCreation.js";
+import { resolveDoeForEmailLead } from "../lib/emailLeadConversion.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
 import { signStaffPreviewToken } from "../lib/staffPreviewToken.js";
 import { hashPassword } from "../lib/auth.js";
@@ -669,12 +670,14 @@ router.post("/from-email-lead/:emailLeadId", blockChannelPartner, async (req, re
       return res.status(400).json({ error: "This contact has already been converted to a CRM lead." });
     }
 
+    const doe = await resolveDoeForEmailLead(emailLead);
     const lead = await prisma.lead.create({
       data: buildLeadCreateData({
         name: emailLead.name,
         company: emailLead.company,
         email: emailLead.email,
-        owner: emailLead.owner,
+        owner: doe,
+        doe,
         leadSource: "Cold outreach reply"
       })
     });
