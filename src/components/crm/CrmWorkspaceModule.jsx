@@ -1716,27 +1716,38 @@ function ZoomInfoSearchPanel({
   }
 
   return (
-    <div>
-      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Find Companies (ZoomInfo)</p>
-      <p className="mt-1 text-[13px] text-[#6a7790]">
-        Real search against ZoomInfo's database — a genuine API lookup, not a preview. Results can be added to a list.
-      </p>
+    <div className="rounded-[18px] border border-[#d6deea] bg-[#fbfcff] px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-[12px] bg-[#eef3ff] text-[#3046b2]">
+            <GlobeIcon className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">
+              {mode === "contacts" ? "Find Contacts (ZoomInfo)" : "Find Companies (ZoomInfo)"}
+            </p>
+            <p className="mt-1 text-[13px] leading-5 text-[#6a7790]">
+              Live ZoomInfo lookup. Select records on this page and add them straight into an Email Automation list.
+            </p>
+          </div>
+        </div>
 
-      <div className="mt-4 flex gap-2 rounded-[10px] bg-[#f0f3f9] p-1" style={{ width: "fit-content" }}>
+        <div className="flex shrink-0 gap-1 rounded-[12px] bg-[#eef2f8] p-1">
         <button
           type="button"
           onClick={() => setMode("companies")}
-          className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"}`}
+          className={`rounded-[10px] px-4 py-2 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_2px_8px_rgba(30,48,87,0.12)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
         >
           Companies
         </button>
         <button
           type="button"
           onClick={() => setMode("contacts")}
-          className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "contacts" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89]"}`}
+          className={`rounded-[10px] px-4 py-2 text-[13px] font-semibold transition ${mode === "contacts" ? "bg-white text-[#102246] shadow-[0_2px_8px_rgba(30,48,87,0.12)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
         >
           Contacts
         </button>
+        </div>
       </div>
 
       {mode === "companies" ? (
