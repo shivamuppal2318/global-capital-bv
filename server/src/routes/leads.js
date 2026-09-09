@@ -438,6 +438,13 @@ router.post("/bulk-enrich", blockChannelPartner, async (req, res, next) => {
 // distinct value to filter on.
 const TEXT_FIELDS = ["owner", "territory", "leadSource", "industry", "channelPartner", "teamLeader", "manager", "doe", "capitalAsk"];
 
+function resolveLeadOwnerForRequest(req, submittedOwner) {
+  const trimmedOwner = typeof submittedOwner === "string" ? submittedOwner.trim() : submittedOwner;
+  if (req.channelPartner) return trimmedOwner || null;
+  if (req.user?.role === "EMPLOYEE") return req.user.name;
+  return trimmedOwner || null;
+}
+
 router.patch("/:id", async (req, res, next) => {
   try {
     const lead = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) } });
@@ -551,7 +558,7 @@ router.post("/", async (req, res, next) => {
 
     const lead = await prisma.lead.create({
       data: {
-        ...buildLeadCreateData({ name: trimmedName, company, email, mobile, capitalAsk, owner, leadSource, territory, notes }),
+        ...buildLeadCreateData({ name: trimmedName, company, email, mobile, capitalAsk, owner: resolveLeadOwnerForRequest(req, owner), leadSource, territory, notes }),
         channelPartner: req.channelPartner ? req.channelPartner.businessName : undefined
       }
     });
@@ -595,7 +602,7 @@ router.post("/bulk", async (req, res, next) => {
               mobile: mobile || null,
               company: row.company,
               capitalAsk: row.capitalAsk,
-              owner: row.owner,
+              owner: resolveLeadOwnerForRequest(req, row.owner),
               leadSource: row.leadSource || "CSV import",
               territory: row.territory
             }),

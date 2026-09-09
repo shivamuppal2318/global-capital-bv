@@ -306,6 +306,12 @@ const bulkCreateLeadSchema = z.object({
   source: z.string().trim().min(1).optional()
 });
 
+function resolveEmailLeadOwnerForRequest(req, submittedOwner) {
+  if (req.channelPartner) return req.channelPartner.name;
+  if (req.user?.role === "EMPLOYEE") return req.user.name;
+  return submittedOwner;
+}
+
 // CSV import — the frontend parses the pasted CSV into structured rows
 // client-side (see src/lib/csvLeads.js) and posts them here as JSON rather
 // than this route parsing raw CSV text itself, so validation/preview can
@@ -362,7 +368,9 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
       }
 
       const source = leadInput.source || parsed.data.source || (parsed.data.skipCadence ? "CRM Workspace" : "CSV import");
-      const lead = await prisma.emailLead.create({ data: { ...leadInput, source, campaignId: campaign.id } });
+      const lead = await prisma.emailLead.create({
+        data: { ...leadInput, owner: resolveEmailLeadOwnerForRequest(req, leadInput.owner), source, campaignId: campaign.id }
+      });
       const scheduledCount = parsed.data.skipCadence ? 0 : await scheduleCadenceSteps(lead, campaign.cadenceSteps);
 
       await prisma.emailActivityLog.create({
