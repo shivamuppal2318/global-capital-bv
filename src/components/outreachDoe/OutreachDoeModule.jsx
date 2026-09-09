@@ -58,19 +58,19 @@ export function OutreachDoeModule() {
     // pipeline health, shown here for the same at-a-glance convenience.
     const pipelineNote = "Company-wide — matches Executive Dashboard, not linked to a single DOE";
     return [
-      { key: "outreachPerDay", label: "Outreach/Day", actual: scoped.outreachPerDay, unit: "", attributable: true },
-      { key: "positiveResponseRate", label: "Positive Response %", actual: scoped.positiveResponseRate, unit: "%", attributable: true },
-      { key: "coldEmailOpenRate", label: "Cold Email Open Rate", actual: scoped.coldEmailOpenRate, unit: "%", attributable: true },
-      { key: "whatsappReplyRate", label: "WhatsApp Reply Rate", actual: data.companyWide.whatsappReplyRate, unit: "%", attributable: false, note: "Company-wide — WhatsApp agents aren't linked to a DOE yet" },
-      { key: "zoomCallsPerDay", label: "Zoom Call Booked", actual: data.companyWide.zoomCallsPerDay, unit: "/day", attributable: false, note: "Company-wide — meetings aren't linked to a DOE yet" },
-      { key: "responseRate", label: "Response Rate", format: () => fmtPct(k?.responseRate), attributable: false, note: pipelineNote },
-      { key: "ndaConversion", label: "NDA Conversion", format: () => fmtPct(k?.ndaConversion), attributable: false, note: pipelineNote },
-      { key: "zoomConversion", label: "Zoom Call 1", format: () => fmtPct(k?.zoomConversion), attributable: false, note: pipelineNote },
-      { key: "dataRoomCompletion", label: "Data Room", format: () => fmtPct(k?.dataRoomCompletion), attributable: false, note: pipelineNote },
-      { key: "ioiConversion", label: "IOI Signed", format: () => fmtPct(k?.ioiConversion), attributable: false, note: pipelineNote },
-      { key: "zoomCall2Conversion", label: "Zoom Call 2", format: () => fmtPct(k?.zoomCall2Conversion), attributable: false, note: pipelineNote },
-      { key: "fieldVisitCompletion", label: "Field Visit", format: () => fmtPct(k?.fieldVisitCompletion), attributable: false, note: pipelineNote },
-      { key: "termSheetConversion", label: "Term Sheet Closed", format: () => fmtPct(k?.termSheetConversion), attributable: false, note: pipelineNote }
+      { key: "outreachPerDay", label: "Outreach/Day", actual: scoped.outreachPerDay, unit: "" },
+      { key: "positiveResponseRate", label: "Positive Response %", actual: scoped.positiveResponseRate, unit: "%" },
+      { key: "coldEmailOpenRate", label: "Cold Email Open Rate", actual: scoped.coldEmailOpenRate, unit: "%" },
+      { key: "whatsappReplyRate", label: "WhatsApp Reply Rate", actual: data.companyWide.whatsappReplyRate, unit: "%", note: "Company-wide — WhatsApp agents aren't linked to a DOE yet" },
+      { key: "zoomCallsPerDay", label: "Zoom Call Booked", actual: data.companyWide.zoomCallsPerDay, unit: "/day", note: "Company-wide — meetings aren't linked to a DOE yet" },
+      { key: "responseRate", label: "Response Rate", format: () => fmtPct(k?.responseRate), note: pipelineNote },
+      { key: "ndaConversion", label: "NDA Conversion", format: () => fmtPct(k?.ndaConversion), note: pipelineNote },
+      { key: "zoomConversion", label: "Zoom Call 1", format: () => fmtPct(k?.zoomConversion), note: pipelineNote },
+      { key: "dataRoomCompletion", label: "Data Room", format: () => fmtPct(k?.dataRoomCompletion), note: pipelineNote },
+      { key: "ioiConversion", label: "IOI Signed", format: () => fmtPct(k?.ioiConversion), note: pipelineNote },
+      { key: "zoomCall2Conversion", label: "Zoom Call 2", format: () => fmtPct(k?.zoomCall2Conversion), note: pipelineNote },
+      { key: "fieldVisitCompletion", label: "Field Visit", format: () => fmtPct(k?.fieldVisitCompletion), note: pipelineNote },
+      { key: "termSheetConversion", label: "Term Sheet Closed", format: () => fmtPct(k?.termSheetConversion), note: pipelineNote }
     ];
   }, [data, scoped]);
 
@@ -223,10 +223,7 @@ export function OutreachDoeModule() {
             <tbody>
               {scorecardRows.map((row) => (
                 <tr key={row.key} className="border-b border-[#f1f4f9] last:border-0">
-                  <td className="py-3 pr-4 text-[14px] font-semibold text-[#102246]">
-                    {row.label}
-                    {!row.attributable ? <span className="ml-2 text-[11px] font-normal text-[#9aa6bd]">(company-wide)</span> : null}
-                  </td>
+                  <td className="py-3 pr-4 text-[14px] font-semibold text-[#102246]">{row.label}</td>
                   <td className="py-3 pr-4 text-[15px] font-semibold text-[#334463]">
                     {row.format ? row.format() : has(row.actual) ? `${row.actual}${row.unit}` : "—"}
                   </td>
@@ -251,17 +248,16 @@ export function OutreachDoeModule() {
             <thead>
               <tr className="border-b border-[#e7edf5]">
                 {[
-                  { label: "DOE" },
-                  { label: "Outreach/Day" },
-                  { label: "Positive Response %" },
-                  { label: "Cold Email Open Rate" },
-                  { label: "WhatsApp Reply Rate", companyWide: true },
-                  { label: "Zoom Call Booked", companyWide: true },
-                  ...pipelineColumns.map((c) => ({ label: c.label, companyWide: true }))
-                ].map((h) => (
-                  <th key={h.label} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
-                    {h.label}
-                    {h.companyWide ? <span className="ml-1.5 font-normal normal-case text-[#9aa6bd]">(company-wide)</span> : null}
+                  "DOE",
+                  "Outreach/Day",
+                  "Positive Response %",
+                  "Cold Email Open Rate",
+                  "WhatsApp Reply Rate",
+                  "Zoom Call Booked",
+                  ...pipelineColumns.map((c) => c.label)
+                ].map((label) => (
+                  <th key={label} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
+                    {label}
                   </th>
                 ))}
               </tr>
@@ -295,9 +291,9 @@ export function OutreachDoeModule() {
 
           {!loading && data && data.scorecard.length > 0 ? (
             <p className="mt-3 text-[12px] text-[#9aa6bd]">
-              Every column marked (company-wide) repeats the same number in every row — none of those records
-              (Agent, Meeting, NDA, Data Room, IOI, Field Visit, Term Sheet) are linked to a single DOE, so there's
-              no real per-rep split for them yet.
+              WhatsApp Reply Rate, Zoom Call Booked and every pipeline-stage column repeat the same number in every
+              row — none of those records (Agent, Meeting, NDA, Data Room, IOI, Field Visit, Term Sheet) are linked
+              to a single DOE, so there's no real per-rep split for them yet.
             </p>
           ) : null}
         </div>

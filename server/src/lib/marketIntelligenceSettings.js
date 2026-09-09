@@ -30,7 +30,7 @@ export function invalidateMarketIntelSettingsCache() {
 
 async function getRow() {
   if (cachedRow === undefined) {
-    cachedRow = await prisma.marketIntelSettings.findFirst();
+    cachedRow = await prisma.marketIntelSettings?.findFirst?.() ?? null;
   }
   return cachedRow;
 }
@@ -56,11 +56,12 @@ export async function getProviderKey(provider) {
 }
 
 export async function isProviderConfigured(provider) {
+  invalidateMarketIntelSettingsCache();
   return Boolean((await getProviderKey(provider)).apiKey);
 }
 
 export async function getMarketIntelSettingsRow() {
-  return prisma.marketIntelSettings.findFirst();
+  return prisma.marketIntelSettings?.findFirst?.() ?? null;
 }
 
 // `keys` is a partial map like { exa: "...", apollo: "" } — an empty string

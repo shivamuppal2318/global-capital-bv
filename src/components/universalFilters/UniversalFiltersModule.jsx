@@ -28,7 +28,6 @@ const LIFECYCLE_STAGES = [
   { key: "termSheet", label: "Term sheet" }
 ];
 
-const TEMPERATURE_TONE = { HOT: "red", WARM: "amber", COLD: "blue" };
 const STATUS_TONE = {
   NEW: "blue",
   CONTACTED: "amber",
@@ -38,7 +37,6 @@ const STATUS_TONE = {
   CONVERTED: "green",
   LOST: "red"
 };
-const DUE_TONE = { overdue: "red", due_7d: "amber", due_30d: "blue", none: "slate" };
 
 const asOptions = (list) => list.map((v) => ({ key: v, label: v }));
 
@@ -52,8 +50,6 @@ const EMPTY_FILTERS = {
   industry: "",
   geography: ""
 };
-
-const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : "—");
 
 function Select({ label, value, onChange, options, placeholder = "All" }) {
   return (
@@ -211,7 +207,7 @@ export function UniversalFiltersModule() {
           <table className="w-full min-w-[900px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
-                {["Lead", "Status", "Lifecycle Phase", "Industry", "Geography", "Temp", "Owner", "Next Action Due"].map((h) => (
+                {["Lead", "Status", "Lifecycle Phase", "Industry", "Geography", "Owner"].map((h) => (
                   <th key={h} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
                     {h}
                   </th>
@@ -231,13 +227,7 @@ export function UniversalFiltersModule() {
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.lifecyclePhaseLabel}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.industry ?? "—"}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.territory ?? "—"}</td>
-                  <td className="py-3 pr-4">
-                    {lead.temperature ? <Badge tone={TEMPERATURE_TONE[lead.temperature]}>{lead.temperature}</Badge> : "—"}
-                  </td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.owner ?? "Unassigned"}</td>
-                  <td className="py-3 pr-4">
-                    <Badge tone={DUE_TONE[lead.dueWindow]}>{lead.nextActionDue ? fmtDate(lead.nextActionDue) : "—"}</Badge>
-                  </td>
                 </tr>
               ))}
             </tbody>

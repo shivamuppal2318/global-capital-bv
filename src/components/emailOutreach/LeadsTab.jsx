@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ActionButton, Field, noteToneClass } from "../ui.jsx";
 import { SearchIcon } from "../Icons.jsx";
+import { WebsiteLeadsApiPanel } from "../admin/WebsiteLeadsApiPanel.jsx";
 
 function downloadSampleLeadsCsv() {
   const csv = "email,first name,last name,country,company\njane@acme.com,Jane,Doe,IN,Acme Inc";
@@ -216,6 +217,25 @@ export function LeadsTab({ mailing }) {
     );
   }
 
+  if (viewMode === "website") {
+    return (
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setViewMode("list")}
+            className="inline-flex items-center gap-2 rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[13px] font-medium text-[#435471] shadow-[0_2px_8px_rgba(30,48,87,0.04)]"
+          >
+            <span aria-hidden="true">←</span>
+            Back to lists
+          </button>
+        </div>
+
+        <WebsiteLeadsApiPanel />
+      </section>
+    );
+  }
+
   if (viewMode === "subscribers") {
     return (
       <SubscribersView
@@ -250,6 +270,13 @@ export function LeadsTab({ mailing }) {
               className="rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)]"
             >
               New List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("website")}
+              className="rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#435471]"
+            >
+              Website Lead
             </button>
           </div>
 

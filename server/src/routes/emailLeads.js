@@ -221,6 +221,31 @@ function pickInboundField(flatBody, aliases) {
   return null;
 }
 
+// Where a lead lands when the caller doesn't specify a campaign — a generic
+// website contact form has no business knowing this system's campaign
+// names, so rather than rejecting it, the lead goes into one shared list
+// instead. Created lazily on first use, and deliberately never gets cadence
+// steps: these are inbound inquiries, not a cold-outreach sequence, so
+// scheduleCadenceSteps below naturally schedules zero for it.
+export const WEBSITE_LEADS_CAMPAIGN_NAME = "Website Leads";
+
+async function getOrCreateWebsiteLeadsCampaign() {
+  const existing = await prisma.emailCampaign.findFirst({
+    where: { name: WEBSITE_LEADS_CAMPAIGN_NAME, ownerChannelPartnerId: null },
+    include: { cadenceSteps: { orderBy: { stepIndex: "asc" } } }
+  });
+  if (existing) return existing;
+  return prisma.emailCampaign.create({
+    data: {
+      name: WEBSITE_LEADS_CAMPAIGN_NAME,
+      audience: "Leads submitted through a website form",
+      template: "Website lead capture",
+      followUpCount: 0
+    },
+    include: { cadenceSteps: { orderBy: { stepIndex: "asc" } } }
+  });
+}
+
 emailLeadsRouter.post("/inbound", asyncHandler(async (req, res) => {
   const providedKey = req.get("x-api-key") ?? req.get("authorization")?.replace(/^Bearer\s+/i, "");
   const account = await prisma.businessSettings.findFirst();
@@ -239,19 +264,21 @@ emailLeadsRouter.post("/inbound", asyncHandler(async (req, res) => {
 
   if (!name) return res.status(400).json({ error: "A name field is required (name, full_name, lead_name, ...)." });
   if (!email) return res.status(400).json({ error: "An email field is required (email, email_address, ...)." });
-  if (!campaignId && !campaignName) {
-    return res.status(400).json({ error: "A campaign_id or campaign (name) field is required so the lead lands in the right campaign." });
-  }
 
   const deliverability = await verifyEmailDeliverability(email);
   if (!deliverability.valid) {
     return res.status(422).json({ error: `${email} looks undeliverable: ${deliverability.reason}` });
   }
 
-  const campaign = await prisma.emailCampaign.findFirst({
-    where: campaignId ? { id: campaignId } : { name: { equals: campaignName, mode: "insensitive" } },
-    include: { cadenceSteps: { orderBy: { stepIndex: "asc" } } }
-  });
+  // No campaign specified -- lands in the shared "Website Leads" list
+  // instead of failing, so a generic website contact form never needs to
+  // know this system's campaign names.
+  const campaign = campaignId || campaignName
+    ? await prisma.emailCampaign.findFirst({
+        where: campaignId ? { id: campaignId } : { name: { equals: campaignName, mode: "insensitive" } },
+        include: { cadenceSteps: { orderBy: { stepIndex: "asc" } } }
+      })
+    : await getOrCreateWebsiteLeadsCampaign();
   if (!campaign) {
     return res.status(404).json({ error: `No campaign found for ${campaignId ? `campaign_id "${campaignId}"` : `campaign "${campaignName}"`}.` });
   }
