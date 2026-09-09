@@ -817,26 +817,36 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       let skipped = 0;
       for (const result of selectedResults) {
         if (zoomInfoMode === "companies") {
-          const company = result.name ?? "";
-          const contact = await leadsApi.zoomInfoFindCompanyContact(company);
-          if (!contact.found || !contact.email) {
+          try {
+            const company = result.name ?? "";
+            const contact = await leadsApi.zoomInfoFindCompanyContact(company);
+            if (!contact.found || !contact.email) {
+              skipped += 1;
+              continue;
+            }
+            rows.push({ name: contact.name || "Unknown contact", company, email: contact.email, owner: "Unassigned" });
+          } catch {
             skipped += 1;
             continue;
           }
-          rows.push({ name: contact.name || "Unknown contact", company, email: contact.email, owner: "Unassigned" });
         } else {
-          const name = [result.firstName, result.lastName].filter(Boolean).join(" ") || "Unknown contact";
-          const company = result.company?.name ?? "";
-          if (!result.hasEmail) {
+          try {
+            const name = [result.firstName, result.lastName].filter(Boolean).join(" ") || "Unknown contact";
+            const company = result.company?.name ?? "";
+            if (!result.hasEmail) {
+              skipped += 1;
+              continue;
+            }
+            const revealed = await leadsApi.zoomInfoRevealContact({ firstName: result.firstName, lastName: result.lastName, companyName: company });
+            if (!revealed.email) {
+              skipped += 1;
+              continue;
+            }
+            rows.push({ name, company, email: revealed.email, owner: "Unassigned" });
+          } catch {
             skipped += 1;
             continue;
           }
-          const revealed = await leadsApi.zoomInfoRevealContact({ firstName: result.firstName, lastName: result.lastName, companyName: company });
-          if (!revealed.email) {
-            skipped += 1;
-            continue;
-          }
-          rows.push({ name, company, email: revealed.email, owner: "Unassigned" });
         }
       }
 

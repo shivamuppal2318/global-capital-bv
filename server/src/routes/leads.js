@@ -103,6 +103,19 @@ router.get("/enrich-candidates-count", blockChannelPartner, async (req, res, nex
 // reviews/saves it through the unchanged POST / below, same as any
 // other manually-entered lead. Real API credits spent, and must stay ahead
 // of GET /:id, same reasoning as enrich-candidates-count.
+function isZoomInfoExpiredSession(err) {
+  return /session has expired|valid token/i.test(err?.message ?? "");
+}
+
+async function withZoomInfoTokenRetry(credentials, operation) {
+  try {
+    return await operation(await getAccessToken(credentials));
+  } catch (err) {
+    if (!isZoomInfoExpiredSession(err)) throw err;
+    return operation(await getAccessToken(credentials));
+  }
+}
+
 router.post("/zoominfo-search", async (req, res, next) => {
   try {
     const { mode, filters, page, pageSize } = req.body ?? {};
@@ -118,10 +131,9 @@ router.post("/zoominfo-search", async (req, res, next) => {
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    const token = await getAccessToken(credentials);
     const search = mode === "companies" ? searchCompanies : searchContacts;
     const safePageSize = Math.min(Math.max(Number(pageSize) || 50, 1), 100);
-    const result = await search({ token, filters, page: page || 1, pageSize: safePageSize });
+    const result = await withZoomInfoTokenRetry(credentials, (token) => search({ token, filters, page: page || 1, pageSize: safePageSize }));
     res.json(result);
   } catch (err) {
     next(err);
@@ -148,8 +160,9 @@ router.post("/zoominfo-search/reveal-contact", async (req, res, next) => {
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    const token = await getAccessToken(credentials);
-    const attributes = await enrichContactByName({ token, fullName: `${firstName} ${lastName}`, companyName });
+    const attributes = await withZoomInfoTokenRetry(credentials, (token) =>
+      enrichContactByName({ token, fullName: `${firstName} ${lastName}`, companyName })
+    );
     res.json({ email: attributes?.email ?? null, mobilePhone: attributes?.mobilePhone ?? null });
   } catch (err) {
     next(err);
@@ -175,8 +188,7 @@ router.post("/zoominfo-search/find-company-contact", async (req, res, next) => {
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    const token = await getAccessToken(credentials);
-    const contact = await findRepresentativeContactInZoomInfo({ token, companyName });
+    const contact = await withZoomInfoTokenRetry(credentials, (token) => findRepresentativeContactInZoomInfo({ token, companyName }));
     if (!contact) {
       return res.json({ found: false });
     }
@@ -208,8 +220,9 @@ router.get("/zoominfo-search/lookup/:field", blockChannelPartner, async (req, re
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    const token = await getAccessToken(credentials);
-    const values = await (req.params.field === "countries" ? getZoomInfoCountries({ token }) : getZoomInfoStates({ token }));
+    const values = await withZoomInfoTokenRetry(credentials, (token) =>
+      req.params.field === "countries" ? getZoomInfoCountries({ token }) : getZoomInfoStates({ token })
+    );
     res.json({ values });
   } catch (err) {
     next(err);
