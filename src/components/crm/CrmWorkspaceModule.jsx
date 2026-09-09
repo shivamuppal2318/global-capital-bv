@@ -1725,32 +1725,27 @@ function ZoomInfoSearchPanel({
   }
 
   return (
-    <div className="rounded-[16px] border border-[#e2e9f3] bg-[#fbfcff] p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-[#eef3ff] text-[#3046b2]">
-            <GlobeIcon className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Find {mode === "contacts" ? "Contacts" : "Companies"} (ZoomInfo)</p>
-            <p className="mt-1 max-w-[760px] text-[13px] leading-5 text-[#6a7790]">
-              Live ZoomInfo lookup. Select records on this page and add them straight into an Email Automation list.
-            </p>
-          </div>
+    <div className="border-t border-[#edf1f6] pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Find {mode === "contacts" ? "Contacts" : "Companies"} (ZoomInfo)</p>
+          <p className="mt-1 text-[13px] text-[#6a7790]">
+            Live ZoomInfo lookup. Add selected records straight into an Email Automation list.
+          </p>
         </div>
 
         <div className="flex gap-1 rounded-[10px] bg-[#edf2f8] p-1">
           <button
             type="button"
             onClick={() => setMode("contacts")}
-            className={`rounded-[8px] px-4 py-2 text-[13px] font-semibold transition ${mode === "contacts" ? "bg-white text-[#102246] shadow-[0_1px_5px_rgba(30,48,87,0.14)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
+            className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "contacts" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
           >
             Contacts
           </button>
           <button
             type="button"
             onClick={() => setMode("companies")}
-            className={`rounded-[8px] px-4 py-2 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_1px_5px_rgba(30,48,87,0.14)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
+            className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
           >
             Companies
           </button>
@@ -1779,7 +1774,7 @@ function ZoomInfoSearchPanel({
             <LookupSelect label="State" value={contactFilters.state} onChange={(v) => setContactFilters((c) => ({ ...c, state: v }))} options={states} />
             <LookupSelect label="Country" value={contactFilters.country} onChange={(v) => setContactFilters((c) => ({ ...c, country: v }))} options={countries} />
           </div>
-          <div className="rounded-[12px] border border-[#e2e9f3] bg-white px-3 py-3">
+          <div>
             <p className="mb-1.5 text-[12px] uppercase tracking-[0.08em] text-[#6d7c96]">Management Level</p>
             <div className="flex flex-wrap gap-2">
               {MANAGEMENT_LEVEL_OPTIONS.map((level) => {
