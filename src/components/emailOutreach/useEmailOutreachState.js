@@ -578,7 +578,6 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     label: "",
     smtpHost: "",
     smtpPort: "587",
-    smtpSecure: false,
     smtpUser: "",
     smtpPass: "",
     fromAddress: "",
@@ -867,11 +866,21 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     }
 
     try {
+      // 465 is always implicit TLS (the connection is encrypted from the
+      // first byte); everything else (587, 25, ...) is STARTTLS, which
+      // begins in plaintext and upgrades mid-connection. There was no UI
+      // control for this at all before — every mailbox got smtpSecure:
+      // false unconditionally, silently breaking any account added on 465
+      // (confirmed live: a real mailbox on smtp.hostinger.com:465 with
+      // secure:false failed every single send with nodemailer's "Greeting
+      // never received", since the server's TLS handshake bytes look like
+      // garbage to a client expecting a plaintext SMTP greeting).
+      const resolvedPort = Number(newAccountForm.smtpPort) || 587;
       const account = await emailAccountsApi.create({
         label,
         smtpHost,
-        smtpPort: Number(newAccountForm.smtpPort) || 587,
-        smtpSecure: newAccountForm.smtpSecure,
+        smtpPort: resolvedPort,
+        smtpSecure: resolvedPort === 465,
         smtpUser,
         smtpPass,
         fromAddress,
@@ -883,7 +892,6 @@ export function useEmailOutreachState({ demoData = true } = {}) {
         label: "",
         smtpHost: "",
         smtpPort: "587",
-        smtpSecure: false,
         smtpUser: "",
         smtpPass: "",
         fromAddress: "",
