@@ -71,6 +71,10 @@ export function CampaignsTab({ mailing }) {
     automationForm, handleFormChange, handleSaveAutomation, handleSendNow, automationNotice, systemStatus
   } = mailing;
 
+  const targetListName = automationForm.targetCampaignId
+    ? campaigns.find((c) => c.id === automationForm.targetCampaignId)?.name
+    : null;
+
   // The real "from" address this campaign will actually send as — its
   // assigned mailbox if one is set, otherwise the single global
   // env-configured provider. There's no separate "from name" anywhere in
@@ -621,6 +625,25 @@ export function CampaignsTab({ mailing }) {
                   Leave blank to let replies land on the sending mailbox itself. Set this to route replies to a
                   different inbox instead.
                 </p>
+              </Field>
+
+              <Field label="Send To">
+                <select
+                  value={automationForm.targetCampaignId}
+                  onChange={(event) => handleFormChange("targetCampaignId", event.target.value)}
+                  className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none"
+                >
+                  <option value="">All leads in this campaign</option>
+                  {campaigns.filter((c) => c.id !== selectedCampaignId).map((c) => (
+                    <option key={c.id} value={c.id}>Send to list: {c.name}</option>
+                  ))}
+                </select>
+                {targetListName ? (
+                  <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
+                    Sends this campaign's composed subject/body to every lead in <strong>{targetListName}</strong>
+                    instead of this campaign's own.
+                  </p>
+                ) : null}
               </Field>
 
               <Field label="Schedule (leave empty to send now)">

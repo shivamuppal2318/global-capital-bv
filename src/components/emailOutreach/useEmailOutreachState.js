@@ -40,6 +40,10 @@ const DEFAULT_AUTOMATION_FORM = {
   replyTo: "",
   subject: "",
   bodyHtml: "",
+  // Blank = this campaign's own leads. Set to a different campaign's id to
+  // redirect a one-time blast to that List's leads instead — every one of
+  // them, no further per-lead narrowing (see CampaignsTab's "Send To").
+  targetCampaignId: "",
   scheduledAt: "",
   delayBetweenMinutes: "0"
 };
@@ -947,6 +951,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       replyTo: campaign.replyTo ?? "",
       subject: campaign.subject ?? "",
       bodyHtml: campaign.bodyHtml ?? "",
+      targetCampaignId: "",
       scheduledAt: "",
       delayBetweenMinutes: "0"
     }));
@@ -1063,12 +1068,17 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     }
 
     try {
-      const sentToLabel = `"${saved.name}"`;
+      const targetCampaignId = automationForm.targetCampaignId && automationForm.targetCampaignId !== saved.id
+        ? automationForm.targetCampaignId
+        : null;
+      const targetName = targetCampaignId ? campaigns.find((c) => c.id === targetCampaignId)?.name : null;
+      const sentToLabel = targetName ? `"${saved.name}" → "${targetName}"` : `"${saved.name}"`;
 
-      // No targeting fields — every send always goes to every lead in this
-      // campaign, full stop (see server/src/routes/emailCampaigns.js's own
-      // "Defaults to this campaign's own leads" default for send-now).
+      // No per-lead narrowing — redirecting to a different List (via
+      // targetCampaignId) still means every one of that List's leads, same
+      // as sending to this campaign's own leads means every one of those.
       const result = await emailCampaignsApi.sendNow(saved.id, {
+        targetCampaignId,
         scheduledAt: automationForm.scheduledAt ? new Date(automationForm.scheduledAt).toISOString() : null,
         delayBetweenMinutes: Number(automationForm.delayBetweenMinutes) || 0
       });
