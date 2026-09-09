@@ -1248,6 +1248,7 @@ model EmailLead {
   company      String
   email        String
   owner        String
+  source       String    @default("Manual / CSV")
   // Which country this lead is in — drives automatic sending-mailbox
   // routing (see src/lib/accountRouting.js): matched case-insensitively
   // against EmailAccount.country. Null = no country-based routing, this
@@ -1296,6 +1297,7 @@ model EmailLead {
 
   @@index([campaignId])
   @@index([email])
+  @@index([source])
 }
 
 model ReplyEvent {

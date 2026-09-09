@@ -845,7 +845,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
         setZoomInfoAddToListResult({ ok: false, text: `No reachable contacts found for the selected ${selectedResults.length} result(s).` });
         return;
       }
-      const bulkResult = await emailLeadsApi.bulkCreate(zoomInfoAddToListCampaignId, rows, { skipCadence: true });
+      const bulkResult = await emailLeadsApi.bulkCreate(zoomInfoAddToListCampaignId, rows, { skipCadence: true, source: "ZoomInfo" });
       setZoomInfoAddToListResult({
         ok: true,
         text: `${bulkResult.createdCount} added to "${listName}", ${bulkResult.duplicateCount} already existed${skipped ? `, ${skipped} skipped with no reachable email` : ""}.`
@@ -897,7 +897,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       const bulkResult = await emailLeadsApi.bulkCreate(
         zoomInfoAddToListCampaignId,
         [{ name, company, email, owner: "Unassigned" }],
-        { skipCadence: true }
+        { skipCadence: true, source: "ZoomInfo" }
       );
 
       if (bulkResult.createdCount > 0) {
@@ -1191,7 +1191,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
         email: l.email,
         owner: l.owner || l.doe || "Unassigned"
       }));
-      const result = await emailLeadsApi.bulkCreate(addToListCampaignId, rows, { skipCadence: true });
+      const result = await emailLeadsApi.bulkCreate(addToListCampaignId, rows, { skipCadence: true, source: "CRM Workspace" });
       const listName = addToListCampaigns.find((c) => c.id === addToListCampaignId)?.name ?? "the list";
       const parts = [`${result.createdCount} added to "${listName}"`];
       if (result.duplicateCount) parts.push(`${result.duplicateCount} already there`);
