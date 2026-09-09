@@ -14,6 +14,8 @@ const PHASES = [
   { id: "TERM_SHEET", label: "Term Sheet", green: 30, amber: 60, navigateTo: "term-sheet" }
 ];
 
+const FOLLOW_UP_GRACE_DAYS = 1;
+
 function classify(days, phase) {
   if (days <= phase.green) return "green";
   if (days <= phase.amber) return "amber";
@@ -22,6 +24,80 @@ function classify(days, phase) {
 
 function daysSince(date) {
   return Math.floor((Date.now() - new Date(date).getTime()) / DAY_MS);
+}
+
+async function staleInterestedReplies(channelPartner) {
+  const outreachWhere = channelPartner ? { campaign: { ownerChannelPartnerId: channelPartner.id } } : {};
+  const interested = await prisma.emailLead.findMany({
+    where: {
+      replyType: "INTERESTED",
+      convertedToLeadId: { not: null },
+      ...outreachWhere
+    },
+    select: {
+      id: true,
+      name: true,
+      company: true,
+      owner: true,
+      convertedToLeadId: true,
+      convertedAt: true,
+      updatedAt: true
+    }
+  });
+
+  const convertedLeadIds = interested.map((lead) => lead.convertedToLeadId).filter(Boolean);
+  if (convertedLeadIds.length === 0) return [];
+
+  const crmLeads = await prisma.lead.findMany({
+    where: { id: { in: convertedLeadIds } },
+    select: {
+      id: true,
+      name: true,
+      company: true,
+      owner: true,
+      doe: true,
+      channelPartner: true,
+      _count: {
+        select: {
+          meetings: true,
+          dealStages: true,
+          visitPlans: true,
+          documents: true,
+          activity: true
+        }
+      },
+      ndaRecord: { select: { id: true } },
+      ioiRecord: { select: { id: true } }
+    }
+  });
+  const crmLeadById = new Map(crmLeads.map((lead) => [lead.id, lead]));
+
+  return interested
+    .map((emailLead) => {
+      const crmLead = crmLeadById.get(emailLead.convertedToLeadId);
+      if (!crmLead) return null;
+      const followUpCount =
+        crmLead._count.meetings +
+        crmLead._count.dealStages +
+        (crmLead.ndaRecord ? 1 : 0) +
+        (crmLead.ioiRecord ? 1 : 0) +
+        crmLead._count.visitPlans +
+        crmLead._count.documents +
+        crmLead._count.activity;
+      const anchorDate = emailLead.convertedAt ?? emailLead.updatedAt;
+      return {
+        id: crmLead.id,
+        name: crmLead.name || emailLead.name,
+        company: crmLead.company || emailLead.company,
+        owner: crmLead.doe || crmLead.owner || emailLead.owner || null,
+        channelPartner: crmLead.channelPartner || null,
+        days: daysSince(anchorDate),
+        followUpCount
+      };
+    })
+    .filter((lead) => lead && lead.followUpCount === 0 && lead.days >= FOLLOW_UP_GRACE_DAYS)
+    .sort((a, b) => b.days - a.days)
+    .map(({ followUpCount, ...lead }) => lead);
 }
 
 // Real ageing, not fabricated, sourced from whichever table each phase
@@ -46,7 +122,7 @@ export async function computeAgeingReport(channelPartner = null) {
   const outreachWhere = channelPartner ? { campaign: { ownerChannelPartnerId: channelPartner.id } } : {};
   const leadWhere = channelPartner ? { lead: { channelPartner: channelPartner.businessName } } : {};
 
-  const [openOutreachLeads, openNdaRecords, dataRoomStageRecords, openIoiRecords, termSheetStageRecords] = await Promise.all([
+  const [openOutreachLeads, openNdaRecords, dataRoomStageRecords, openIoiRecords, termSheetStageRecords, staleInterested] = await Promise.all([
     prisma.emailLead.findMany({
       where: { replyType: "NO_REPLY", unsubscribed: false, bounced: false, ...outreachWhere },
       select: { id: true, name: true, company: true, owner: true, createdAt: true }
@@ -66,7 +142,8 @@ export async function computeAgeingReport(channelPartner = null) {
     prisma.dealStageRecord.findMany({
       where: { stage: "TERM_SHEET", status: { in: ["NOT_STARTED", "IN_PROGRESS"] }, ...leadWhere },
       select: { id: true, scheduledAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
-    })
+    }),
+    staleInterestedReplies(channelPartner)
   ]);
 
   const dealsByPhase = {
@@ -145,5 +222,5 @@ export async function computeAgeingReport(channelPartner = null) {
     .map(([owner, overdueCount]) => ({ owner, overdueCount }))
     .sort((a, b) => b.overdueCount - a.overdueCount);
 
-  return { phases, overdueDeals, byOwner, generatedAt: new Date().toISOString() };
+  return { phases, overdueDeals, byOwner, staleInterested, generatedAt: new Date().toISOString() };
 }

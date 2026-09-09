@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ageingReportApi } from "../../lib/ageingReportApi";
 import { Card, SectionTitle, Badge, ActionButton } from "../ui";
-import { ClockIcon, UsersIcon } from "../Icons";
+import { ClockIcon, MailIcon, UsersIcon } from "../Icons";
 
 const statusTone = { green: "green", amber: "amber", red: "red" };
 const statusLabel = { green: "Green", amber: "Amber", red: "Red" };
@@ -119,6 +119,49 @@ export function AgeingReportModule({ onNavigate }) {
               );
             })}
           </div>
+
+          <Card className="px-5 py-5">
+            <SectionTitle
+              icon={MailIcon}
+              iconClass="text-[#3046b2]"
+              subtitle="Interested cold replies that have not received any next CRM action yet."
+            >
+              DOE follow-up pending
+            </SectionTitle>
+
+            {(data.staleInterested ?? []).length === 0 ? (
+              <p className="mt-5 text-[14px] text-[#9aa6ba]">No interested replies are waiting on DOE follow-up right now.</p>
+            ) : (
+              <div className="mt-5 grid gap-3 lg:grid-cols-2">
+                {data.staleInterested.map((lead) => (
+                  <div key={lead.id} className="rounded-[14px] border border-[#dfe7f2] bg-[#f8fbff] px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-[14px] font-semibold text-[#102246]">{lead.name}</p>
+                        <p className="mt-0.5 truncate text-[12px] text-[#7b8aa5]">{lead.company}</p>
+                      </div>
+                      <Badge tone={lead.days > 2 ? "red" : "amber"}>{lead.days}d pending</Badge>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-[12px] text-[#5f6f89] sm:grid-cols-2">
+                      <p>
+                        <span className="block uppercase tracking-[0.08em] text-[#9aa6ba]">DOE</span>
+                        <span className="font-semibold text-[#102246]">{lead.owner || "Unassigned"}</span>
+                      </p>
+                      <p>
+                        <span className="block uppercase tracking-[0.08em] text-[#9aa6ba]">Source</span>
+                        <span className="font-semibold text-[#102246]">{lead.channelPartner ? `Partner: ${lead.channelPartner}` : "Cold outreach reply"}</span>
+                      </p>
+                    </div>
+                    {onNavigate ? (
+                      <button type="button" onClick={() => onNavigate("crm-workspace")} className="mt-3 text-[12px] font-semibold text-[#3046b2] hover:underline">
+                        Open CRM Workspace →
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
 
           <div className="grid gap-4 xl:grid-cols-[1.6fr_0.4fr]">
             <Card className="px-5 py-5">
