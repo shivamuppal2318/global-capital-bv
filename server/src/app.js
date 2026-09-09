@@ -122,6 +122,17 @@ const CHANNEL_PARTNER_ELIGIBLE_PREFIXES = [
   "/api/email/templates",
   "/api/email/ai-agent",
   "/api/email-accounts",
+  "/api/whatsapp/overview",
+  "/api/whatsapp/dashboard",
+  "/api/whatsapp/chat",
+  "/api/whatsapp/templates",
+  "/api/whatsapp/campaigns",
+  "/api/whatsapp/drip-campaigns",
+  "/api/whatsapp/auto-replies",
+  "/api/whatsapp/bot-flows",
+  "/api/whatsapp/crm-triggers",
+  "/api/whatsapp/automation",
+  "/api/whatsapp/settings",
   "/api/executive-dashboard",
   "/api/market-intelligence",
   "/api/leads",
@@ -174,19 +185,26 @@ app.use((req, res, next) => {
 // refused at the API too, which is what requireModule does here. Admins
 // pass everything (see lib/permissions.js).
 const wa = requireModule("whatsapp-business");
+function whatsappOrChannelPartner(req, res, next) {
+  if (req.channelPartner) {
+    if (hasChannelPartnerModule(req.channelPartner, "whatsapp-business")) return next();
+    return res.status(403).json({ error: "Your account doesn't have access to this. Ask an admin to enable it." });
+  }
+  return wa(req, res, next);
+}
 
 app.use("/api/admin", adminRouter);
-app.use("/api/whatsapp/overview", wa, overviewRouter);
-app.use("/api/whatsapp/dashboard", wa, dashboardRouter);
-app.use("/api/whatsapp/chat", wa, chatRouter);
-app.use("/api/whatsapp/templates", wa, templatesRouter);
-app.use("/api/whatsapp/campaigns", wa, campaignsRouter);
-app.use("/api/whatsapp/drip-campaigns", wa, dripCampaignsRouter);
-app.use("/api/whatsapp/auto-replies", wa, autoRepliesRouter);
-app.use("/api/whatsapp/bot-flows", wa, botFlowsRouter);
-app.use("/api/whatsapp/crm-triggers", wa, crmTriggersRouter);
-app.use("/api/whatsapp/automation", wa, automationRouter);
-app.use("/api/whatsapp/settings", settingsRouter);
+app.use("/api/whatsapp/overview", whatsappOrChannelPartner, overviewRouter);
+app.use("/api/whatsapp/dashboard", whatsappOrChannelPartner, dashboardRouter);
+app.use("/api/whatsapp/chat", whatsappOrChannelPartner, chatRouter);
+app.use("/api/whatsapp/templates", whatsappOrChannelPartner, templatesRouter);
+app.use("/api/whatsapp/campaigns", whatsappOrChannelPartner, campaignsRouter);
+app.use("/api/whatsapp/drip-campaigns", whatsappOrChannelPartner, dripCampaignsRouter);
+app.use("/api/whatsapp/auto-replies", whatsappOrChannelPartner, autoRepliesRouter);
+app.use("/api/whatsapp/bot-flows", whatsappOrChannelPartner, botFlowsRouter);
+app.use("/api/whatsapp/crm-triggers", whatsappOrChannelPartner, crmTriggersRouter);
+app.use("/api/whatsapp/automation", whatsappOrChannelPartner, automationRouter);
+app.use("/api/whatsapp/settings", whatsappOrChannelPartner, settingsRouter);
 app.use(
   "/api/leads",
   (req, res, next) => {

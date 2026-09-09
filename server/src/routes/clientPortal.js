@@ -961,7 +961,7 @@ const ndaFillDetailsSchema = z.object({
   counterpartyAddress: z.string().trim().min(1, "Enter the registered office address."),
   agreementDate: z.string().trim().min(1, "Choose the agreement date."),
   signatoryName: z.string().trim().min(1, "Enter the signatory's name."),
-  signatoryTitle: z.string().trim().min(1, "Enter the signatory's title.")
+  signatoryTitle: z.string().trim().optional()
 });
 
 clientPortalRouter.post(
@@ -1037,8 +1037,11 @@ clientPortalRouter.get(
     }
 
     const html = await renderSignedNda({ ...nda, lead: req.clientUser.lead });
+    const version = slugify(nda.updatedAt?.toISOString?.() ?? nda.signedAt?.toISOString?.() ?? "latest");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="Signed-NDA-${slugify(nda.counterpartyLegalName || req.clientUser.lead.company)}.html"`);
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Content-Disposition", `attachment; filename="Signed-NDA-${slugify(nda.counterpartyLegalName || req.clientUser.lead.company)}-${version}.html"`);
     res.send(html);
   })
 );

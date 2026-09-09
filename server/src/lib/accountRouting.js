@@ -36,7 +36,9 @@ export async function resolveEmailAccount(lead, campaign, client = prisma) {
     // (the shared company one, or any employee's own).
     const ownerFilter = campaign?.ownerChannelPartnerId
       ? { ownerChannelPartnerId: campaign.ownerChannelPartnerId }
-      : { ownerChannelPartnerId: null };
+      : campaign?.ownerId
+        ? { ownerId: campaign.ownerId, ownerChannelPartnerId: null }
+        : { ownerChannelPartnerId: null };
     const match = await client.emailAccount.findFirst({
       where: { isActive: true, country: { equals: lead.country, mode: "insensitive" }, ...ownerFilter },
       orderBy: { updatedAt: "desc" }

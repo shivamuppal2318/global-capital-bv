@@ -414,22 +414,16 @@ export function MarketIntelligenceModule() {
           </span>
         </div>
 
-        <div className="max-h-[360px] space-y-3 overflow-y-auto bg-[#f8faff] p-4">
-          {chatMessages.length === 0 ? (
-            <ChatBubble role="assistant">
-              {chatEnabled
-                ? `Hi! Ask me anything about the ${signals.length} captured signal${signals.length === 1 ? "" : "s"} — e.g. "any renewable energy funding signals?" or "summarize the most relevant one."`
-                : `No AI provider connected yet, so I can't truly understand questions — but ask me anything and I'll keyword-search the ${signals.length} captured signal${signals.length === 1 ? "" : "s"} for you. Connect ANTHROPIC_API_KEY (see "Data sources" below) for real AI answers.`}
-            </ChatBubble>
-          ) : null}
-
-          {chatMessages.map((message, index) => (
-            <ChatBubble key={index} role={message.role} isError={message.isError} isFallback={message.isFallback}>
-              {message.content}
-            </ChatBubble>
-          ))}
-          {chatLoading ? <ChatBubble role="assistant" typing /> : null}
-        </div>
+        {chatMessages.length || chatLoading ? (
+          <div className="max-h-[360px] space-y-3 overflow-y-auto bg-[#f8faff] p-4">
+            {chatMessages.map((message, index) => (
+              <ChatBubble key={index} role={message.role} isError={message.isError} isFallback={message.isFallback}>
+                {message.content}
+              </ChatBubble>
+            ))}
+            {chatLoading ? <ChatBubble role="assistant" typing /> : null}
+          </div>
+        ) : null}
 
         <div className="flex gap-3 border-t border-[#e7edf5] bg-white p-4">
           <input

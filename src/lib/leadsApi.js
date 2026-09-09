@@ -45,7 +45,7 @@ export const leadsApi = {
   // Real ZoomInfo prospecting search — "Find Companies (ZoomInfo)" panel.
   // mode: "companies" | "contacts". Nothing is persisted server-side;
   // the caller can add a chosen result to an Email Automation list.
-  zoomInfoSearch: ({ mode, filters, page }) => request("/zoominfo-search", { method: "POST", body: { mode, filters, page } }),
+  zoomInfoSearch: ({ mode, filters, page, pageSize }) => request("/zoominfo-search", { method: "POST", body: { mode, filters, page, pageSize } }),
   // A Contact search result only ever carries a hasEmail-style flag, never
   // the real address — this fetches it via a real Enrich lookup for the
   // specific contact being added to a list, not every row.

@@ -20,6 +20,29 @@ export const channelPartnerPortalAuthApi = {
     return data.user;
   },
   me: () => apiFetch(`${API_BASE_URL}/me`),
+  agreement: () => apiFetch(`${API_BASE_URL}/agreement`),
+  doeOptions: () => apiFetch(`${API_BASE_URL}/doe-options`),
+  referralMetrics: () => apiFetch(`${API_BASE_URL}/referral-metrics`),
+  referLead: (body) => apiFetch(`${API_BASE_URL}/refer-lead`, { method: "POST", body }),
+  downloadAgreement: async () => {
+    const token = getToken();
+    const response = await fetch(`${API_BASE_URL}/agreement/download?fresh=${Date.now()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.error ?? `Could not download agreement (${response.status})`);
+    }
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filename = /filename="?([^"]+)"?/.exec(disposition)?.[1] ?? "Signed-Channel-Partner-Agreement.html";
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = decodeURIComponent(filename);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  },
   // Always resolves with the same generic message whether or not the
   // address exists — the API deliberately doesn't reveal that.
   forgotPassword: (email) => apiFetch(`${API_BASE_URL}/forgot-password`, { method: "POST", body: { email } }),

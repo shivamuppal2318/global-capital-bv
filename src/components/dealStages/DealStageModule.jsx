@@ -20,7 +20,7 @@ const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : "—");
 // One screen serving NDA, IOI, Visit Planning, Field Visit and Term Sheet.
 // They share a table and a lifecycle; STAGE_CONFIG decides which fields and
 // labels each one shows.
-export function DealStageModule({ stage }) {
+export function DealStageModule({ stage, defaultOwner }) {
   const config = STAGE_CONFIG[stage];
   // Most stages use the full 5-value status vocabulary; a stage's own
   // config can narrow it (see FIELD_VISIT in stageConfig.js) and relabel
@@ -106,7 +106,14 @@ export function DealStageModule({ stage }) {
       location: "",
       attendees: "",
       counterparty: "",
-      owner: "",
+      // A Channel Partner filling this out from their own portal is
+      // creating a record for a deal that's theirs — defaultOwner (their
+      // own channelPartnerNames entry, passed down by the partner portal
+      // shell) fills this in instead of making them pick their own name
+      // out of a dropdown every time. Staff still get a blank field, since
+      // a staff member isn't necessarily the right owner for whatever
+      // they're recording.
+      owner: defaultOwner ?? "",
       clientRating: "",
       notes: "",
       documentId: "",
@@ -226,7 +233,7 @@ export function DealStageModule({ stage }) {
           // instead of the generic four-card one below.
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <StatCard card={{ label: stageStatusLabel.NOT_STARTED, value: String(stageSummary?.NOT_STARTED ?? 0), note: config.plannedNote ?? "Not started yet", noteTone: "amber" }} />
-            <StatCard card={{ label: stageStatusLabel.COMPLETED, value: String(stageSummary?.COMPLETED ?? 0), note: "Done", noteTone: "green" }} />
+            <StatCard card={{ label: stageStatusLabel.COMPLETED, value: String(stageSummary?.COMPLETED ?? 0), note: config.completedNote ?? "Done", noteTone: "green" }} />
           </div>
         ) : (
           <div className="mt-6 grid gap-4 sm:grid-cols-4">

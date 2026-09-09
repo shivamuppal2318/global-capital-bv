@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context/ChannelPartnerAuthContext";
 import { channelPartnerPortalAuthApi } from "../../lib/channelPartnerPortalAuthApi";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
+import { WhatsappBusinessModule } from "../whatsapp/WhatsappBusinessModule.jsx";
 import { MarketIntelligenceModule } from "../marketIntelligence/MarketIntelligenceModule.jsx";
 import { UniversalFiltersModule } from "../universalFilters/UniversalFiltersModule.jsx";
 import { PartnerLeadsView } from "./PartnerLeadsView.jsx";
@@ -15,9 +16,11 @@ import { IoiModule } from "../relationships/IoiModule.jsx";
 import { VisitPlanningModule } from "../relationships/VisitPlanningModule.jsx";
 import { DealStageModule } from "../dealStages/DealStageModule.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
+import { ActionButton, Badge, Card, StatCard } from "../ui";
 import logoUrl from "../../assets/global-capital-logo.png";
 import {
   ClockIcon,
+  AttachmentIcon,
   FolderIcon,
   FunnelIcon,
   GridIcon,
@@ -48,6 +51,7 @@ const partnerIconMap = {
   "crm-workspace": UsersIcon,
   email: MailIcon,
   "cold-bulk-mailing": MailIcon,
+  "whatsapp-business": PhoneIcon,
   nda: ShieldIcon,
   meetings: PhoneIcon,
   "data-room": FolderIcon,
@@ -58,8 +62,279 @@ const partnerIconMap = {
   "ageing-report": ClockIcon,
   leads: SendIcon,
   "market-intelligence": SparklesIcon,
-  "universal-filters": FunnelIcon
+  "universal-filters": FunnelIcon,
+  partnership: AttachmentIcon,
+  "refer-lead": UsersIcon
 };
+
+function fmtDate(value) {
+  return value ? new Date(value).toLocaleDateString() : "-";
+}
+
+function PartnershipView({ partnerUser }) {
+  const [agreement, setAgreement] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    channelPartnerPortalAuthApi
+      .agreement()
+      .then((data) => {
+        setAgreement(data);
+        setError(null);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleDownload() {
+    setDownloading(true);
+    setError(null);
+    try {
+      await channelPartnerPortalAuthApi.downloadAgreement();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  const signed = Boolean(agreement?.hasSignedAgreement);
+  const signedBy = agreement?.agreementSignedName ?? partnerUser.name;
+  const signedOn = fmtDate(agreement?.agreementSignedAt);
+  const agreementDetails = [
+    ["Signer", signedBy || "-"],
+    ["Address", agreement?.agreementAddress || "-"],
+    ["Payment", agreement?.agreementPaymentSchedule || "-"],
+    ["Copy", agreement?.uploadedSignedCopy ? "Uploaded signed copy" : "Generated signed copy"]
+  ];
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-[24px] border border-[#dfe6f2] bg-white px-6 py-6 shadow-[0_18px_45px_rgba(27,41,95,0.08)]">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-[#e6ebff] px-4 py-1.5 text-[12px] font-semibold uppercase text-[#3046b2]">
+              <AttachmentIcon className="size-4" />
+              Partnership
+            </span>
+            <h1 className="mt-4 text-[42px] font-semibold leading-tight text-[#0f2042]">Partnership</h1>
+            <p className="mt-2 max-w-3xl text-[17px] leading-7 text-[#4f6181]">
+              Agreement status and signed Channel Partner documents for {partnerUser.channelPartner.name}.
+            </p>
+          </div>
+          <div className="min-w-[220px] rounded-[18px] border border-[#dfe6f2] bg-[#f6f8fc] px-4 py-4">
+            <p className="text-[12px] font-semibold uppercase text-[#7b8aa6]">Current status</p>
+            <div className="mt-2 flex items-center gap-2">
+              <span className={`size-2.5 rounded-full ${signed ? "bg-[#2fac63]" : "bg-[#f0a43b]"}`} />
+              <span className="text-[22px] font-semibold text-[#102246]">{signed ? "Signed" : "Pending"}</span>
+            </div>
+            <p className="mt-1 text-[13px] text-[#72809a]">{signed ? `Completed on ${signedOn}` : "Agreement is waiting for signature."}</p>
+          </div>
+        </div>
+      </section>
+
+      {loading ? (
+        <Card className="px-5 py-8 text-[14px] text-[#8592ab]">Loading partnership details...</Card>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard card={{ label: "Agreement", value: signed ? "Signed" : "Pending", note: signed ? "Completed" : "Not signed", noteTone: signed ? "green" : "amber" }} />
+            <StatCard card={{ label: "Signed On", value: signedOn, note: signedBy ?? "Signer not recorded", noteTone: "blue" }} />
+            <StatCard card={{ label: "Territory", value: agreement?.region || "-", note: "Partner coverage", noteTone: "violet" }} />
+            <StatCard card={{ label: "Commission", value: `${agreement?.commissionPct ?? 0}%`, note: "Configured rate", noteTone: "green" }} />
+          </div>
+
+          <Card className="overflow-hidden">
+            <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
+              <div className="px-5 py-5 sm:px-6">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-[18px] font-semibold text-[#102246]">Signed Channel Partner Agreement</h2>
+                  <Badge tone={signed ? "green" : "amber"}>{signed ? "Signed" : "Pending"}</Badge>
+                  {agreement?.uploadedSignedCopy ? <Badge tone="blue">Uploaded copy</Badge> : <Badge tone="slate">Generated copy</Badge>}
+                </div>
+                <p className="mt-2 text-[14px] text-[#5f6f89]">
+                  {signed
+                    ? `Signed by ${signedBy} on ${signedOn}.`
+                    : "Your signed agreement is not available yet."}
+                </p>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {agreementDetails.map(([label, value]) => (
+                    <div key={label} className="rounded-[16px] border border-[#e4eaf4] bg-[#f8faff] px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase text-[#8795ad]">{label}</p>
+                      <p className="mt-1 text-[14px] font-medium text-[#102246]">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-[#e4eaf4] bg-[#f6f8fc] px-5 py-5 lg:border-l lg:border-t-0">
+                <div className="rounded-[18px] border border-[#dfe6f2] bg-white px-4 py-4">
+                  <div className="flex size-11 items-center justify-center rounded-[14px] bg-[#e6ebff] text-[#3046b2]">
+                    <AttachmentIcon className="size-5" />
+                  </div>
+                  <h3 className="mt-4 text-[16px] font-semibold text-[#102246]">Agreement copy</h3>
+                  <p className="mt-1 text-[13px] leading-6 text-[#72809a]">
+                    Download the signed Channel Partner agreement linked to this portal account.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleDownload}
+                    disabled={!signed || downloading}
+                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[14px] border border-[#3046b2] bg-[#3046b2] px-4 py-3 text-[15px] font-semibold text-white shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:bg-[#253ba2] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <AttachmentIcon className="size-4" />
+                    {downloading ? "Downloading..." : "Download agreement"}
+                  </button>
+                </div>
+              </div>
+            </div>
+            {error ? <p className="mt-4 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+const referralInitialForm = {
+  name: "",
+  company: "",
+  email: "",
+  mobile: "",
+  jobTitle: "",
+  industry: "",
+  companySize: "",
+  revenue: "",
+  capitalAsk: "",
+  territory: "",
+  website: "",
+  doe: "",
+  notes: ""
+};
+
+function ReferLeadView({ partnerUser }) {
+  const [form, setForm] = useState(referralInitialForm);
+  const [doeOptions, setDoeOptions] = useState([]);
+  const [metrics, setMetrics] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [error, setError] = useState(null);
+
+  const loadMetrics = () => channelPartnerPortalAuthApi.referralMetrics().then(setMetrics).catch(() => {});
+
+  useEffect(() => {
+    channelPartnerPortalAuthApi.doeOptions().then(setDoeOptions).catch(() => setDoeOptions([]));
+    loadMetrics();
+  }, []);
+
+  const setField = (key) => (value) => setForm((current) => ({ ...current, [key]: value }));
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const lead = await channelPartnerPortalAuthApi.referLead(form);
+      setNotice(`${lead.name} referred successfully${form.doe ? ` to ${form.doe}` : ""}.`);
+      setForm(referralInitialForm);
+      loadMetrics();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <span className="inline-flex items-center gap-2 rounded-full bg-[#e6ebff] px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#3046b2]">
+          <UsersIcon className="size-4" />
+          Refer a Lead
+        </span>
+        <h1 className="mt-4 text-[3.1rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">Refer a Lead</h1>
+        <p className="mt-3 max-w-3xl text-[18px] leading-8 text-[#4f6181]">
+          Submit a new opportunity from {partnerUser.channelPartner.name} and route it to the right DOE.
+        </p>
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard card={{ label: "Lead Referred", value: String(metrics?.leadReferred ?? 0), note: "Your referrals", noteTone: "blue" }} />
+          <StatCard card={{ label: "NDA Signed", value: String(metrics?.ndaSigned ?? 0), note: "Signed by referred leads", noteTone: "green" }} />
+          <StatCard card={{ label: "Termsheet Closed", value: String(metrics?.termSheetClosed ?? 0), note: "Closed term sheets", noteTone: "violet" }} />
+          <StatCard card={{ label: "IOI Signed", value: String(metrics?.ioiSigned ?? 0), note: "Signed IOIs", noteTone: "green" }} />
+        </div>
+      </section>
+
+      <Card className="px-5 py-5">
+        <div className="mb-5">
+          <h2 className="text-[18px] font-semibold text-[#102246]">Lead details</h2>
+          <p className="mt-1 text-[13px] text-[#8592ab]">Company, contact, size, funding ask, and DOE routing.</p>
+        </div>
+        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
+          <PortalField label="Contact name" value={form.name} onChange={setField("name")} required placeholder="e.g. Vimal Patel" />
+          <PortalField label="Company name" value={form.company} onChange={setField("company")} required placeholder="e.g. EXL India" />
+          <PortalField label="Email" value={form.email} onChange={setField("email")} type="email" placeholder="name@company.com" />
+          <PortalField label="Mobile / WhatsApp" value={form.mobile} onChange={setField("mobile")} placeholder="+91..." />
+          <PortalField label="Job title" value={form.jobTitle} onChange={setField("jobTitle")} placeholder="Founder / CFO / Director" />
+          <PortalField label="Industry" value={form.industry} onChange={setField("industry")} placeholder="Software, manufacturing, hospitality..." />
+          <PortalField label="Company size" value={form.companySize} onChange={setField("companySize")} placeholder="e.g. 100 employees" />
+          <PortalField label="Revenue" value={form.revenue} onChange={setField("revenue")} placeholder="e.g. $5M ARR" />
+          <PortalField label="Capital ask" value={form.capitalAsk} onChange={setField("capitalAsk")} placeholder="e.g. $2-4M" />
+          <PortalField label="Territory / country" value={form.territory} onChange={setField("territory")} placeholder="India, UAE..." />
+          <PortalField label="Website" value={form.website} onChange={setField("website")} placeholder="https://..." />
+          <label className="block">
+            <p className={labelClass}>Send to DOE</p>
+            <select className={inputClass} value={form.doe} onChange={(e) => setField("doe")(e.target.value)}>
+              <option value="">Select DOE...</option>
+              {doeOptions.map((doe) => (
+                <option key={doe.id} value={doe.name}>{doe.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block lg:col-span-2">
+            <p className={labelClass}>Notes</p>
+            <textarea
+              className={`${inputClass} min-h-[120px]`}
+              value={form.notes}
+              onChange={(e) => setField("notes")(e.target.value)}
+              placeholder="Context, source, funding need, warm intro details..."
+            />
+          </label>
+          {error ? <p className="lg:col-span-2 rounded-[12px] bg-[#fdeceb] px-3.5 py-2.5 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
+          {notice ? <p className="lg:col-span-2 rounded-[12px] bg-[#eefaf2] px-3.5 py-2.5 text-[13px] font-medium text-[#2b9b60]">{notice}</p> : null}
+          <div className="lg:col-span-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-[12px] bg-[#3046b2] px-5 py-3 text-[14px] font-semibold text-white shadow-[0_10px_22px_rgba(48,70,178,0.24)] transition hover:bg-[#24399a] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? "Submitting..." : "Submit referral"}
+            </button>
+          </div>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
+function PortalField({ label, value, onChange, type = "text", required = false, placeholder }) {
+  return (
+    <label className="block">
+      <p className={labelClass}>{label}</p>
+      <input
+        type={type}
+        required={required}
+        className={inputClass}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
 
 function PartnerLoginView({ onForgot }) {
   const { login } = useChannelPartnerAuth();
@@ -264,8 +539,11 @@ function PartnerResetPasswordView({ token, onDone }) {
 // entry. Relationship entries now reuse the same staff modules where the
 // backend can scope writes to the partner's own referred leads.
 const EXTRA_SECTIONS = [
+  { id: "partnership", label: "Partnership", group: "Partnership", Component: PartnershipView },
+  { id: "refer-lead", label: "Refer a Lead", group: "Partnership", Component: ReferLeadView },
   { id: "command-center", label: "Executive Dashboard", group: "Intelligence", Component: ExecutiveDashboardModule },
   { id: "crm-workspace", label: "CRM Workspace", group: "CRM & Outreach", Component: PartnerLeadsView },
+  { id: "whatsapp-business", label: "WhatsApp Business", group: "CRM & Outreach", Component: WhatsappBusinessModule },
   { id: "nda", label: "NDA", group: "Relationships", Component: NdaModule },
   { id: "meetings", label: "Zoom Call", group: "Relationships", Component: MeetingsModule },
   { id: "data-room", label: "Data Room", group: "Relationships", Component: PartnerDocumentsView },
@@ -392,7 +670,7 @@ function PartnerShell() {
   const { partnerUser, logout } = useChannelPartnerAuth();
   const permissions = partnerUser.permissions ?? [];
   const grantedExtraSections = useMemo(
-    () => EXTRA_SECTIONS.filter((s) => permissions.includes(s.id)),
+    () => EXTRA_SECTIONS.filter((s) => s.group === "Partnership" || permissions.includes(s.id)),
     [permissions]
   );
   const [section, setSection] = useState(() =>
@@ -400,9 +678,18 @@ function PartnerShell() {
   );
   const activeSection = grantedExtraSections.find((s) => s.id === section);
   const ActiveExtraSection = activeSection?.Component ?? null;
+  const crmOutreachSections = grantedExtraSections.filter((s) => s.group === "CRM & Outreach");
   const navSections = [
+    { title: "Partnership", items: grantedExtraSections.filter((s) => s.group === "Partnership") },
     { title: "Intelligence", items: grantedExtraSections.filter((s) => s.group === "Intelligence") },
-    { title: "CRM & Outreach", items: [{ id: "email", label: "Email Automation" }, ...grantedExtraSections.filter((s) => s.group === "CRM & Outreach")] },
+    {
+      title: "CRM & Outreach",
+      items: [
+        ...crmOutreachSections.filter((s) => s.id === "crm-workspace"),
+        { id: "email", label: "Email Automation" },
+        ...crmOutreachSections.filter((s) => s.id !== "crm-workspace")
+      ]
+    },
     { title: "Relationships", items: grantedExtraSections.filter((s) => s.group === "Relationships") }
   ].filter((navSection) => navSection.items.length);
 
@@ -421,7 +708,13 @@ function PartnerShell() {
 
           <div className="space-y-6 p-6">
             {ActiveExtraSection ? (
-              <ActiveExtraSection stage={activeSection.stage} section={section} permissions={permissions} />
+              <ActiveExtraSection
+                stage={activeSection.stage}
+                section={section}
+                permissions={permissions}
+                defaultOwner={partnerUser.channelPartner.name}
+                partnerUser={partnerUser}
+              />
             ) : (
               <EmailOutreachModule
                 initialTab="dashboard"

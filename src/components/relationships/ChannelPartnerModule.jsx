@@ -306,7 +306,6 @@ export function ChannelPartnerModule() {
     () => [
       { label: "Total partners", value: String(metrics?.totalPartners ?? 0), note: "In the directory", noteTone: "blue" },
       { label: "Active", value: String(metrics?.active ?? 0), note: "Currently referring", noteTone: "green" },
-      { label: "Prospective", value: String(metrics?.prospective ?? 0), note: "Not yet active", noteTone: "amber" },
       {
         label: "Leads referred",
         value: String(metrics?.totalLeadsReferred ?? 0),

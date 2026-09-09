@@ -68,8 +68,11 @@ ndaRecordsRouter.get("/:id/signed-document", asyncHandler(async (req, res) => {
   if (nda.status !== "SIGNED") return res.status(400).json({ error: "This NDA hasn't been signed yet." });
 
   const html = await renderSignedNda(nda);
-  const filename = `Signed-NDA-${slugify(nda.counterpartyLegalName || nda.lead?.company || "record")}.html`;
+  const version = slugify(nda.updatedAt?.toISOString?.() ?? nda.signedAt?.toISOString?.() ?? "latest");
+  const filename = `Signed-NDA-${slugify(nda.counterpartyLegalName || nda.lead?.company || "record")}-${version}.html`;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store, max-age=0");
+  res.setHeader("Pragma", "no-cache");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send(html);
 }));

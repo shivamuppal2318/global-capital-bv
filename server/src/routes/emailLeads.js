@@ -133,6 +133,7 @@ const createLeadSchema = z.object({
   email: z.string().email(),
   owner: z.string().min(1),
   campaignId: z.string().min(1),
+  source: z.string().trim().min(1).optional().default("Manual entry"),
   // Drives automatic sending-mailbox routing (see src/lib/accountRouting.js)
   // — matched case-insensitively against EmailAccount.country. Optional:
   // omitted/null just means no country-based routing for this lead.
@@ -288,7 +289,7 @@ emailLeadsRouter.post("/inbound", asyncHandler(async (req, res) => {
   }
 
   const lead = await prisma.emailLead.create({
-    data: { name, company: company ?? "—", email, owner, campaignId: campaign.id, country }
+    data: { name, company: company ?? "—", email, owner, campaignId: campaign.id, country, source: "External API" }
   });
   const scheduledCount = await scheduleCadenceSteps(lead, campaign.cadenceSteps);
 
@@ -315,7 +316,8 @@ const bulkCreateLeadSchema = z.object({
         company: z.string().min(1),
         email: z.string().email(),
         owner: z.string().min(1),
-        country: z.string().trim().min(1).nullable().optional()
+        country: z.string().trim().min(1).nullable().optional(),
+        source: z.string().trim().min(1).optional()
       })
     )
     .min(1)
@@ -327,7 +329,8 @@ const bulkCreateLeadSchema = z.object({
   // leads into a List is expected to be a passive "add them for later"
   // action, not something that fires real outreach the instant a rep
   // clicks it with no chance to review first.
-  skipCadence: z.boolean().optional().default(false)
+  skipCadence: z.boolean().optional().default(false),
+  source: z.string().trim().min(1).optional()
 });
 
 // CSV import — the frontend parses the pasted CSV into structured rows
@@ -385,7 +388,8 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
         continue;
       }
 
-      const lead = await prisma.emailLead.create({ data: { ...leadInput, campaignId: campaign.id } });
+      const source = leadInput.source || parsed.data.source || (parsed.data.skipCadence ? "CRM Workspace" : "CSV import");
+      const lead = await prisma.emailLead.create({ data: { ...leadInput, source, campaignId: campaign.id } });
       const scheduledCount = parsed.data.skipCadence ? 0 : await scheduleCadenceSteps(lead, campaign.cadenceSteps);
 
       await prisma.emailActivityLog.create({
@@ -394,7 +398,7 @@ emailLeadsRouter.post("/bulk", asyncHandler(async (req, res) => {
           kind: "BULK_INTRO_SENT",
           title: parsed.data.skipCadence ? "Added to list" : "Added to campaign (CSV import)",
           detail: parsed.data.skipCadence
-            ? `Added to "${campaign.name}" — not enrolled in automatic follow-ups yet; send a campaign to them from there when ready.`
+            ? `Added to "${campaign.name}" from ${source} — not enrolled in automatic follow-ups yet; send a campaign to them from there when ready.`
             : scheduledCount > 0
               ? `Enrolled in "${campaign.name}" via bulk CSV import — ${scheduledCount} cadence step(s) scheduled.`
               : `Enrolled in "${campaign.name}" via bulk CSV import — no cadence steps scheduled.`
