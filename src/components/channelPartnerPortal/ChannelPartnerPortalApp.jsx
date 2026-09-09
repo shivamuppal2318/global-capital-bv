@@ -263,8 +263,8 @@ function ReferLeadView({ partnerUser }) {
         <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard card={{ label: "Lead Referred", value: String(metrics?.leadReferred ?? 0), note: "Your referrals", noteTone: "blue" }} />
           <StatCard card={{ label: "NDA Signed", value: String(metrics?.ndaSigned ?? 0), note: "Signed by referred leads", noteTone: "green" }} />
-          <StatCard card={{ label: "Termsheet Closed", value: String(metrics?.termSheetClosed ?? 0), note: "Closed term sheets", noteTone: "violet" }} />
           <StatCard card={{ label: "IOI Signed", value: String(metrics?.ioiSigned ?? 0), note: "Signed IOIs", noteTone: "green" }} />
+          <StatCard card={{ label: "Termsheet Closed", value: String(metrics?.termSheetClosed ?? 0), note: "Closed term sheets", noteTone: "violet" }} />
         </div>
       </section>
 
