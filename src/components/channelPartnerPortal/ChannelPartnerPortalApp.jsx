@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context/ChannelPartnerAuthContext";
 import { channelPartnerPortalAuthApi } from "../../lib/channelPartnerPortalAuthApi";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
@@ -217,6 +217,7 @@ const referralInitialForm = {
 function ReferLeadView({ partnerUser }) {
   const [form, setForm] = useState(referralInitialForm);
   const [lastSubmitted, setLastSubmitted] = useState(null);
+  const [expandedReferralId, setExpandedReferralId] = useState(null);
   const [doeOptions, setDoeOptions] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [referrals, setReferrals] = useState(null);
@@ -398,31 +399,78 @@ function ReferLeadView({ partnerUser }) {
               </thead>
               <tbody>
                 {referrals.referrals.map((row) => (
-                  <tr key={row.id} className="border-t border-[#edf1f6] bg-white">
-                    <td className="px-3 py-2">
-                      <p className="font-semibold text-[#102246]">{row.name}</p>
-                      <p className="text-[12px] text-[#7b8aa5]">{row.company}{row.contact ? ` · ${row.contact}` : ""}</p>
-                    </td>
-                    <td className="px-3 py-2 text-[#334463]">{row.doe || "Unassigned"}</td>
-                    <td className="px-3 py-2">
-                      <Badge tone={row.commissionEligible ? "green" : "slate"}>{row.currentStage}</Badge>
-                    </td>
-                    <td className="px-3 py-2 text-[#334463]">{row.amountText || "Not specified"}</td>
-                    <td className="px-3 py-2">
-                      {row.commissionEligible ? (
-                        <span className="font-semibold text-[#2b9b60]">{row.commissionAmount.toLocaleString()} ({row.commissionPct}%)</span>
-                      ) : (
-                        <span className="text-[#9aa6ba]">Not eligible yet</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-[#6a7790]">{new Date(row.referredAt).toLocaleDateString()}</td>
-                  </tr>
+                  <Fragment key={row.id}>
+                    <tr
+                      className="cursor-pointer border-t border-[#edf1f6] bg-white transition hover:bg-[#f8fbff]"
+                      onClick={() => setExpandedReferralId(expandedReferralId === row.id ? null : row.id)}
+                    >
+                      <td className="px-3 py-2">
+                        <p className="font-semibold text-[#102246]">{row.name}</p>
+                        <p className="text-[12px] text-[#7b8aa5]">{row.company}{row.contact ? ` · ${row.contact}` : ""}</p>
+                      </td>
+                      <td className="px-3 py-2 text-[#334463]">{row.doe || "Unassigned"}</td>
+                      <td className="px-3 py-2">
+                        <Badge tone={row.commissionEligible ? "green" : "slate"}>{row.currentStage}</Badge>
+                      </td>
+                      <td className="px-3 py-2 text-[#334463]">{row.amountText || "Not specified"}</td>
+                      <td className="px-3 py-2">
+                        {row.commissionEligible ? (
+                          <span className="font-semibold text-[#2b9b60]">{row.commissionAmount.toLocaleString()} ({row.commissionPct}%)</span>
+                        ) : (
+                          <span className="text-[#9aa6ba]">Not eligible yet</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-[#6a7790]">{new Date(row.referredAt).toLocaleDateString()}</td>
+                    </tr>
+                    {expandedReferralId === row.id ? (
+                      <tr className="border-t border-[#edf1f6] bg-[#fbfcff]">
+                        <td colSpan={6} className="px-3 py-4">
+                          <ReferralPipeline pipeline={row.pipeline} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+const referralPipelineStyle = {
+  done: { dot: "bg-[#2b9b60] text-white border-[#2b9b60]", line: "bg-[#2b9b60]", label: "text-[#2b9b60]" },
+  in_progress: { dot: "bg-[#f29b3a] text-white border-[#f29b3a]", line: "bg-[#e7edf5]", label: "text-[#c47f1a]" },
+  blocked: { dot: "bg-[#e0483f] text-white border-[#e0483f]", line: "bg-[#e7edf5]", label: "text-[#e0483f]" },
+  not_started: { dot: "bg-white text-[#aab4c6] border-[#d6deea]", line: "bg-[#e7edf5]", label: "text-[#8592ab]" }
+};
+
+function ReferralPipeline({ pipeline }) {
+  if (!pipeline?.length) return <p className="text-[13px] text-[#8592ab]">No journey data available yet.</p>;
+  return (
+    <div>
+      <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.1em] text-[#6d7c96]">Deal journey</p>
+      <div className="overflow-x-auto">
+        <div className="flex min-w-[780px] items-start">
+          {pipeline.map((stage, idx) => {
+            const style = referralPipelineStyle[stage.status] ?? referralPipelineStyle.not_started;
+            return (
+              <div key={stage.id} className="flex flex-1 items-start">
+                <div className="min-w-[84px] text-center">
+                  <div className={`mx-auto grid size-8 place-items-center rounded-full border text-[13px] font-semibold ${style.dot}`}>
+                    {stage.status === "done" ? "✓" : idx + 1}
+                  </div>
+                  <p className={`mt-2 text-[11px] font-semibold ${style.label}`}>{stage.label}</p>
+                  <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-[#8b97ad]">{stage.detail}</p>
+                </div>
+                {idx < pipeline.length - 1 ? <div className={`mt-4 h-[3px] flex-1 ${style.line}`} /> : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

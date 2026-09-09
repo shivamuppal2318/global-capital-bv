@@ -15,6 +15,7 @@ import { UPLOAD_DIR } from "../lib/fileUpload.js";
 import { renderSignedChannelPartnerAgreement, slugify } from "../lib/signedDocumentRenderer.js";
 import { buildLeadCreateData } from "../lib/leadCreation.js";
 import { computeChannelPartnerCommission } from "../lib/channelPartnerCommission.js";
+import { computeLeadPipeline } from "../lib/leadPipeline.js";
 
 export const channelPartnerPortalAuthRouter = Router();
 
@@ -297,7 +298,7 @@ channelPartnerPortalAuthRouter.get(
       }
     });
 
-    const referrals = leads.map((lead) => {
+    const referrals = await Promise.all(leads.map(async (lead) => {
       const termSheet = lead.dealStages[0] ?? null;
       const closed = termSheet?.status === "COMPLETED";
       const borrowingAmount = parseMoneyAmount(termSheet?.amount) ?? parseMoneyAmount(lead.capitalAsk);
@@ -319,9 +320,10 @@ channelPartnerPortalAuthRouter.get(
         amountText: termSheet?.amount || lead.capitalAsk || null,
         commissionEligible: Boolean(closed && commission?.commissionAmount != null),
         commissionAmount: commission?.commissionAmount ?? null,
-        commissionPct: commission?.pct ?? null
+        commissionPct: commission?.pct ?? null,
+        pipeline: await computeLeadPipeline(lead.id)
       };
-    });
+    }));
 
     res.json({
       referrals,
