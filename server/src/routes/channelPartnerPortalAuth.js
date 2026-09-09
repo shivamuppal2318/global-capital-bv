@@ -14,10 +14,38 @@ import { appBaseUrl } from "../lib/appUrl.js";
 import { UPLOAD_DIR } from "../lib/fileUpload.js";
 import { renderSignedChannelPartnerAgreement, slugify } from "../lib/signedDocumentRenderer.js";
 import { buildLeadCreateData } from "../lib/leadCreation.js";
+import { computeChannelPartnerCommission } from "../lib/channelPartnerCommission.js";
 
 export const channelPartnerPortalAuthRouter = Router();
 
 const RESET_TTL_MINUTES = 60;
+
+function parseMoneyAmount(value) {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw || raw === "Not specified") return null;
+  const lower = raw.toLowerCase();
+  const match = lower.replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  let amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return null;
+  if (/\b(bn|billion|b)\b/.test(lower)) amount *= 1_000_000_000;
+  else if (/\b(mn|million|m)\b/.test(lower)) amount *= 1_000_000;
+  else if (/\b(k|thousand)\b/.test(lower)) amount *= 1_000;
+  return amount;
+}
+
+function currentReferralStage({ termSheet, ioi, nda, meetings, documents }) {
+  if (termSheet?.status === "COMPLETED") return "Termsheet Closed";
+  if (termSheet) return "Termsheet";
+  if (ioi?.status === "SIGNED") return "IOI Signed";
+  if (ioi) return "IOI";
+  if (documents > 0) return "Data Room";
+  if (meetings > 0) return "Zoom Call";
+  if (nda?.status === "SIGNED") return "NDA Signed";
+  if (nda) return "NDA";
+  return "Referred";
+}
 
 const referLeadSchema = z.object({
   name: z.string().min(1),
@@ -230,6 +258,78 @@ channelPartnerPortalAuthRouter.get(
       website: details.website ?? "",
       notes: details.notes ?? freeNotes.join("\n"),
       submittedAt: lead.createdAt
+    });
+  })
+);
+
+channelPartnerPortalAuthRouter.get(
+  "/referrals",
+  requireChannelPartnerAuth,
+  asyncHandler(async (req, res) => {
+    const partner = await prisma.channelPartner.findUnique({
+      where: { id: req.channelPartner.id },
+      select: { id: true, name: true, commissionPct: true }
+    });
+    if (!partner) return res.status(404).json({ error: "Channel partner not found." });
+
+    const leads = await prisma.lead.findMany({
+      where: { channelPartner: req.channelPartner.businessName },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        company: true,
+        email: true,
+        mobile: true,
+        capitalAsk: true,
+        doe: true,
+        owner: true,
+        createdAt: true,
+        ndaRecord: { select: { status: true } },
+        ioiRecord: { select: { status: true } },
+        _count: { select: { meetings: true, documents: true } },
+        dealStages: {
+          where: { stage: "TERM_SHEET" },
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          select: { status: true, amount: true, completedAt: true }
+        }
+      }
+    });
+
+    const referrals = leads.map((lead) => {
+      const termSheet = lead.dealStages[0] ?? null;
+      const closed = termSheet?.status === "COMPLETED";
+      const borrowingAmount = parseMoneyAmount(termSheet?.amount) ?? parseMoneyAmount(lead.capitalAsk);
+      const commission = closed && borrowingAmount != null ? computeChannelPartnerCommission(borrowingAmount, partner.commissionPct) : null;
+      return {
+        id: lead.id,
+        name: lead.name,
+        company: lead.company,
+        contact: lead.email || lead.mobile || null,
+        doe: lead.doe || lead.owner || null,
+        referredAt: lead.createdAt,
+        currentStage: currentReferralStage({
+          termSheet,
+          ioi: lead.ioiRecord,
+          nda: lead.ndaRecord,
+          meetings: lead._count.meetings,
+          documents: lead._count.documents
+        }),
+        amountText: termSheet?.amount || lead.capitalAsk || null,
+        commissionEligible: Boolean(closed && commission?.commissionAmount != null),
+        commissionAmount: commission?.commissionAmount ?? null,
+        commissionPct: commission?.pct ?? null
+      };
+    });
+
+    res.json({
+      referrals,
+      summary: {
+        total: referrals.length,
+        commissionEligible: referrals.filter((row) => row.commissionEligible).length,
+        estimatedCommission: referrals.reduce((sum, row) => sum + (row.commissionAmount ?? 0), 0)
+      }
     });
   })
 );

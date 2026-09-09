@@ -219,16 +219,19 @@ function ReferLeadView({ partnerUser }) {
   const [lastSubmitted, setLastSubmitted] = useState(null);
   const [doeOptions, setDoeOptions] = useState([]);
   const [metrics, setMetrics] = useState(null);
+  const [referrals, setReferrals] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   const [error, setError] = useState(null);
 
   const loadMetrics = () => channelPartnerPortalAuthApi.referralMetrics().then(setMetrics).catch(() => {});
+  const loadReferrals = () => channelPartnerPortalAuthApi.referrals().then(setReferrals).catch(() => setReferrals(null));
 
   useEffect(() => {
     channelPartnerPortalAuthApi.doeOptions().then(setDoeOptions).catch(() => setDoeOptions([]));
     channelPartnerPortalAuthApi.latestReferral().then(setLastSubmitted).catch(() => {});
     loadMetrics();
+    loadReferrals();
   }, []);
 
   const setField = (key) => (value) => setForm((current) => ({ ...current, [key]: value }));
@@ -245,6 +248,7 @@ function ReferLeadView({ partnerUser }) {
       setLastSubmitted({ ...submitted, id: lead.id, submittedAt: new Date().toISOString() });
       setForm(referralInitialForm);
       loadMetrics();
+      loadReferrals();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -358,6 +362,67 @@ function ReferLeadView({ partnerUser }) {
         )}
       </Card>
       </div>
+
+      <Card className="px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[18px] font-semibold text-[#102246]">Your referral list</h2>
+            <p className="mt-1 text-[13px] text-[#8592ab]">Every lead you referred, with DOE routing, stage, and commission eligibility.</p>
+          </div>
+          {referrals?.summary ? (
+            <div className="flex flex-wrap gap-2">
+              <Badge tone="blue">{referrals.summary.total} referred</Badge>
+              <Badge tone="green">{referrals.summary.commissionEligible} eligible</Badge>
+            </div>
+          ) : null}
+        </div>
+
+        {!referrals ? (
+          <p className="mt-4 text-[13px] text-[#8592ab]">Loading referrals...</p>
+        ) : referrals.referrals.length === 0 ? (
+          <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[13px] text-[#8592ab]">
+            No referrals submitted yet.
+          </p>
+        ) : (
+          <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e7edf5]">
+            <table className="min-w-[820px] w-full text-left text-[13px]">
+              <thead className="bg-[#edf3fb] text-[11px] uppercase tracking-[0.08em] text-[#6d7c96]">
+                <tr>
+                  <th className="px-3 py-2">Lead</th>
+                  <th className="px-3 py-2">DOE</th>
+                  <th className="px-3 py-2">Stage</th>
+                  <th className="px-3 py-2">Amount</th>
+                  <th className="px-3 py-2">Commission</th>
+                  <th className="px-3 py-2">Referred</th>
+                </tr>
+              </thead>
+              <tbody>
+                {referrals.referrals.map((row) => (
+                  <tr key={row.id} className="border-t border-[#edf1f6] bg-white">
+                    <td className="px-3 py-2">
+                      <p className="font-semibold text-[#102246]">{row.name}</p>
+                      <p className="text-[12px] text-[#7b8aa5]">{row.company}{row.contact ? ` · ${row.contact}` : ""}</p>
+                    </td>
+                    <td className="px-3 py-2 text-[#334463]">{row.doe || "Unassigned"}</td>
+                    <td className="px-3 py-2">
+                      <Badge tone={row.commissionEligible ? "green" : "slate"}>{row.currentStage}</Badge>
+                    </td>
+                    <td className="px-3 py-2 text-[#334463]">{row.amountText || "Not specified"}</td>
+                    <td className="px-3 py-2">
+                      {row.commissionEligible ? (
+                        <span className="font-semibold text-[#2b9b60]">{row.commissionAmount.toLocaleString()} ({row.commissionPct}%)</span>
+                      ) : (
+                        <span className="text-[#9aa6ba]">Not eligible yet</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-[#6a7790]">{new Date(row.referredAt).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
