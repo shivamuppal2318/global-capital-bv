@@ -5,7 +5,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { ndaMetrics } from "../lib/relationshipMetrics.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
 import { sendSystemEmail, ndaReadyToSignEmail } from "../lib/systemMailer.js";
-import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { relatedLeadOwnerWhereClause, employeeOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { renderSignedNda, slugify } from "../lib/signedDocumentRenderer.js";
 import { generateStageReport, ndaReportFacts } from "../lib/stageCompletionReports.js";
 
@@ -32,7 +32,7 @@ ndaRecordsRouter.get("/", asyncHandler(async (req, res) => {
   const { status, q, leadId, owner } = req.query;
   const records = await prisma.ndaRecord.findMany({
     where: {
-      ...relatedLeadOwnerWhereClause(req),
+      ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req),
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(leadId ? { leadId: String(leadId) } : {}),
       ...(owner ? { owner: { contains: String(owner), mode: "insensitive" } } : {}),
@@ -61,7 +61,7 @@ ndaRecordsRouter.get("/", asyncHandler(async (req, res) => {
 // downloads that file directly, same as before.
 ndaRecordsRouter.get("/:id/signed-document", asyncHandler(async (req, res) => {
   const nda = await prisma.ndaRecord.findFirst({
-    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) },
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) },
     include: { lead: { select: { company: true } } }
   });
   if (!nda) return res.status(404).json({ error: "NDA record not found" });
@@ -80,7 +80,10 @@ ndaRecordsRouter.get("/:id/signed-document", asyncHandler(async (req, res) => {
 // Metrics come from every record, never the filtered view — a KPI that
 // changed when you typed in the search box would be misleading.
 ndaRecordsRouter.get("/metrics", asyncHandler(async (req, res) => {
-  const all = await prisma.ndaRecord.findMany({ where: relatedLeadOwnerWhereClause(req), include: { lead: { select: { name: true, company: true } } } });
+  const all = await prisma.ndaRecord.findMany({
+    where: { ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) },
+    include: { lead: { select: { name: true, company: true } } }
+  });
   const metrics = ndaMetrics(all);
   // Re-attach lead names to the chase list, which the pure metric function
   // only knows by id.
@@ -156,7 +159,7 @@ ndaRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
   const step = ACTION_FIELD[req.params.action];
   if (!step) return res.status(400).json({ error: `Unknown action "${req.params.action}".` });
 
-  const existing = await prisma.ndaRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) } });
+  const existing = await prisma.ndaRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) } });
   if (!existing) return res.status(404).json({ error: "NDA record not found" });
 
   // Reminders only make sense once it's actually been sent; without this an
@@ -224,7 +227,7 @@ ndaRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const { leadId, ...rest } = parsed.data;
-  const existing = await prisma.ndaRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) }, select: { id: true } });
+  const existing = await prisma.ndaRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) }, select: { id: true } });
   if (!existing) return res.status(404).json({ error: "NDA record not found" });
   const record = await prisma.ndaRecord
     .update({ where: { id: req.params.id }, data: buildData(rest), include })
@@ -234,7 +237,7 @@ ndaRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
 }));
 
 ndaRecordsRouter.delete("/:id", asyncHandler(async (req, res) => {
-  const existing = await prisma.ndaRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) }, select: { id: true } });
+  const existing = await prisma.ndaRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) }, select: { id: true } });
   if (!existing) return res.status(404).json({ error: "NDA record not found" });
   const deleted = await prisma.ndaRecord.delete({ where: { id: req.params.id } }).catch(() => null);
   if (!deleted) return res.status(404).json({ error: "NDA record not found" });

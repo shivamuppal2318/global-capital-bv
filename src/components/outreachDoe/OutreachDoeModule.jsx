@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { outreachDoeApi } from "../../lib/outreachDoeApi";
+import { useAuth } from "../../context/AuthContext";
 import { ActionButton, Card, SectionTitle, StatCard } from "../ui";
 import { CheckCircleIcon, GridIcon, RadarIcon } from "../Icons";
 
@@ -13,8 +14,15 @@ const fmtNum = (v) => (has(v) ? String(v) : "—");
 const EMPTY_FILTERS = { doe: "", geography: "", dateFrom: "", dateTo: "", industry: "" };
 
 export function OutreachDoeModule() {
+  const { user } = useAuth();
+  // A non-admin only ever sees their own numbers here (enforced server-side
+  // too, in routes/outreachDoe.js -- this isn't just a UI nicety). Locking
+  // the filter itself to their name, rather than leaving "All DOEs" and a
+  // picker that silently gets overridden, is what keeps the screen honest
+  // about what it's actually showing them.
+  const isAdmin = user?.role === "ADMIN";
   const [facets, setFacets] = useState(null);
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [filters, setFilters] = useState(() => (isAdmin ? EMPTY_FILTERS : { ...EMPTY_FILTERS, doe: user?.name ?? "" }));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -38,7 +46,11 @@ export function OutreachDoeModule() {
   useEffect(load, [load]);
 
   const set = (key) => (value) => setFilters((f) => ({ ...f, [key]: value }));
-  const activeCount = Object.values(filters).filter(Boolean).length;
+  // A non-admin's own name in `doe` isn't a filter they applied, it's just
+  // who they are -- doesn't count toward the badge, and Reset restores it
+  // instead of clearing it back to a misleading "All DOEs".
+  const activeCount = Object.entries(filters).filter(([k, v]) => (isAdmin || k !== "doe") && Boolean(v)).length;
+  const reset = () => setFilters(isAdmin ? EMPTY_FILTERS : { ...EMPTY_FILTERS, doe: user?.name ?? "" });
 
   // The scorecard row to show against target: the selected DOE's own
   // numbers, or the combined total across everyone when no DOE is picked.
@@ -127,8 +139,8 @@ export function OutreachDoeModule() {
         <SectionTitle
           icon={GridIcon}
           iconClass="text-[#3046b2]"
-          subtitle="Pick a DOE to see their own numbers, or leave it on All DOEs for the combined total."
-          action={activeCount ? <ActionButton label="Reset" small onClick={() => setFilters(EMPTY_FILTERS)} /> : undefined}
+          subtitle={isAdmin ? "Pick a DOE to see their own numbers, or leave it on All DOEs for the combined total." : "Showing your own numbers only."}
+          action={activeCount ? <ActionButton label="Reset" small onClick={reset} /> : undefined}
         >
           Filters
         </SectionTitle>
@@ -136,14 +148,18 @@ export function OutreachDoeModule() {
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">DOE</label>
-            <select className={inputClass} value={filters.doe} onChange={(e) => set("doe")(e.target.value)}>
-              <option value="">All DOEs</option>
-              {(facets?.does ?? []).map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
+            {isAdmin ? (
+              <select className={inputClass} value={filters.doe} onChange={(e) => set("doe")(e.target.value)}>
+                <option value="">All DOEs</option>
+                {(facets?.does ?? []).map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className={`${inputClass} bg-[#f7f9fc] text-[#5f6f89]`}>{user?.name ?? "—"}</div>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6d7c96]">Geography</label>

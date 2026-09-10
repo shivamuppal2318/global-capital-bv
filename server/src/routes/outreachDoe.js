@@ -26,14 +26,22 @@ outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
   const leads = await prisma.emailLead.findMany({ where: emailLeadWhere, select: { owner: true, country: true } });
 
   // A Channel Partner's own DOE list is just the real owners already on
-  // their own referred EmailLeads. Staff sees real employees only (Admin
+  // their own referred EmailLeads. An ADMIN sees every real employee (Admin
   // Panel -> Employees) -- EmailLead.owner is free text (CSV imports, "Add
   // to List", the inbound webhook can all set it to anything, including
   // leftover demo/seed values) and an ADMIN account is a login role, not a
-  // deal originator, so neither belongs in this dropdown.
-  const does = req.channelPartner
-    ? [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort()
-    : [...new Set((await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } })).map((e) => e.name))].sort();
+  // deal originator, so neither belongs in this dropdown. A non-admin
+  // EMPLOYEE only ever gets their own name here -- this screen shows real
+  // per-rep performance, and one rep browsing a colleague's numbers through
+  // the DOE picker is exactly the leak this locks down.
+  let does;
+  if (req.channelPartner) {
+    does = [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort();
+  } else if (req.user.role === "ADMIN") {
+    does = [...new Set((await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } })).map((e) => e.name))].sort();
+  } else {
+    does = [req.user.name];
+  }
 
   res.json({
     does,
@@ -48,7 +56,11 @@ outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
 }));
 
 outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
-  const { doe, geography, dateFrom, dateTo, industry, ticketSizeBand, temperature } = req.query;
+  const { geography, dateFrom, dateTo, industry, ticketSizeBand, temperature } = req.query;
+  // Same restriction as /facets, enforced here too so it can't be bypassed
+  // by calling this route directly with a different ?doe= -- a non-admin
+  // EMPLOYEE's own name always wins over whatever was actually sent.
+  const doe = !req.channelPartner && req.user.role !== "ADMIN" ? req.user.name : req.query.doe;
 
   const [allLeads, allActivity, agents, allMeetings] = await Promise.all([
     prisma.emailLead.findMany({

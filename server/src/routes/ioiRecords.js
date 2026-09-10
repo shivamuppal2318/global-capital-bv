@@ -3,7 +3,11 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { dealFunnel, ioiMetrics } from "../lib/relationshipMetrics.js";
-import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import {
+  relatedLeadOwnerWhereClause,
+  employeeOwnerWhereClause,
+  relatedLeadEmployeeOwnerWhereClause
+} from "../lib/channelPartnerLeadScope.js";
 import { renderSignedIoi, slugify } from "../lib/signedDocumentRenderer.js";
 import { generateStageReport, ioiReportFacts } from "../lib/stageCompletionReports.js";
 
@@ -24,6 +28,7 @@ ioiRecordsRouter.get("/", asyncHandler(async (req, res) => {
   const records = await prisma.ioiRecord.findMany({
     where: {
       ...relatedLeadOwnerWhereClause(req),
+      ...employeeOwnerWhereClause(req),
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(industry && industry !== "All" ? { industry: String(industry) } : {}),
       ...(geography && geography !== "All" ? { geography: String(geography) } : {}),
@@ -55,7 +60,7 @@ ioiRecordsRouter.get("/", asyncHandler(async (req, res) => {
 // downloads that file directly, same as before.
 ioiRecordsRouter.get("/:id/signed-document", asyncHandler(async (req, res) => {
   const ioi = await prisma.ioiRecord.findFirst({
-    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) },
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) },
     include: { lead: { select: { company: true } } }
   });
   if (!ioi) return res.status(404).json({ error: "IOI record not found" });
@@ -71,7 +76,11 @@ ioiRecordsRouter.get("/:id/signed-document", asyncHandler(async (req, res) => {
 // Always over every record, never the filtered view — a KPI that moved when
 // you typed in the search box would be misleading.
 ioiRecordsRouter.get("/metrics", asyncHandler(async (req, res) => {
-  res.json(ioiMetrics(await prisma.ioiRecord.findMany({ where: relatedLeadOwnerWhereClause(req) })));
+  res.json(
+    ioiMetrics(
+      await prisma.ioiRecord.findMany({ where: { ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) } })
+    )
+  );
 }));
 
 // NDA -> Zoom call -> Data room -> IOI -> Term sheet.
@@ -83,10 +92,22 @@ ioiRecordsRouter.get("/metrics", asyncHandler(async (req, res) => {
 // rather than where deals actually drop out.
 ioiRecordsRouter.get("/funnel", asyncHandler(async (req, res) => {
   const [ndaRows, meetingRows, ioiRows, stageRows] = await Promise.all([
-    prisma.ndaRecord.findMany({ where: relatedLeadOwnerWhereClause(req), select: { leadId: true } }),
-    prisma.meeting.findMany({ where: { leadId: { not: null }, ...relatedLeadOwnerWhereClause(req) }, select: { leadId: true } }),
-    prisma.ioiRecord.findMany({ where: relatedLeadOwnerWhereClause(req), select: { leadId: true } }),
-    prisma.dealStageRecord.findMany({ where: relatedLeadOwnerWhereClause(req), select: { leadId: true, stage: true } })
+    prisma.ndaRecord.findMany({
+      where: { ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) },
+      select: { leadId: true }
+    }),
+    prisma.meeting.findMany({
+      where: { leadId: { not: null }, ...relatedLeadOwnerWhereClause(req), ...relatedLeadEmployeeOwnerWhereClause(req) },
+      select: { leadId: true }
+    }),
+    prisma.ioiRecord.findMany({
+      where: { ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) },
+      select: { leadId: true }
+    }),
+    prisma.dealStageRecord.findMany({
+      where: { ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) },
+      select: { leadId: true, stage: true }
+    })
   ]);
 
   const atStage = (stage) => stageRows.filter((r) => r.stage === stage).map((r) => r.leadId);
@@ -171,7 +192,7 @@ ioiRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
   const step = ACTION_FIELD[req.params.action];
   if (!step) return res.status(400).json({ error: `Unknown action "${req.params.action}".` });
 
-  const existing = await prisma.ioiRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) } });
+  const existing = await prisma.ioiRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) } });
   if (!existing) return res.status(404).json({ error: "IOI record not found" });
 
   // An IOI cannot be sent or signed before it exists as a document.
@@ -205,7 +226,7 @@ ioiRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const { leadId, ...rest } = parsed.data;
-  const existing = await prisma.ioiRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) }, select: { id: true } });
+  const existing = await prisma.ioiRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) }, select: { id: true } });
   if (!existing) return res.status(404).json({ error: "IOI record not found" });
   const record = await prisma.ioiRecord
     .update({ where: { id: req.params.id }, data: buildData(rest), include })
@@ -215,7 +236,7 @@ ioiRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {
 }));
 
 ioiRecordsRouter.delete("/:id", asyncHandler(async (req, res) => {
-  const existing = await prisma.ioiRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) }, select: { id: true } });
+  const existing = await prisma.ioiRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) }, select: { id: true } });
   if (!existing) return res.status(404).json({ error: "IOI record not found" });
   const deleted = await prisma.ioiRecord.delete({ where: { id: req.params.id } }).catch(() => null);
   if (!deleted) return res.status(404).json({ error: "IOI record not found" });

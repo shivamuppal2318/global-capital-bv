@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { DEAL_STAGES, DEAL_STAGE_IDS, DEAL_STAGE_STATUSES } from "../lib/dealStages.js";
-import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { relatedLeadOwnerWhereClause, employeeOwnerWhereClause, leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { hasChannelPartnerModule } from "../lib/channelPartnerPermissions.js";
 import { generateStageReport, dealStageReportFacts, DEAL_STAGE_REPORT_LABEL } from "../lib/stageCompletionReports.js";
 
@@ -83,8 +83,11 @@ dealStagesRouter.get("/catalogue", (_req, res) => res.json({ stages: DEAL_STAGES
 // the top of each stage screen.
 dealStagesRouter.get("/summary", asyncHandler(async (req, res) => {
   const [grouped, leadCount] = await Promise.all([
-    prisma.dealStageRecord.findMany({ where: relatedLeadOwnerWhereClause(req), select: { stage: true, status: true } }),
-    prisma.lead.count({ where: req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {} })
+    prisma.dealStageRecord.findMany({
+      where: { ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) },
+      select: { stage: true, status: true }
+    }),
+    prisma.lead.count({ where: leadOwnerWhereClause(req) })
   ]);
 
   const byStage = Object.fromEntries(
@@ -114,6 +117,7 @@ dealStagesRouter.get("/", asyncHandler(async (req, res) => {
   const records = await prisma.dealStageRecord.findMany({
     where: {
       ...relatedLeadOwnerWhereClause(req),
+      ...employeeOwnerWhereClause(req),
       ...(stage ? { stage: String(stage) } : {}),
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(leadId ? { leadId: String(leadId) } : {}),
@@ -231,7 +235,7 @@ dealStagesRouter.patch("/:id", asyncHandler(async (req, res) => {
   if (data.reportSubmitted === false) data.reportAt = null;
 
   const existing = await prisma.dealStageRecord.findFirst({
-    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) },
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) },
     select: { status: true, stage: true }
   });
   if (!existing) return res.status(404).json({ error: "Stage record not found" });
@@ -251,7 +255,7 @@ dealStagesRouter.patch("/:id", asyncHandler(async (req, res) => {
 
 dealStagesRouter.delete("/:id", asyncHandler(async (req, res) => {
   const existing = await prisma.dealStageRecord.findFirst({
-    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) },
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) },
     select: { id: true, stage: true }
   });
   if (!existing) return res.status(404).json({ error: "Stage record not found" });
