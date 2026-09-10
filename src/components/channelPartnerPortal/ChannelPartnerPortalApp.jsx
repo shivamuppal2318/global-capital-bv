@@ -16,7 +16,7 @@ import { IoiModule } from "../relationships/IoiModule.jsx";
 import { VisitPlanningModule } from "../relationships/VisitPlanningModule.jsx";
 import { DealStageModule } from "../dealStages/DealStageModule.jsx";
 import { AuthShell } from "../auth/LoginPage.jsx";
-import { ActionButton, Badge, Card, StatCard } from "../ui";
+import { ActionButton, Badge, Card, PasswordInput, StatCard } from "../ui";
 import logoUrl from "../../assets/global-capital-logo.png";
 import {
   ClockIcon,
@@ -381,8 +381,7 @@ function PartnerLoginView({ onForgot }) {
             <label className={labelClass + " mb-0"}>Password</label>
             <button type="button" onClick={onForgot} className={linkClass}>Forgot password?</button>
           </div>
-          <input
-            type="password"
+          <PasswordInput
             required
             className={inputClass}
             value={password}
@@ -517,11 +516,11 @@ function PartnerResetPasswordView({ token, onDone }) {
       <form onSubmit={handleSubmit} className="mt-8 space-y-4">
         <div>
           <label className={labelClass}>New password</label>
-          <input type="password" required minLength={8} autoFocus className={inputClass} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          <PasswordInput required minLength={8} autoFocus className={inputClass} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
         </div>
         <div>
           <label className={labelClass}>Confirm new password</label>
-          <input type="password" required minLength={8} className={inputClass} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          <PasswordInput required minLength={8} className={inputClass} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </div>
         {error ? <p className="rounded-[12px] bg-[#fdeceb] px-3.5 py-2.5 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
         <button type="submit" disabled={submitting} className={primaryButtonClass}>
