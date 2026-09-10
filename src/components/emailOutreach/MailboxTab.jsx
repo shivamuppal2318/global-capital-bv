@@ -81,7 +81,7 @@ export function MailboxTab({ mailing, onNavigateTab }) {
             type="button"
             onClick={handleFetchNow}
             disabled={fetchBusy || !imapStatus?.enabled}
-            className="rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)] disabled:opacity-50"
+            className="rounded-[10px] bg-[#3046b2] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(48,70,178,0.22)] disabled:opacity-50"
           >
             {fetchBusy ? "Fetching…" : "Fetch Now"}
           </button>

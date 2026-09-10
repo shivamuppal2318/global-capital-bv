@@ -3,6 +3,12 @@ import { ActionButton, Field, noteToneClass } from "../ui.jsx";
 import { SearchIcon } from "../Icons.jsx";
 import { WebsiteLeadsApiPanel } from "../admin/WebsiteLeadsApiPanel.jsx";
 
+// Matches the auto-created campaign's name in server/src/routes/emailLeads.js
+// (WEBSITE_LEADS_CAMPAIGN_NAME) — that campaign only exists once a real
+// website lead has actually landed, so "no campaign by this name yet"
+// genuinely means "nothing captured yet" rather than a lookup bug.
+const WEBSITE_LEADS_LIST_NAME = "Website Leads";
+
 function downloadSampleLeadsCsv() {
   const csv = "email,first name,last name,country,company\njane@acme.com,Jane,Doe,IN,Acme Inc";
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -59,6 +65,22 @@ export function LeadsTab({ mailing }) {
     const result = await handleSaveAutomation();
     if (wasCreatingNewList && result) {
       setViewMode("subscribers");
+    }
+  }
+
+  // The "Website Lead" button's job is to show what's actually been
+  // captured, not how to set the integration up — so it opens the real
+  // "Website Leads" list's subscribers straight away, exactly like clicking
+  // "Open" on that row would. Only when nothing has ever been captured
+  // (the campaign doesn't exist yet) is there no lead data to show, so that
+  // case falls back to the API setup instructions instead.
+  function openWebsiteLeads() {
+    const campaign = campaigns.find((c) => c.name === WEBSITE_LEADS_LIST_NAME);
+    if (campaign) {
+      selectCampaign(campaign);
+      setViewMode("subscribers");
+    } else {
+      setViewMode("website");
     }
   }
 
@@ -267,13 +289,13 @@ export function LeadsTab({ mailing }) {
                 startNewCampaign();
                 setViewMode("form");
               }}
-              className="rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)]"
+              className="rounded-[10px] bg-[#3046b2] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(48,70,178,0.22)]"
             >
               New List
             </button>
             <button
               type="button"
-              onClick={() => setViewMode("website")}
+              onClick={openWebsiteLeads}
               className="rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#435471]"
             >
               Website Lead
