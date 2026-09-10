@@ -14,10 +14,39 @@ import { appBaseUrl } from "../lib/appUrl.js";
 import { UPLOAD_DIR } from "../lib/fileUpload.js";
 import { renderSignedChannelPartnerAgreement, slugify } from "../lib/signedDocumentRenderer.js";
 import { buildLeadCreateData } from "../lib/leadCreation.js";
+import { computeChannelPartnerCommission } from "../lib/channelPartnerCommission.js";
+import { computeLeadPipeline } from "../lib/leadPipeline.js";
 
 export const channelPartnerPortalAuthRouter = Router();
 
 const RESET_TTL_MINUTES = 60;
+
+function parseMoneyAmount(value) {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw || raw === "Not specified") return null;
+  const lower = raw.toLowerCase();
+  const match = lower.replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  let amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return null;
+  if (/\b(bn|billion|b)\b/.test(lower)) amount *= 1_000_000_000;
+  else if (/\b(mn|million|m)\b/.test(lower)) amount *= 1_000_000;
+  else if (/\b(k|thousand)\b/.test(lower)) amount *= 1_000;
+  return amount;
+}
+
+function currentReferralStage({ termSheet, ioi, nda, meetings, documents }) {
+  if (termSheet?.status === "COMPLETED") return "Termsheet Closed";
+  if (termSheet) return "Termsheet";
+  if (ioi?.status === "SIGNED") return "IOI Signed";
+  if (ioi) return "IOI";
+  if (documents > 0) return "Data Room";
+  if (meetings > 0) return "Zoom Call";
+  if (nda?.status === "SIGNED") return "NDA Signed";
+  if (nda) return "NDA";
+  return "Referred";
+}
 
 const referLeadSchema = z.object({
   name: z.string().min(1),
@@ -179,6 +208,134 @@ channelPartnerPortalAuthRouter.get(
   })
 );
 
+channelPartnerPortalAuthRouter.get(
+  "/latest-referral",
+  requireChannelPartnerAuth,
+  asyncHandler(async (req, res) => {
+    const lead = await prisma.lead.findFirst({
+      where: { channelPartner: req.channelPartner.businessName },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        company: true,
+        email: true,
+        mobile: true,
+        capitalAsk: true,
+        territory: true,
+        industry: true,
+        doe: true,
+        owner: true,
+        notes: true,
+        createdAt: true
+      }
+    });
+    if (!lead) return res.json(null);
+
+    const details = {};
+    const freeNotes = [];
+    for (const line of String(lead.notes ?? "").split(/\r?\n/).filter(Boolean)) {
+      const match = /^([^:]+):\s*(.*)$/.exec(line);
+      if (!match) {
+        freeNotes.push(line);
+        continue;
+      }
+      details[match[1].trim().toLowerCase()] = match[2].trim();
+    }
+
+    res.json({
+      id: lead.id,
+      name: lead.name,
+      company: lead.company,
+      email: lead.email,
+      mobile: lead.mobile,
+      capitalAsk: lead.capitalAsk,
+      territory: lead.territory,
+      industry: lead.industry,
+      doe: lead.doe || lead.owner,
+      jobTitle: details["job title"] ?? "",
+      companySize: details["company size"] ?? "",
+      revenue: details.revenue ?? "",
+      website: details.website ?? "",
+      notes: details.notes ?? freeNotes.join("\n"),
+      submittedAt: lead.createdAt
+    });
+  })
+);
+
+channelPartnerPortalAuthRouter.get(
+  "/referrals",
+  requireChannelPartnerAuth,
+  asyncHandler(async (req, res) => {
+    const partner = await prisma.channelPartner.findUnique({
+      where: { id: req.channelPartner.id },
+      select: { id: true, name: true, commissionPct: true }
+    });
+    if (!partner) return res.status(404).json({ error: "Channel partner not found." });
+
+    const leads = await prisma.lead.findMany({
+      where: { channelPartner: req.channelPartner.businessName },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        company: true,
+        email: true,
+        mobile: true,
+        capitalAsk: true,
+        doe: true,
+        owner: true,
+        createdAt: true,
+        ndaRecord: { select: { status: true } },
+        ioiRecord: { select: { status: true } },
+        _count: { select: { meetings: true, documents: true } },
+        dealStages: {
+          where: { stage: "TERM_SHEET" },
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          select: { status: true, amount: true, completedAt: true }
+        }
+      }
+    });
+
+    const referrals = await Promise.all(leads.map(async (lead) => {
+      const termSheet = lead.dealStages[0] ?? null;
+      const closed = termSheet?.status === "COMPLETED";
+      const borrowingAmount = parseMoneyAmount(termSheet?.amount) ?? parseMoneyAmount(lead.capitalAsk);
+      const commission = closed && borrowingAmount != null ? computeChannelPartnerCommission(borrowingAmount, partner.commissionPct) : null;
+      return {
+        id: lead.id,
+        name: lead.name,
+        company: lead.company,
+        contact: lead.email || lead.mobile || null,
+        doe: lead.doe || lead.owner || null,
+        referredAt: lead.createdAt,
+        currentStage: currentReferralStage({
+          termSheet,
+          ioi: lead.ioiRecord,
+          nda: lead.ndaRecord,
+          meetings: lead._count.meetings,
+          documents: lead._count.documents
+        }),
+        amountText: termSheet?.amount || lead.capitalAsk || null,
+        commissionEligible: Boolean(closed && commission?.commissionAmount != null),
+        commissionAmount: commission?.commissionAmount ?? null,
+        commissionPct: commission?.pct ?? null,
+        pipeline: await computeLeadPipeline(lead.id)
+      };
+    }));
+
+    res.json({
+      referrals,
+      summary: {
+        total: referrals.length,
+        commissionEligible: referrals.filter((row) => row.commissionEligible).length,
+        estimatedCommission: referrals.reduce((sum, row) => sum + (row.commissionAmount ?? 0), 0)
+      }
+    });
+  })
+);
+
 channelPartnerPortalAuthRouter.post(
   "/refer-lead",
   requireChannelPartnerAuth,
@@ -209,11 +366,11 @@ channelPartnerPortalAuthRouter.post(
           owner: data.doe || null,
           leadSource: "Channel Partner Referral",
           territory: data.territory || null,
-          notes: details.join("\n") || null
+          notes: details.join("\n") || null,
+          doe: data.doe || null,
+          channelPartner: req.channelPartner.businessName
         }),
         industry: data.industry || null,
-        doe: data.doe || null,
-        channelPartner: req.channelPartner.businessName,
         status: "INTERESTED"
       }
     });

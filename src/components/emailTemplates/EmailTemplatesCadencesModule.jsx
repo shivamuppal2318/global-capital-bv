@@ -166,7 +166,7 @@ export function EmailTemplatesCadencesModule() {
               <button
                 type="button"
                 onClick={handleSaveTemplate}
-                className="rounded-[10px] bg-[#18b6d3] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(24,182,211,0.22)]"
+                className="rounded-[10px] bg-[#3046b2] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(48,70,178,0.22)]"
               >
                 Save
               </button>
@@ -247,7 +247,7 @@ export function EmailTemplatesCadencesModule() {
         <div className="mt-4 overflow-x-auto rounded-[18px] border border-[#e7edf5] bg-[#f8faff]">
           <table className="w-full min-w-[860px] text-left">
             <thead>
-              <tr className="bg-[#eef4fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8a8fe8]">
+              <tr className="bg-[#eef4fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#60708b]">
                 <th className="px-4 py-3">Template Name</th>
                 <th className="px-4 py-3">Subject</th>
                 <th className="px-4 py-3 text-right">Actions</th>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChannelPartnerAuthProvider, useChannelPartnerAuth } from "../../context/ChannelPartnerAuthContext";
 import { channelPartnerPortalAuthApi } from "../../lib/channelPartnerPortalAuthApi";
 import { EmailOutreachModule } from "../emailOutreach/EmailOutreachModule.jsx";
@@ -216,17 +216,23 @@ const referralInitialForm = {
 
 function ReferLeadView({ partnerUser }) {
   const [form, setForm] = useState(referralInitialForm);
+  const [lastSubmitted, setLastSubmitted] = useState(null);
+  const [expandedReferralId, setExpandedReferralId] = useState(null);
   const [doeOptions, setDoeOptions] = useState([]);
   const [metrics, setMetrics] = useState(null);
+  const [referrals, setReferrals] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   const [error, setError] = useState(null);
 
   const loadMetrics = () => channelPartnerPortalAuthApi.referralMetrics().then(setMetrics).catch(() => {});
+  const loadReferrals = () => channelPartnerPortalAuthApi.referrals().then(setReferrals).catch(() => setReferrals(null));
 
   useEffect(() => {
     channelPartnerPortalAuthApi.doeOptions().then(setDoeOptions).catch(() => setDoeOptions([]));
+    channelPartnerPortalAuthApi.latestReferral().then(setLastSubmitted).catch(() => {});
     loadMetrics();
+    loadReferrals();
   }, []);
 
   const setField = (key) => (value) => setForm((current) => ({ ...current, [key]: value }));
@@ -237,10 +243,13 @@ function ReferLeadView({ partnerUser }) {
     setError(null);
     setNotice(null);
     try {
+      const submitted = { ...form };
       const lead = await channelPartnerPortalAuthApi.referLead(form);
       setNotice(`${lead.name} referred successfully${form.doe ? ` to ${form.doe}` : ""}.`);
+      setLastSubmitted({ ...submitted, id: lead.id, submittedAt: new Date().toISOString() });
       setForm(referralInitialForm);
       loadMetrics();
+      loadReferrals();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -263,17 +272,21 @@ function ReferLeadView({ partnerUser }) {
         <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard card={{ label: "Lead Referred", value: String(metrics?.leadReferred ?? 0), note: "Your referrals", noteTone: "blue" }} />
           <StatCard card={{ label: "NDA Signed", value: String(metrics?.ndaSigned ?? 0), note: "Signed by referred leads", noteTone: "green" }} />
-          <StatCard card={{ label: "Termsheet Closed", value: String(metrics?.termSheetClosed ?? 0), note: "Closed term sheets", noteTone: "violet" }} />
           <StatCard card={{ label: "IOI Signed", value: String(metrics?.ioiSigned ?? 0), note: "Signed IOIs", noteTone: "green" }} />
+          <StatCard card={{ label: "Termsheet Closed", value: String(metrics?.termSheetClosed ?? 0), note: "Closed term sheets", noteTone: "violet" }} />
         </div>
       </section>
 
-      <Card className="px-5 py-5">
-        <div className="mb-5">
-          <h2 className="text-[18px] font-semibold text-[#102246]">Lead details</h2>
-          <p className="mt-1 text-[13px] text-[#8592ab]">Company, contact, size, funding ask, and DOE routing.</p>
+      <div className="grid gap-4 xl:grid-cols-[1fr_0.55fr]">
+      <Card className="px-5 py-4">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[18px] font-semibold text-[#102246]">Lead details</h2>
+            <p className="mt-1 text-[13px] text-[#8592ab]">Company, contact, size, funding ask, and DOE routing.</p>
+          </div>
+          {lastSubmitted ? <Badge tone="green">Last referral saved</Badge> : null}
         </div>
-        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
+        <form onSubmit={handleSubmit} className="grid gap-3 lg:grid-cols-2">
           <PortalField label="Contact name" value={form.name} onChange={setField("name")} required placeholder="e.g. Vimal Patel" />
           <PortalField label="Company name" value={form.company} onChange={setField("company")} required placeholder="e.g. EXL India" />
           <PortalField label="Email" value={form.email} onChange={setField("email")} type="email" placeholder="name@company.com" />
@@ -297,7 +310,7 @@ function ReferLeadView({ partnerUser }) {
           <label className="block lg:col-span-2">
             <p className={labelClass}>Notes</p>
             <textarea
-              className={`${inputClass} min-h-[120px]`}
+              className={`${inputClass} min-h-[86px]`}
               value={form.notes}
               onChange={(e) => setField("notes")(e.target.value)}
               placeholder="Context, source, funding need, warm intro details..."
@@ -316,7 +329,158 @@ function ReferLeadView({ partnerUser }) {
           </div>
         </form>
       </Card>
+
+      <Card className="px-5 py-4">
+        <h2 className="text-[18px] font-semibold text-[#102246]">Latest submitted referral</h2>
+        {lastSubmitted ? (
+          <div className="mt-4 space-y-3">
+            <div className="rounded-[14px] border border-[#dfe7f2] bg-[#f8fbff] px-4 py-3">
+              <p className="text-[15px] font-semibold text-[#102246]">{lastSubmitted.name}</p>
+              <p className="mt-0.5 text-[13px] text-[#6a7790]">{lastSubmitted.company}</p>
+              <div className="mt-3 grid gap-x-4 gap-y-2 text-[12px] sm:grid-cols-2 xl:grid-cols-1">
+                <SubmittedField label="DOE" value={lastSubmitted.doe || "Unassigned"} />
+                <SubmittedField label="Email" value={lastSubmitted.email || "—"} />
+                <SubmittedField label="Mobile" value={lastSubmitted.mobile || "—"} />
+                <SubmittedField label="Capital ask" value={lastSubmitted.capitalAsk || "Not specified"} />
+                <SubmittedField label="Territory" value={lastSubmitted.territory || "—"} />
+                <SubmittedField label="Industry" value={lastSubmitted.industry || "—"} />
+                <SubmittedField label="Company size" value={lastSubmitted.companySize || "—"} />
+                <SubmittedField label="Revenue" value={lastSubmitted.revenue || "—"} />
+                <SubmittedField label="Website" value={lastSubmitted.website || "—"} />
+              </div>
+              {lastSubmitted.notes ? (
+                <div className="mt-3 rounded-[10px] bg-white px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8b97ad]">Notes</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[12px] leading-5 text-[#334463]">{lastSubmitted.notes}</p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[13px] text-[#8592ab]">
+            Your submitted referral summary will appear here.
+          </p>
+        )}
+      </Card>
+      </div>
+
+      <Card className="px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[18px] font-semibold text-[#102246]">Your referral list</h2>
+            <p className="mt-1 text-[13px] text-[#8592ab]">Every lead you referred, with DOE routing, stage, and commission eligibility.</p>
+          </div>
+          {referrals?.summary ? (
+            <div className="flex flex-wrap gap-2">
+              <Badge tone="blue">{referrals.summary.total} referred</Badge>
+              <Badge tone="green">{referrals.summary.commissionEligible} eligible</Badge>
+            </div>
+          ) : null}
+        </div>
+
+        {!referrals ? (
+          <p className="mt-4 text-[13px] text-[#8592ab]">Loading referrals...</p>
+        ) : referrals.referrals.length === 0 ? (
+          <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[13px] text-[#8592ab]">
+            No referrals submitted yet.
+          </p>
+        ) : (
+          <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e7edf5]">
+            <table className="min-w-[820px] w-full text-left text-[13px]">
+              <thead className="bg-[#edf3fb] text-[11px] uppercase tracking-[0.08em] text-[#6d7c96]">
+                <tr>
+                  <th className="px-3 py-2">Lead</th>
+                  <th className="px-3 py-2">DOE</th>
+                  <th className="px-3 py-2">Stage</th>
+                  <th className="px-3 py-2">Amount</th>
+                  <th className="px-3 py-2">Commission</th>
+                  <th className="px-3 py-2">Referred</th>
+                </tr>
+              </thead>
+              <tbody>
+                {referrals.referrals.map((row) => (
+                  <Fragment key={row.id}>
+                    <tr
+                      className="cursor-pointer border-t border-[#edf1f6] bg-white transition hover:bg-[#f8fbff]"
+                      onClick={() => setExpandedReferralId(expandedReferralId === row.id ? null : row.id)}
+                    >
+                      <td className="px-3 py-2">
+                        <p className="font-semibold text-[#102246]">{row.name}</p>
+                        <p className="text-[12px] text-[#7b8aa5]">{row.company}{row.contact ? ` · ${row.contact}` : ""}</p>
+                      </td>
+                      <td className="px-3 py-2 text-[#334463]">{row.doe || "Unassigned"}</td>
+                      <td className="px-3 py-2">
+                        <Badge tone={row.commissionEligible ? "green" : "slate"}>{row.currentStage}</Badge>
+                      </td>
+                      <td className="px-3 py-2 text-[#334463]">{row.amountText || "Not specified"}</td>
+                      <td className="px-3 py-2">
+                        {row.commissionEligible ? (
+                          <span className="font-semibold text-[#2b9b60]">{row.commissionAmount.toLocaleString()} ({row.commissionPct}%)</span>
+                        ) : (
+                          <span className="text-[#9aa6ba]">Not eligible yet</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-[#6a7790]">{new Date(row.referredAt).toLocaleDateString()}</td>
+                    </tr>
+                    {expandedReferralId === row.id ? (
+                      <tr className="border-t border-[#edf1f6] bg-[#fbfcff]">
+                        <td colSpan={6} className="px-3 py-4">
+                          <ReferralPipeline pipeline={row.pipeline} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
+  );
+}
+
+const referralPipelineStyle = {
+  done: { dot: "bg-[#2b9b60] text-white border-[#2b9b60]", line: "bg-[#2b9b60]", label: "text-[#2b9b60]" },
+  in_progress: { dot: "bg-[#f29b3a] text-white border-[#f29b3a]", line: "bg-[#e7edf5]", label: "text-[#c47f1a]" },
+  blocked: { dot: "bg-[#e0483f] text-white border-[#e0483f]", line: "bg-[#e7edf5]", label: "text-[#e0483f]" },
+  not_started: { dot: "bg-white text-[#aab4c6] border-[#d6deea]", line: "bg-[#e7edf5]", label: "text-[#8592ab]" }
+};
+
+function ReferralPipeline({ pipeline }) {
+  if (!pipeline?.length) return <p className="text-[13px] text-[#8592ab]">No journey data available yet.</p>;
+  return (
+    <div>
+      <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.1em] text-[#6d7c96]">Deal journey</p>
+      <div className="overflow-x-auto">
+        <div className="flex min-w-[780px] items-start">
+          {pipeline.map((stage, idx) => {
+            const style = referralPipelineStyle[stage.status] ?? referralPipelineStyle.not_started;
+            return (
+              <div key={stage.id} className="flex flex-1 items-start">
+                <div className="min-w-[84px] text-center">
+                  <div className={`mx-auto grid size-8 place-items-center rounded-full border text-[13px] font-semibold ${style.dot}`}>
+                    {stage.status === "done" ? "✓" : idx + 1}
+                  </div>
+                  <p className={`mt-2 text-[11px] font-semibold ${style.label}`}>{stage.label}</p>
+                  <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-[#8b97ad]">{stage.detail}</p>
+                </div>
+                {idx < pipeline.length - 1 ? <div className={`mt-4 h-[3px] flex-1 ${style.line}`} /> : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubmittedField({ label, value }) {
+  return (
+    <p>
+      <span className="block uppercase tracking-[0.08em] text-[#8b97ad]">{label}</span>
+      <span className="font-semibold text-[#102246]">{value}</span>
+    </p>
   );
 }
 

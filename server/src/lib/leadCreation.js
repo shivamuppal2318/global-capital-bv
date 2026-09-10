@@ -18,7 +18,8 @@ const TONES = ["blue", "amber", "green", "violet", "sky"];
 // auto-converted, reply-classified-INTERESTED cold contact) that shouldn't
 // start at the very bottom of the pipeline like a lead nobody has heard
 // from yet.
-export function buildLeadCreateData({ name, company, email, mobile, capitalAsk, owner, leadSource, territory, notes, rawPayload, status }) {
+export function buildLeadCreateData({ name, company, email, mobile, capitalAsk, owner, leadSource, territory, notes, rawPayload, status, doe, channelPartner }) {
+  const normalizedOwner = owner || null;
   return {
     initials: toInitials(name),
     name,
@@ -26,7 +27,7 @@ export function buildLeadCreateData({ name, company, email, mobile, capitalAsk, 
     email: email || null,
     mobile: mobile || null,
     capitalAsk: capitalAsk || "Not specified",
-    owner: owner || null,
+    owner: normalizedOwner,
     leadSource: leadSource || "Manual entry",
     territory: territory || null,
     notes: notes || null,
@@ -34,6 +35,8 @@ export function buildLeadCreateData({ name, company, email, mobile, capitalAsk, 
     qualified: false,
     tone: TONES[Math.floor(Math.random() * TONES.length)],
     engagementStage: "Initial outreach",
+    doe: doe || normalizedOwner,
+    channelPartner: channelPartner || null,
     rawPayload: rawPayload ?? {}
   };
 }

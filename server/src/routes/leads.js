@@ -2,6 +2,7 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { prisma } from "../db.js";
 import { buildLeadCreateData } from "../lib/leadCreation.js";
+import { resolveDoeForEmailLead } from "../lib/emailLeadConversion.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
 import { signStaffPreviewToken } from "../lib/staffPreviewToken.js";
 import { hashPassword } from "../lib/auth.js";
@@ -103,6 +104,19 @@ router.get("/enrich-candidates-count", blockChannelPartner, async (req, res, nex
 // reviews/saves it through the unchanged POST / below, same as any
 // other manually-entered lead. Real API credits spent, and must stay ahead
 // of GET /:id, same reasoning as enrich-candidates-count.
+function isZoomInfoExpiredSession(err) {
+  return /session has expired|valid token/i.test(err?.message ?? "");
+}
+
+async function withZoomInfoTokenRetry(credentials, operation) {
+  try {
+    return await operation(await getAccessToken(credentials));
+  } catch (err) {
+    if (!isZoomInfoExpiredSession(err)) throw err;
+    return operation(await getAccessToken(credentials));
+  }
+}
+
 router.post("/zoominfo-search", async (req, res, next) => {
   try {
     const { mode, filters, page, pageSize } = req.body ?? {};
@@ -118,10 +132,9 @@ router.post("/zoominfo-search", async (req, res, next) => {
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    const token = await getAccessToken(credentials);
     const search = mode === "companies" ? searchCompanies : searchContacts;
     const safePageSize = Math.min(Math.max(Number(pageSize) || 50, 1), 100);
-    const result = await search({ token, filters, page: page || 1, pageSize: safePageSize });
+    const result = await withZoomInfoTokenRetry(credentials, (token) => search({ token, filters, page: page || 1, pageSize: safePageSize }));
     res.json(result);
   } catch (err) {
     next(err);
@@ -148,8 +161,9 @@ router.post("/zoominfo-search/reveal-contact", async (req, res, next) => {
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    const token = await getAccessToken(credentials);
-    const attributes = await enrichContactByName({ token, fullName: `${firstName} ${lastName}`, companyName });
+    const attributes = await withZoomInfoTokenRetry(credentials, (token) =>
+      enrichContactByName({ token, fullName: `${firstName} ${lastName}`, companyName })
+    );
     res.json({ email: attributes?.email ?? null, mobilePhone: attributes?.mobilePhone ?? null });
   } catch (err) {
     next(err);
@@ -175,8 +189,7 @@ router.post("/zoominfo-search/find-company-contact", async (req, res, next) => {
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    const token = await getAccessToken(credentials);
-    const contact = await findRepresentativeContactInZoomInfo({ token, companyName });
+    const contact = await withZoomInfoTokenRetry(credentials, (token) => findRepresentativeContactInZoomInfo({ token, companyName }));
     if (!contact) {
       return res.json({ found: false });
     }
@@ -208,8 +221,9 @@ router.get("/zoominfo-search/lookup/:field", blockChannelPartner, async (req, re
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    const token = await getAccessToken(credentials);
-    const values = await (req.params.field === "countries" ? getZoomInfoCountries({ token }) : getZoomInfoStates({ token }));
+    const values = await withZoomInfoTokenRetry(credentials, (token) =>
+      req.params.field === "countries" ? getZoomInfoCountries({ token }) : getZoomInfoStates({ token })
+    );
     res.json({ values });
   } catch (err) {
     next(err);
@@ -424,6 +438,13 @@ router.post("/bulk-enrich", blockChannelPartner, async (req, res, next) => {
 // distinct value to filter on.
 const TEXT_FIELDS = ["owner", "territory", "leadSource", "industry", "channelPartner", "teamLeader", "manager", "doe", "capitalAsk"];
 
+function resolveLeadOwnerForRequest(req, submittedOwner) {
+  const trimmedOwner = typeof submittedOwner === "string" ? submittedOwner.trim() : submittedOwner;
+  if (req.channelPartner) return trimmedOwner || null;
+  if (req.user?.role === "EMPLOYEE") return req.user.name;
+  return trimmedOwner || null;
+}
+
 router.patch("/:id", async (req, res, next) => {
   try {
     const lead = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) } });
@@ -537,7 +558,7 @@ router.post("/", async (req, res, next) => {
 
     const lead = await prisma.lead.create({
       data: {
-        ...buildLeadCreateData({ name: trimmedName, company, email, mobile, capitalAsk, owner, leadSource, territory, notes }),
+        ...buildLeadCreateData({ name: trimmedName, company, email, mobile, capitalAsk, owner: resolveLeadOwnerForRequest(req, owner), leadSource, territory, notes }),
         channelPartner: req.channelPartner ? req.channelPartner.businessName : undefined
       }
     });
@@ -581,7 +602,7 @@ router.post("/bulk", async (req, res, next) => {
               mobile: mobile || null,
               company: row.company,
               capitalAsk: row.capitalAsk,
-              owner: row.owner,
+              owner: resolveLeadOwnerForRequest(req, row.owner),
               leadSource: row.leadSource || "CSV import",
               territory: row.territory
             }),
@@ -656,12 +677,14 @@ router.post("/from-email-lead/:emailLeadId", blockChannelPartner, async (req, re
       return res.status(400).json({ error: "This contact has already been converted to a CRM lead." });
     }
 
+    const doe = await resolveDoeForEmailLead(emailLead);
     const lead = await prisma.lead.create({
       data: buildLeadCreateData({
         name: emailLead.name,
         company: emailLead.company,
         email: emailLead.email,
-        owner: emailLead.owner,
+        owner: doe,
+        doe,
         leadSource: "Cold outreach reply"
       })
     });

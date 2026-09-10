@@ -195,6 +195,38 @@ function ClientDocumentsModal({ group, onOpen, onVerify, onDelete, onViewFullDat
   );
 }
 
+function DocumentAnalysisModal({ group, summary, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0f1f3d]/40 px-4 py-10" onClick={onClose}>
+      <div
+        className="w-full max-w-[980px] rounded-[22px] border border-[#d6deea] bg-white shadow-[0_20px_60px_rgba(15,31,61,0.25)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[#e7edf5] px-6 py-5">
+          <div>
+            <p className="text-[18px] font-semibold text-[#102246]">Document analysis</p>
+            <p className="mt-1 text-[13px] text-[#8592ab]">
+              {group.label} · {summary.receivedCount}/{summary.totalRequired || 0} received · {summary.remainingCount} remaining
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid size-8 shrink-0 place-items-center rounded-[10px] text-[#8592ab] transition hover:bg-[#f4f7fb] hover:text-[#102246]"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="grid max-h-[72vh] gap-4 overflow-y-auto px-6 py-5 lg:grid-cols-2">
+          <ChecklistColumn title="Received Documents" items={summary.received} empty="No required documents received yet." tone="green" />
+          <ChecklistColumn title="Remaining Documents" items={summary.remaining} empty="All required documents are received." tone="amber" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DataRoomModule() {
   const [documents, setDocuments] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -225,6 +257,7 @@ export function DataRoomModule() {
   // null means none open. Not used at all once a specific deal is already
   // selected above, since that view is already scoped to one client.
   const [viewingGroupKey, setViewingGroupKey] = useState(null);
+  const [analysisGroupKey, setAnalysisGroupKey] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -330,6 +363,7 @@ export function DataRoomModule() {
     return [...map.values()].sort((a, b) => b.docs.length - a.docs.length);
   }, [documents]);
   const viewingGroup = groupedByClient.find((g) => g.key === viewingGroupKey) ?? null;
+  const analysisGroup = groupedByClient.find((g) => g.key === analysisGroupKey) ?? null;
 
   return (
     <div className="space-y-5">
@@ -457,11 +491,9 @@ export function DataRoomModule() {
             groupedByClient.map((group) => {
               const summary = checklistSummary(group.docs);
               return (
-              <button
+              <div
                 key={group.key}
-                type="button"
-                onClick={() => setViewingGroupKey(group.key)}
-                className="flex w-full items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3 text-left hover:bg-[#f8faff]"
+                className="flex w-full flex-wrap items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3 text-left hover:bg-[#f8faff]"
               >
                 <div className="min-w-0">
                   <p className="truncate text-[14px] font-semibold text-[#102246]">{group.label}</p>
@@ -480,8 +512,17 @@ export function DataRoomModule() {
                     <p className="mt-1 text-[13px] font-semibold text-[#102246]">{summary.remainingCount}</p>
                   </div>
                 </div>
-                <span className="shrink-0 text-[13px] font-semibold text-[#3046b2]">View →</span>
-              </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <ActionButton label="Doc Analysis" icon={CheckCircleIcon} small onClick={() => setAnalysisGroupKey(group.key)} />
+                  <button
+                    type="button"
+                    onClick={() => setViewingGroupKey(group.key)}
+                    className="rounded-[12px] px-3 py-2 text-[13px] font-semibold text-[#3046b2] transition hover:bg-[#eef3ff]"
+                  >
+                    View →
+                  </button>
+                </div>
+              </div>
               );
             })
           )}
@@ -509,6 +550,14 @@ export function DataRoomModule() {
             setViewingGroupKey(null);
           }}
           onClose={() => setViewingGroupKey(null)}
+        />
+      ) : null}
+
+      {analysisGroup ? (
+        <DocumentAnalysisModal
+          group={analysisGroup}
+          summary={checklistSummary(analysisGroup.docs)}
+          onClose={() => setAnalysisGroupKey(null)}
         />
       ) : null}
     </div>

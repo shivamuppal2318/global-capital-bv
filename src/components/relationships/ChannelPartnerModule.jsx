@@ -43,6 +43,10 @@ export function ChannelPartnerModule() {
   const [calcResult, setCalcResult] = useState(null);
   const [calcBusy, setCalcBusy] = useState(false);
   const [calcError, setCalcError] = useState(null);
+  const [ledgerOpenId, setLedgerOpenId] = useState(null);
+  const [ledgerData, setLedgerData] = useState(null);
+  const [ledgerBusy, setLedgerBusy] = useState(false);
+  const [ledgerError, setLedgerError] = useState(null);
   // Real signed Channel Partner Agreement link, generated on demand per
   // partner and copied to the clipboard — see channelPartnersApi.agreementLink.
   const [agreementBusyId, setAgreementBusyId] = useState(null);
@@ -73,6 +77,26 @@ export function ChannelPartnerModule() {
 
   async function handleCopyPortalLink(url) {
     setPortalLinkCopied(await copyToClipboard(url));
+  }
+
+  async function toggleLedger(partner) {
+    if (ledgerOpenId === partner.id) {
+      setLedgerOpenId(null);
+      setLedgerData(null);
+      setLedgerError(null);
+      return;
+    }
+    setLedgerOpenId(partner.id);
+    setLedgerData(null);
+    setLedgerError(null);
+    setLedgerBusy(true);
+    try {
+      setLedgerData(await channelPartnersApi.commissionLedger(partner.id));
+    } catch (err) {
+      setLedgerError(err.message);
+    } finally {
+      setLedgerBusy(false);
+    }
   }
 
   async function openPortalAsPartner(partner) {
@@ -507,6 +531,7 @@ export function ChannelPartnerModule() {
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <ActionButton small label="Edit" onClick={() => startEdit(p)} disabled={busyId === p.id} />
                 <ActionButton small label={calcOpenId === p.id ? "Hide calculator" : "Estimate commission"} onClick={() => toggleCalculator(p.id)} />
+                <ActionButton small label={ledgerOpenId === p.id ? "Hide commission ledger" : "Commission ledger"} onClick={() => toggleLedger(p)} />
                 <ActionButton
                   small
                   label={agreementBusyId === p.id ? "Working…" : p.agreementSignedAt ? "View signed status" : "Get agreement link"}
@@ -583,6 +608,76 @@ export function ChannelPartnerModule() {
                         {calcResult.usedCustomRate ? "(this partner's custom rate)" : "(standard schedule tier)"}
                       </p>
                     )
+                  ) : null}
+                </div>
+              ) : null}
+
+              {ledgerOpenId === p.id ? (
+                <div className="mt-3 rounded-[12px] border border-[#e7edf5] bg-[#fbfcfe] p-3">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-[#5f6f89]">Commission ledger</p>
+                  {ledgerBusy ? <p className="mt-2 text-[13px] text-[#5c6b87]">Loading…</p> : null}
+                  {ledgerError ? <p className="mt-2 text-[13px] font-medium text-[#e0483f]">{ledgerError}</p> : null}
+                  {!ledgerBusy && !ledgerError && ledgerData ? (
+                    <div className="mt-3 space-y-3">
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-[12px] border border-[#dfe7f2] bg-white px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8b97ad]">Referred</p>
+                          <p className="mt-1 text-[22px] font-semibold text-[#102246]">{ledgerData.summary.referred}</p>
+                        </div>
+                        <div className="rounded-[12px] border border-[#dfe7f2] bg-white px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8b97ad]">Closed</p>
+                          <p className="mt-1 text-[22px] font-semibold text-[#102246]">{ledgerData.summary.closed}</p>
+                        </div>
+                        <div className="rounded-[12px] border border-[#dfe7f2] bg-white px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8b97ad]">Payable</p>
+                          <p className="mt-1 text-[22px] font-semibold text-[#102246]">
+                            {ledgerData.summary.payableAmount.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      {ledgerData.rows.length === 0 ? (
+                        <p className="text-[13px] text-[#8593ac]">No referred leads recorded for this partner yet.</p>
+                      ) : (
+                        <div className="overflow-x-auto rounded-[12px] border border-[#e7edf5] bg-white">
+                          <table className="min-w-[760px] w-full text-left text-[13px]">
+                            <thead className="bg-[#edf3fb] text-[11px] uppercase tracking-[0.08em] text-[#6d7c96]">
+                              <tr>
+                                <th className="px-3 py-2">Lead</th>
+                                <th className="px-3 py-2">DOE</th>
+                                <th className="px-3 py-2">Stage</th>
+                                <th className="px-3 py-2">Amount</th>
+                                <th className="px-3 py-2">Commission</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {ledgerData.rows.map((row) => (
+                                <tr key={row.leadId} className="border-t border-[#edf1f6]">
+                                  <td className="px-3 py-2">
+                                    <p className="font-semibold text-[#102246]">{row.leadName}</p>
+                                    <p className="text-[12px] text-[#7b8aa5]">{row.company}</p>
+                                  </td>
+                                  <td className="px-3 py-2 text-[#334463]">{row.doe || "Unassigned"}</td>
+                                  <td className="px-3 py-2">
+                                    <Badge tone={row.payable ? "green" : row.termSheetStatus ? "amber" : "slate"}>{row.currentStage}</Badge>
+                                  </td>
+                                  <td className="px-3 py-2 text-[#334463]">{row.amountText || "Not specified"}</td>
+                                  <td className="px-3 py-2">
+                                    {row.payable ? (
+                                      <span className="font-semibold text-[#2b9b60]">
+                                        {row.commissionAmount.toLocaleString()} ({row.commissionPct}%)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[#9aa6ba]">Not payable yet</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
                   ) : null}
                 </div>
               ) : null}

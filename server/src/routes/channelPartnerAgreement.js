@@ -188,9 +188,16 @@ channelPartnerAgreementRouter.get("/:partnerId/:token", requireValidToken, async
       <div style="border-top:1px solid #e7edf5;margin-top:28px;padding-top:20px;">
         <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#102246;">Prefer to sign by hand?</p>
         <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#8592ab;">
-          Option 2 — print or save this page as a PDF, sign it by hand, then upload the scanned/photographed copy
-          below instead of using the form above. Your portal login is still created from the details you enter here.
+          Option 2 — download the agreement, print/sign it by hand, then upload the scanned or photographed copy
+          below. Your portal login is still created from the details you enter here.
         </p>
+
+        <a
+          href="/api/channel-partner-agreement/${partner.id}/${req.params.token}/download"
+          style="display:inline-block;margin:0 0 16px;background:#eef2ff;color:#1b295f;text-decoration:none;border:1px solid #cfd8ff;border-radius:12px;padding:11px 16px;font-size:14px;font-weight:700;"
+        >
+          Download agreement form
+        </a>
 
         ${uploadError ? `<p style="background:#fdeceb;color:#e0483f;font-size:13px;font-weight:500;padding:10px 14px;border-radius:10px;margin:0 0 16px;">${escapeHtml(uploadError)}</p>` : ""}
 
@@ -222,6 +229,31 @@ channelPartnerAgreementRouter.get("/:partnerId/:token", requireValidToken, async
           </button>
         </form>
       </div>
+    `)
+  );
+}));
+
+channelPartnerAgreementRouter.get("/:partnerId/:token/download", requireValidToken, asyncHandler(async (req, res) => {
+  const partner = await prisma.channelPartner.findUnique({ where: { id: req.params.partnerId } });
+  if (!partner) {
+    return res.status(404).send(unknownRecipientNotice());
+  }
+
+  const agreementDocHtml = await channelPartnerAgreementFillFormFragment(partner);
+  const filename = `Channel-Partner-Agreement-${partner.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "form"}.html`;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(
+    pageShell(`
+      <span style="display:inline-block;background:#eef2ff;color:#3046b2;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:5px 12px;border-radius:999px;">Manual signature copy</span>
+      <h1 style="font-size:24px;font-weight:600;color:#102246;margin:14px 0 4px;letter-spacing:-0.01em;">Channel Partner Agreement</h1>
+      <p style="font-size:13px;color:#8592ab;margin:0 0 20px;">Print or save this agreement as PDF, complete the highlighted blanks, sign it, and upload the signed copy from the agreement page.</p>
+      ${agreementDocHtml}
+      <script>
+        window.addEventListener('load', function () {
+          setTimeout(function () { window.print(); }, 250);
+        });
+      </script>
     `)
   );
 }));

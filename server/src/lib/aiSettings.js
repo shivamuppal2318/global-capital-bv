@@ -37,7 +37,7 @@ export function invalidateAiConfigCache() {
 export async function getAiConfig() {
   if (cached) return cached;
 
-  const row = await prisma.aiSettings.findFirst();
+  const row = await prisma.aiSettings?.findFirst?.();
   if (row?.apiKeyEncrypted) {
     cached = {
       apiKey: decryptSecret(row.apiKeyEncrypted),
@@ -58,6 +58,7 @@ export async function getAiConfig() {
 }
 
 export async function isAiConfigured() {
+  invalidateAiConfigCache();
   return Boolean((await getAiConfig()).apiKey);
 }
 

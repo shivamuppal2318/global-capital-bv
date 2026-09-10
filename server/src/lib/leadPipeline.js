@@ -31,7 +31,7 @@ export const STAGE_LABELS = {
   OUTREACH: "Outreach",
   INTERESTED: "Interested",
   NDA: "NDA",
-  ZOOM_CALL: "Zoom Call",
+  ZOOM_CALL: "Zoom Call 1",
   DATA_ROOM: "Data Room",
   IOI: "IOI",
   ZOOM_CALL_2: "Zoom Call 2",
