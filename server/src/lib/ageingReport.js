@@ -6,11 +6,19 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // red threshold is genuinely overdue, not just "old". Matches the client's
 // KPI Framework document exactly. `navigateTo` is the sidebar nav id each
 // phase's deals actually live under, so the UI can jump straight there.
+// Zoom Call / Zoom Call 2 / Field Visit thresholds are estimated (no client
+// KPI Framework figure for these three exists yet, unlike the original
+// five) -- picked to fit the same "later stage, more slack" progression the
+// real ones already show, not pulled from any spec. Adjust freely once
+// real numbers exist.
 const PHASES = [
   { id: "OUTREACH", label: "Outreach", green: 5, amber: 10, navigateTo: "leads" },
   { id: "NDA", label: "NDA", green: 7, amber: 15, navigateTo: "nda" },
+  { id: "ZOOM_CALL", label: "Zoom Call 1", green: 7, amber: 14, navigateTo: "meetings" },
   { id: "DATA_ROOM", label: "Data Room", green: 14, amber: 30, navigateTo: "data-room" },
   { id: "IOI", label: "IOI", green: 20, amber: 40, navigateTo: "ioi" },
+  { id: "ZOOM_CALL_2", label: "Zoom Call 2", green: 10, amber: 20, navigateTo: "meetings" },
+  { id: "FIELD_VISIT", label: "Field Visit", green: 14, amber: 30, navigateTo: "field-visit" },
   { id: "TERM_SHEET", label: "Term Sheet", green: 30, amber: 60, navigateTo: "term-sheet" }
 ];
 
@@ -100,6 +108,51 @@ async function staleInterestedReplies(channelPartner) {
     .map(({ followUpCount, ...lead }) => lead);
 }
 
+// Zoom Call 1 and 2 both live on the same Meeting table, one row per real
+// call, so both phases are computed from one shared fetch/group-by-lead
+// pass rather than two separate queries. Mirrors
+// leadPipeline.js's zoomCall and clientPortalStages.js's deriveZoomStage2
+// exactly, just re-expressed as "which leads are still open" instead of
+// "what's this one lead's status" -- same rules, opposite direction.
+async function meetingAgeing(leadWhere) {
+  const meetings = await prisma.meeting.findMany({
+    where: { leadId: { not: null }, ...leadWhere },
+    select: { id: true, leadId: true, startTime: true, status: true, createdAt: true, lead: { select: { name: true, company: true, owner: true, doe: true } } },
+    orderBy: { startTime: "asc" }
+  });
+
+  const byLead = new Map();
+  for (const m of meetings) {
+    if (!byLead.has(m.leadId)) byLead.set(m.leadId, []);
+    byLead.get(m.leadId).push(m);
+  }
+
+  const openZoomCall1 = [];
+  const openZoomCall2 = [];
+  const now = Date.now();
+
+  for (const [leadId, leadMeetings] of byLead) {
+    const lead = leadMeetings[0].lead;
+    const owner = lead?.doe || lead?.owner || null;
+    const name = lead?.name ?? "Unlinked lead";
+    const company = lead?.company ?? "—";
+
+    const hasHappened = leadMeetings.some((m) => new Date(m.startTime).getTime() < now);
+    if (!hasHappened) {
+      openZoomCall1.push({ id: leadId, name, company, owner, days: daysSince(leadMeetings[0].createdAt) });
+    }
+
+    if (leadMeetings.length >= 2) {
+      const second = leadMeetings[1];
+      if (second.status === "Scheduled" && new Date(second.startTime).getTime() > now) {
+        openZoomCall2.push({ id: leadId, name, company, owner, days: daysSince(second.createdAt) });
+      }
+    }
+  }
+
+  return { openZoomCall1, openZoomCall2 };
+}
+
 // Real ageing, not fabricated, sourced from whichever table each phase
 // actually lives in today:
 //   - Outreach: EmailLead still awaiting a reply, aged from when it was added.
@@ -111,6 +164,12 @@ async function staleInterestedReplies(channelPartner) {
 //     progress) — an honest gap, not a bug.
 //   - IOI: IoiRecord (its own dedicated table), for anything not yet
 //     SIGNED/DECLINED/EXPIRED, aged from sentAt (or generatedAt if never sent).
+//   - Zoom Call 1 / 2: Meeting rows, grouped per lead (see meetingAgeing
+//     above) — 1 is open while at least one call is booked but none has
+//     happened yet; 2 is open while the chronologically-second call is
+//     still a future Scheduled one, same rules leadPipeline.js's own
+//     per-lead status already uses.
+//   - Field Visit: DealStageRecord(stage=FIELD_VISIT) still open.
 //   - Term Sheet: DealStageRecord(stage=TERM_SHEET) still open — this is
 //     the one stage that hasn't outgrown the shared table yet.
 // `channelPartner` (optional): a { id, businessName } pair -- scopes every
@@ -122,7 +181,7 @@ export async function computeAgeingReport(channelPartner = null) {
   const outreachWhere = channelPartner ? { campaign: { ownerChannelPartnerId: channelPartner.id } } : {};
   const leadWhere = channelPartner ? { lead: { channelPartner: channelPartner.businessName } } : {};
 
-  const [openOutreachLeads, openNdaRecords, dataRoomStageRecords, openIoiRecords, termSheetStageRecords, staleInterested] = await Promise.all([
+  const [openOutreachLeads, openNdaRecords, dataRoomStageRecords, openIoiRecords, fieldVisitStageRecords, termSheetStageRecords, meetingResults, staleInterested] = await Promise.all([
     prisma.emailLead.findMany({
       where: { replyType: "NO_REPLY", unsubscribed: false, bounced: false, ...outreachWhere },
       select: { id: true, name: true, company: true, owner: true, createdAt: true }
@@ -140,9 +199,14 @@ export async function computeAgeingReport(channelPartner = null) {
       select: { id: true, sentAt: true, generatedAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
     }),
     prisma.dealStageRecord.findMany({
+      where: { stage: "FIELD_VISIT", status: { in: ["NOT_STARTED", "IN_PROGRESS"] }, ...leadWhere },
+      select: { id: true, scheduledAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
+    }),
+    prisma.dealStageRecord.findMany({
       where: { stage: "TERM_SHEET", status: { in: ["NOT_STARTED", "IN_PROGRESS"] }, ...leadWhere },
       select: { id: true, scheduledAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
     }),
+    meetingAgeing(leadWhere),
     staleInterestedReplies(channelPartner)
   ]);
 
@@ -175,13 +239,22 @@ export async function computeAgeingReport(channelPartner = null) {
       owner: r.owner || null,
       days: daysSince(r.sentAt ?? r.generatedAt ?? r.createdAt)
     })),
+    FIELD_VISIT: fieldVisitStageRecords.map((r) => ({
+      id: r.id,
+      name: r.lead?.name ?? "Unlinked lead",
+      company: r.lead?.company ?? "—",
+      owner: r.owner || null,
+      days: daysSince(r.scheduledAt ?? r.createdAt)
+    })),
     TERM_SHEET: termSheetStageRecords.map((r) => ({
       id: r.id,
       name: r.lead?.name ?? "Unlinked lead",
       company: r.lead?.company ?? "—",
       owner: r.owner || null,
       days: daysSince(r.scheduledAt ?? r.createdAt)
-    }))
+    })),
+    ZOOM_CALL: meetingResults.openZoomCall1,
+    ZOOM_CALL_2: meetingResults.openZoomCall2
   };
 
   const overdueByOwner = new Map();

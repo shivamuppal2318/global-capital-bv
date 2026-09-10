@@ -7,11 +7,11 @@ const statusTone = { green: "green", amber: "amber", red: "red" };
 const statusLabel = { green: "Green", amber: "Amber", red: "Red" };
 const statusDot = { green: "bg-[#2b9b60]", amber: "bg-[#f29b3a]", red: "bg-[#e0483f]" };
 
-// SLA-based ageing across the deal pipeline — Outreach is aged from an
-// EmailLead still awaiting a reply; NDA/Data Room/IOI/Term Sheet are aged
-// from their DealStageRecord for whichever deals are still open in that
-// stage (a completed or declined record has stopped ageing). See
-// server/src/lib/ageingReport.js for the exact thresholds and query.
+// SLA-based ageing across the full deal pipeline (Outreach through Term
+// Sheet, Zoom Calls and Field Visit included) — fully driven by
+// data.phases below, nothing about which phases exist is hardcoded here.
+// See server/src/lib/ageingReport.js for what each phase is actually aged
+// from and the exact thresholds.
 export function AgeingReportModule({ onNavigate }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
