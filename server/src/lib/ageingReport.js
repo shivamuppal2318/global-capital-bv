@@ -7,7 +7,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // KPI Framework document exactly. `navigateTo` is the sidebar nav id each
 // phase's deals actually live under, so the UI can jump straight there.
 const PHASES = [
-  { id: "OUTREACH", label: "Outreach", green: 5, amber: 10, navigateTo: "cold-bulk-mailing" },
+  { id: "OUTREACH", label: "Outreach", green: 5, amber: 10, navigateTo: "leads" },
   { id: "NDA", label: "NDA", green: 7, amber: 15, navigateTo: "nda" },
   { id: "DATA_ROOM", label: "Data Room", green: 14, amber: 30, navigateTo: "data-room" },
   { id: "IOI", label: "IOI", green: 20, amber: 40, navigateTo: "ioi" },
