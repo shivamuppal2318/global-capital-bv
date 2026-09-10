@@ -14,7 +14,7 @@ export const DEAL_STAGES = [
   },
   {
     id: "ZOOM_CALL",
-    label: "Zoom Call",
+    label: "Zoom Call 1",
     module: "meetings",
     blurb: "Intro and follow-up calls with the counterparty."
   },

@@ -15,6 +15,7 @@ import { universalFiltersApi } from "../../lib/universalFiltersApi";
 import { parseCrmLeadsCsv } from "../../lib/csvCrmLeads";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi";
 import { emailLeadsApi } from "../../lib/emailLeadsApi";
+import { useOptionalAuth } from "../../context/AuthContext";
 
 const avatarToneClass = {
   blue: "bg-[#dff1ff] text-[#2f96da]",
@@ -529,6 +530,8 @@ function ReportsList({ loading, reports }) {
 }
 
 export function CrmWorkspaceModule({ partnerMode = false } = {}) {
+  const auth = useOptionalAuth();
+  const zoomInfoOwner = auth?.user?.role === "EMPLOYEE" ? auth.user.name : "Unassigned";
   const [leads, setLeads] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -603,13 +606,13 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // lead creation) so every API credit spent is a rep's explicit choice.
   const [enriching, setEnriching] = useState(false);
   const [enrichResult, setEnrichResult] = useState(null);
-  // "Find Companies (ZoomInfo)" — real prospecting search (not enrich: no
+  // "Find Contacts (ZoomInfo)" — real prospecting search (not enrich: no
   // existing lead needed), see server/src/lib/zoominfoClient.js's
   // searchCompanies/searchContacts. Search itself is explicit (a "Search"
   // click, real API credits). Results can be sent straight into Email
   // Automation lists, but they no longer pre-fill CRM Lead creation here.
   const [zoomInfoPanelOpen, setZoomInfoPanelOpen] = useState(false);
-  const [zoomInfoMode, setZoomInfoMode] = useState("companies");
+  const [zoomInfoMode, setZoomInfoMode] = useState("contacts");
   const [zoomInfoCompanyFilters, setZoomInfoCompanyFilters] = useState({
     companyName: "", industryKeywords: "", employeeRangeMin: "", employeeRangeMax: "",
     revenueMin: "", revenueMax: "", state: "", country: ""
@@ -817,26 +820,36 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       let skipped = 0;
       for (const result of selectedResults) {
         if (zoomInfoMode === "companies") {
-          const company = result.name ?? "";
-          const contact = await leadsApi.zoomInfoFindCompanyContact(company);
-          if (!contact.found || !contact.email) {
+          try {
+            const company = result.name ?? "";
+            const contact = await leadsApi.zoomInfoFindCompanyContact(company);
+            if (!contact.found || !contact.email) {
+              skipped += 1;
+              continue;
+            }
+            rows.push({ name: contact.name || "Unknown contact", company, email: contact.email, owner: zoomInfoOwner });
+          } catch {
             skipped += 1;
             continue;
           }
-          rows.push({ name: contact.name || "Unknown contact", company, email: contact.email, owner: "Unassigned" });
         } else {
-          const name = [result.firstName, result.lastName].filter(Boolean).join(" ") || "Unknown contact";
-          const company = result.company?.name ?? "";
-          if (!result.hasEmail) {
+          try {
+            const name = [result.firstName, result.lastName].filter(Boolean).join(" ") || "Unknown contact";
+            const company = result.company?.name ?? "";
+            if (!result.hasEmail) {
+              skipped += 1;
+              continue;
+            }
+            const revealed = await leadsApi.zoomInfoRevealContact({ firstName: result.firstName, lastName: result.lastName, companyName: company });
+            if (!revealed.email) {
+              skipped += 1;
+              continue;
+            }
+            rows.push({ name, company, email: revealed.email, owner: zoomInfoOwner });
+          } catch {
             skipped += 1;
             continue;
           }
-          const revealed = await leadsApi.zoomInfoRevealContact({ firstName: result.firstName, lastName: result.lastName, companyName: company });
-          if (!revealed.email) {
-            skipped += 1;
-            continue;
-          }
-          rows.push({ name, company, email: revealed.email, owner: "Unassigned" });
         }
       }
 
@@ -896,7 +909,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       const listName = zoomInfoAddToListCampaigns.find((c) => c.id === zoomInfoAddToListCampaignId)?.name ?? "the list";
       const bulkResult = await emailLeadsApi.bulkCreate(
         zoomInfoAddToListCampaignId,
-        [{ name, company, email, owner: "Unassigned" }],
+        [{ name, company, email, owner: zoomInfoOwner }],
         { skipCadence: true, source: "ZoomInfo" }
       );
 
@@ -1249,11 +1262,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
         ["Engagement Stage", selectedLead.engagementStage ?? "—"],
         ["Industry", selectedLead.industry ?? "—"],
         ["Channel Partner", selectedLead.channelPartner ?? "—"],
-        ["Hot / Warm / Cold", selectedLead.temperature ?? "Not rated"],
-        ["Team Leader", selectedLead.teamLeader ?? "—"],
-        ["Manager", selectedLead.manager ?? "—"],
-        ["DOE (Deal Originator Executive)", selectedLead.doe ?? "—"],
-        ["Consent (GDPR)", selectedLead.consentGdpr ?? "—"]
+        ["DOE (Deal Originator Executive)", selectedLead.doe ?? "—"]
       ]
     : [];
 
@@ -1359,7 +1368,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                 ))}
               </select>
               <ActionButton
-                label="Find Companies (ZoomInfo)"
+                label="Find Contacts (ZoomInfo)"
                 icon={GlobeIcon}
                 small
                 active={zoomInfoPanelOpen}
@@ -1716,42 +1725,35 @@ function ZoomInfoSearchPanel({
   }
 
   return (
-    <div className="rounded-[18px] border border-[#d6deea] bg-[#fbfcff] px-4 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-[12px] bg-[#eef3ff] text-[#3046b2]">
-            <GlobeIcon className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#5f6f89]">
-              {mode === "contacts" ? "Find Contacts (ZoomInfo)" : "Find Companies (ZoomInfo)"}
-            </p>
-            <p className="mt-1 text-[13px] leading-5 text-[#6a7790]">
-              Live ZoomInfo lookup. Select records on this page and add them straight into an Email Automation list.
-            </p>
-          </div>
+    <div className="border-t border-[#edf1f6] pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#5f6f89]">Find {mode === "contacts" ? "Contacts" : "Companies"} (ZoomInfo)</p>
+          <p className="mt-1 text-[13px] text-[#6a7790]">
+            Live ZoomInfo lookup. Add selected records straight into an Email Automation list.
+          </p>
         </div>
 
-        <div className="flex shrink-0 gap-1 rounded-[12px] bg-[#eef2f8] p-1">
-        <button
-          type="button"
-          onClick={() => setMode("companies")}
-          className={`rounded-[10px] px-4 py-2 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_2px_8px_rgba(30,48,87,0.12)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
-        >
-          Companies
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("contacts")}
-          className={`rounded-[10px] px-4 py-2 text-[13px] font-semibold transition ${mode === "contacts" ? "bg-white text-[#102246] shadow-[0_2px_8px_rgba(30,48,87,0.12)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
-        >
-          Contacts
-        </button>
+        <div className="flex gap-1 rounded-[10px] bg-[#edf2f8] p-1">
+          <button
+            type="button"
+            onClick={() => setMode("contacts")}
+            className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "contacts" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
+          >
+            Contacts
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("companies")}
+            className={`rounded-[8px] px-4 py-1.5 text-[13px] font-semibold transition ${mode === "companies" ? "bg-white text-[#102246] shadow-[0_1px_4px_rgba(30,48,87,0.12)]" : "text-[#5f6f89] hover:text-[#102246]"}`}
+          >
+            Companies
+          </button>
         </div>
       </div>
 
       {mode === "companies" ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <EditField label="Company Name" value={companyFilters.companyName} onChange={(v) => setCompanyFilters((c) => ({ ...c, companyName: v }))} placeholder="e.g. Salesforce" />
           <EditField label="Industry" value={companyFilters.industryKeywords} onChange={(v) => setCompanyFilters((c) => ({ ...c, industryKeywords: v }))} placeholder="e.g. Software" />
           <EditField label="Employees min" value={companyFilters.employeeRangeMin} onChange={(v) => setCompanyFilters((c) => ({ ...c, employeeRangeMin: v }))} placeholder="e.g. 50" />
@@ -1763,7 +1765,7 @@ function ZoomInfoSearchPanel({
         </div>
       ) : (
         <div className="mt-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <EditField label="Job Title" value={contactFilters.jobTitle} onChange={(v) => setContactFilters((c) => ({ ...c, jobTitle: v }))} placeholder="e.g. Chief Executive Officer" />
             <EditField label="Industry" value={contactFilters.industryKeywords} onChange={(v) => setContactFilters((c) => ({ ...c, industryKeywords: v }))} placeholder="e.g. Software" />
             <EditField label="Company Name" value={contactFilters.companyName} onChange={(v) => setContactFilters((c) => ({ ...c, companyName: v }))} placeholder="e.g. Salesforce" />
@@ -1787,7 +1789,7 @@ function ZoomInfoSearchPanel({
                         managementLevel: checked ? c.managementLevel.filter((l) => l !== level) : [...c.managementLevel, level]
                       }))
                     }
-                    className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${checked ? "bg-[#3046b2] text-white" : "border border-[#d6deea] bg-white text-[#4f6181] hover:bg-[#f4f7fb]"}`}
+                    className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${checked ? "bg-[#3046b2] text-white shadow-[0_4px_12px_rgba(48,70,178,0.22)]" : "border border-[#d6deea] bg-white text-[#4f6181] hover:border-[#b8c5dd] hover:bg-[#f4f7fb]"}`}
                   >
                     {level}
                   </button>
@@ -1798,16 +1800,16 @@ function ZoomInfoSearchPanel({
         </div>
       )}
 
-      <div className="mt-4 flex items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <ActionButton label={searching ? "Searching…" : "Search"} icon={GlobeIcon} primary onClick={() => onSearch(1)} disabled={searching} />
-        {totalResults > 0 ? <p className="text-[13px] text-[#8592ab]">{totalResults.toLocaleString()} real match(es) on ZoomInfo</p> : null}
+        {totalResults > 0 ? <span className="rounded-full bg-[#eef3ff] px-3 py-1.5 text-[12px] font-semibold text-[#3046b2]">{totalResults.toLocaleString()} real match(es)</span> : null}
       </div>
 
       {error ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
 
       {results.length > 0 ? (
         <div className="mt-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#d6deea] bg-white px-4 py-3 shadow-[0_8px_24px_rgba(16,34,70,0.05)]">
             <label className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#435471]">
               <input
                 type="checkbox"
@@ -1929,9 +1931,9 @@ function ZoomInfoSearchPanel({
           </div>
         </div>
       ) : !searching && !error && hasSearched ? (
-        <p className="mt-4 text-[13px] text-[#9aa6ba]">No matches on ZoomInfo for these filters — try broadening them.</p>
+        <p className="mt-4 rounded-[12px] border border-dashed border-[#d6deea] bg-white px-4 py-3 text-[13px] text-[#9aa6ba]">No matches on ZoomInfo for these filters — try broadening them.</p>
       ) : !searching && !error ? (
-        <p className="mt-4 text-[13px] text-[#9aa6ba]">No search run yet — set some filters above and click Search.</p>
+        <p className="mt-4 rounded-[12px] border border-dashed border-[#d6deea] bg-white px-4 py-3 text-[13px] text-[#9aa6ba]">No search run yet — set some filters above and click Search.</p>
       ) : null}
     </div>
   );

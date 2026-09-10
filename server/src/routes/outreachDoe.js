@@ -23,21 +23,30 @@ const TARGETS = {
 outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
   const emailLeadWhere = req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {};
   const crmLeadWhere = req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {};
-  const leads = await prisma.emailLead.findMany({ where: emailLeadWhere, select: { owner: true, country: true } });
+  const leads = await prisma.emailLead.findMany({ where: emailLeadWhere, select: { owner: true, country: true, source: true } });
 
   // A Channel Partner's own DOE list is just the real owners already on
-  // their own referred EmailLeads. Staff sees real employees only (Admin
+  // their own referred EmailLeads. An ADMIN sees every real employee (Admin
   // Panel -> Employees) -- EmailLead.owner is free text (CSV imports, "Add
   // to List", the inbound webhook can all set it to anything, including
   // leftover demo/seed values) and an ADMIN account is a login role, not a
-  // deal originator, so neither belongs in this dropdown.
-  const does = req.channelPartner
-    ? [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort()
-    : [...new Set((await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } })).map((e) => e.name))].sort();
+  // deal originator, so neither belongs in this dropdown. A non-admin
+  // EMPLOYEE only ever gets their own name here -- this screen shows real
+  // per-rep performance, and one rep browsing a colleague's numbers through
+  // the DOE picker is exactly the leak this locks down.
+  let does;
+  if (req.channelPartner) {
+    does = [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort();
+  } else if (req.user.role === "ADMIN") {
+    does = [...new Set((await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } })).map((e) => e.name))].sort();
+  } else {
+    does = [req.user.name];
+  }
 
   res.json({
     does,
     geographies: [...new Set(leads.map((l) => l.country).filter(Boolean))].sort(),
+    leadSources: [...new Set(leads.map((l) => l.source).filter(Boolean))].sort(),
     // Real CRM Lead attributes (see the "/" handler's convertedLeadById
     // note), same fixed option lists Universal Filters already uses —
     // one source of truth for what "Industry" etc. even mean.
@@ -48,12 +57,16 @@ outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
 }));
 
 outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
-  const { doe, geography, dateFrom, dateTo, industry, ticketSizeBand, temperature } = req.query;
+  const { geography, dateFrom, dateTo, industry, ticketSizeBand, temperature, leadSource } = req.query;
+  // Same restriction as /facets, enforced here too so it can't be bypassed
+  // by calling this route directly with a different ?doe= -- a non-admin
+  // EMPLOYEE's own name always wins over whatever was actually sent.
+  const doe = !req.channelPartner && req.user.role !== "ADMIN" ? req.user.name : req.query.doe;
 
   const [allLeads, allActivity, agents, allMeetings] = await Promise.all([
     prisma.emailLead.findMany({
       where: req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {},
-      select: { id: true, owner: true, country: true, replyType: true, callBookedAt: true, createdAt: true, convertedToLeadId: true }
+      select: { id: true, owner: true, country: true, source: true, replyType: true, callBookedAt: true, createdAt: true, convertedToLeadId: true }
     }),
     prisma.emailActivityLog.findMany({ select: { leadId: true, kind: true, createdAt: true } }),
     prisma.agent.findMany({ select: { assignedCount: true, resolvedCount: true } }),
@@ -78,6 +91,7 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   const leads = allLeads.filter((l) => {
     if (doe && l.owner !== doe) return false;
     if (geography && l.country !== geography) return false;
+    if (leadSource && l.source !== leadSource) return false;
     if (dateFrom && l.createdAt < new Date(dateFrom)) return false;
     if (dateTo && l.createdAt > new Date(dateTo)) return false;
 
@@ -94,17 +108,10 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   const activity = allActivity.filter((a) => leadIds.has(a.leadId));
 
   const top = outreachMetrics(leads);
-  // The per-row breakdown only makes sense for real people -- EmailLead.owner
-  // is free text (see /facets' own comment above), so grouping by every
-  // distinct value here would give a "DOE" row to leftover demo/seed owner
-  // names that were never a real employee. overall (the "All DOEs" combined
-  // total) below is intentionally still computed over every real lead
-  // regardless of owner, since that total is meant to be everyone's
-  // combined activity, not just the named employees'.
-  const employeeNames = new Set(
-    (await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } })).map((e) => e.name)
-  );
-  const scorecard = doeScorecard(leads.filter((l) => employeeNames.has(l.owner)), activity);
+  // The compression table should reflect the real owners recorded on the
+  // outreach rows, including historical/imported owner names. Filtering this
+  // down to currently-active employee accounts can hide valid campaign data.
+  const scorecard = doeScorecard(leads, activity);
   const overall = doeOverallMetrics(leads, activity);
   const callsBooked = leads.filter((l) => l.callBookedAt).length;
 

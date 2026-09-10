@@ -1,6 +1,25 @@
 import { prisma } from "./prisma.js";
 import { buildLeadCreateData } from "./leadCreation.js";
 
+export async function resolveDoeForEmailLead(emailLead) {
+  const [campaign, employeeOwner] = await Promise.all([
+    prisma.emailCampaign.findUnique({
+      where: { id: emailLead.campaignId },
+      select: {
+        owner: { select: { name: true } },
+        ownerChannelPartner: { select: { name: true } }
+      }
+    }),
+    emailLead.owner
+      ? prisma.user.findFirst({
+          where: { name: emailLead.owner, role: "EMPLOYEE", status: "ACTIVE" },
+          select: { name: true }
+        })
+      : null
+  ]);
+  return campaign?.owner?.name || employeeOwner?.name || null;
+}
+
 // Auto-tracks a cold-outreach EmailLead in CRM Workspace the moment their
 // reply is classified INTERESTED (see replyRecorder.js) — so a rep sees it
 // in the pipeline without having to notice the reply and click "Convert to
@@ -15,13 +34,15 @@ export async function autoTrackInterestedEmailLead(emailLead) {
   if (emailLead.convertedToLeadId) {
     return null;
   }
+  const doe = await resolveDoeForEmailLead(emailLead);
 
   const lead = await prisma.lead.create({
     data: buildLeadCreateData({
       name: emailLead.name,
       company: emailLead.company,
       email: emailLead.email,
-      owner: emailLead.owner,
+      owner: doe,
+      doe,
       leadSource: "Cold outreach reply (interested)",
       status: "INTERESTED"
     })

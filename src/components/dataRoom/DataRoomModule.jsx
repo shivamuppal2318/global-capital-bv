@@ -195,7 +195,7 @@ function ClientDocumentsModal({ group, onOpen, onVerify, onDelete, onViewFullDat
   );
 }
 
-function ClientChecklistModal({ group, summary, onClose }) {
+function DocumentAnalysisModal({ group, summary, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0f1f3d]/40 px-4 py-10" onClick={onClose}>
       <div
@@ -204,9 +204,9 @@ function ClientChecklistModal({ group, summary, onClose }) {
       >
         <div className="flex items-start justify-between gap-4 border-b border-[#e7edf5] px-6 py-5">
           <div>
-            <p className="text-[18px] font-semibold text-[#102246]">Document analysis - {group.label}</p>
+            <p className="text-[18px] font-semibold text-[#102246]">Document analysis</p>
             <p className="mt-1 text-[13px] text-[#8592ab]">
-              Same required-document criteria the client portal uses.
+              {group.label} · {summary.receivedCount}/{summary.totalRequired || 0} received · {summary.remainingCount} remaining
             </p>
           </div>
           <button
@@ -218,20 +218,9 @@ function ClientChecklistModal({ group, summary, onClose }) {
             ✕
           </button>
         </div>
-
-        <div className="grid gap-4 px-6 py-5 lg:grid-cols-2">
-          <ChecklistColumn
-            title="Received Documents"
-            items={summary.received}
-            empty="No required documents received yet."
-            tone="green"
-          />
-          <ChecklistColumn
-            title="Remaining Documents"
-            items={summary.remaining}
-            empty="All required documents are received."
-            tone="amber"
-          />
+        <div className="grid max-h-[72vh] gap-4 overflow-y-auto px-6 py-5 lg:grid-cols-2">
+          <ChecklistColumn title="Received Documents" items={summary.received} empty="No required documents received yet." tone="green" />
+          <ChecklistColumn title="Remaining Documents" items={summary.remaining} empty="All required documents are received." tone="amber" />
         </div>
       </div>
     </div>
@@ -504,7 +493,7 @@ export function DataRoomModule() {
               return (
               <div
                 key={group.key}
-                className="flex w-full items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3 text-left hover:bg-[#f8faff]"
+                className="flex w-full flex-wrap items-center justify-between gap-4 rounded-[14px] border border-[#e7edf5] px-4 py-3 text-left hover:bg-[#f8faff]"
               >
                 <div className="min-w-0">
                   <p className="truncate text-[14px] font-semibold text-[#102246]">{group.label}</p>
@@ -524,7 +513,7 @@ export function DataRoomModule() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <ActionButton label="Doc analysis" small onClick={() => setAnalysisGroupKey(group.key)} />
+                  <ActionButton label="Doc Analysis" icon={CheckCircleIcon} small onClick={() => setAnalysisGroupKey(group.key)} />
                   <button
                     type="button"
                     onClick={() => setViewingGroupKey(group.key)}
@@ -565,7 +554,7 @@ export function DataRoomModule() {
       ) : null}
 
       {analysisGroup ? (
-        <ClientChecklistModal
+        <DocumentAnalysisModal
           group={analysisGroup}
           summary={checklistSummary(analysisGroup.docs)}
           onClose={() => setAnalysisGroupKey(null)}

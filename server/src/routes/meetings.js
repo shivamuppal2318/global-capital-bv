@@ -5,7 +5,7 @@ import { callMetrics } from "../lib/relationshipMetrics.js";
 import { getAnthropicClient, getAnthropicModel } from "../lib/anthropic.js";
 import { sendSystemEmail, zoomMeetingInviteEmail } from "../lib/systemMailer.js";
 import { processMeetingRecording } from "../lib/zoomTranscriptProcessor.js";
-import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { relatedLeadOwnerWhereClause, relatedLeadEmployeeOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 const router = Router();
 
@@ -41,7 +41,7 @@ function callNumbersByLead(meetings) {
 router.get("/", async (req, res, next) => {
   try {
     const meetings = await prisma.meeting.findMany({
-      where: { ...relatedLeadOwnerWhereClause(req) },
+      where: { ...relatedLeadOwnerWhereClause(req), ...relatedLeadEmployeeOwnerWhereClause(req) },
       include: { lead: true },
       orderBy: { startTime: "desc" }
     });
@@ -169,7 +169,7 @@ const TEXT_FIELDS = ["clientAttendees", "ourAttendees", "notes", "nextAction", "
 
 router.patch("/:id", async (req, res, next) => {
   try {
-    const meeting = await prisma.meeting.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) } });
+    const meeting = await prisma.meeting.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...relatedLeadEmployeeOwnerWhereClause(req) } });
     if (!meeting) return res.status(404).json({ error: "Meeting not found" });
 
     // Previously this only ever wrote `status` and silently discarded
@@ -202,7 +202,7 @@ router.patch("/:id", async (req, res, next) => {
 
 router.get("/metrics", async (req, res, next) => {
   try {
-    res.json(callMetrics(await prisma.meeting.findMany({ where: relatedLeadOwnerWhereClause(req) })));
+    res.json(callMetrics(await prisma.meeting.findMany({ where: { ...relatedLeadOwnerWhereClause(req), ...relatedLeadEmployeeOwnerWhereClause(req) } })));
   } catch (err) {
     next(err);
   }

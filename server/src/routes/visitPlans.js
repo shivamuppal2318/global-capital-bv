@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { visitMetrics } from "../lib/relationshipMetrics.js";
-import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { relatedLeadOwnerWhereClause, employeeOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { generateStageReport, visitReportFacts } from "../lib/stageCompletionReports.js";
 
 export const visitPlansRouter = Router();
@@ -20,6 +20,7 @@ visitPlansRouter.get("/", asyncHandler(async (req, res) => {
   const plans = await prisma.visitPlan.findMany({
     where: {
       ...relatedLeadOwnerWhereClause(req),
+      ...employeeOwnerWhereClause(req),
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(region && region !== "All" ? { region: String(region) } : {}),
       ...(leadId ? { leadId: String(leadId) } : {}),
@@ -42,7 +43,7 @@ visitPlansRouter.get("/", asyncHandler(async (req, res) => {
 }));
 
 visitPlansRouter.get("/metrics", asyncHandler(async (req, res) => {
-  res.json(visitMetrics(await prisma.visitPlan.findMany({ where: relatedLeadOwnerWhereClause(req) })));
+  res.json(visitMetrics(await prisma.visitPlan.findMany({ where: { ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) } })));
 }));
 
 // Visits grouped by month then day, for the calendar view. Done server-side
@@ -142,7 +143,7 @@ visitPlansRouter.patch("/:id", asyncHandler(async (req, res) => {
   const parsed = upsertSchema.partial({ leadId: true }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-  const before = await prisma.visitPlan.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) }, select: { status: true } });
+  const before = await prisma.visitPlan.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) }, select: { status: true } });
   if (!before) return res.status(404).json({ error: "Visit plan not found" });
 
   const { leadId, ...rest } = parsed.data;
@@ -168,7 +169,7 @@ visitPlansRouter.patch("/:id", asyncHandler(async (req, res) => {
 }));
 
 visitPlansRouter.delete("/:id", asyncHandler(async (req, res) => {
-  const existing = await prisma.visitPlan.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) }, select: { id: true } });
+  const existing = await prisma.visitPlan.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) }, select: { id: true } });
   if (!existing) return res.status(404).json({ error: "Visit plan not found" });
   const deleted = await prisma.visitPlan.delete({ where: { id: req.params.id } }).catch(() => null);
   if (!deleted) return res.status(404).json({ error: "Visit plan not found" });

@@ -10,7 +10,7 @@ import { classifyDocumentCategory, runGapCheck } from "../lib/documentClassifier
 import { recordAudit } from "../lib/auditLog.js";
 import { uploadDataRoomDocument, UPLOAD_DIR, MAX_FILE_BYTES, UnsupportedFileTypeError } from "../lib/fileUpload.js";
 import { generateStageReport, dataRoomReportFacts } from "../lib/stageCompletionReports.js";
-import { relatedLeadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { relatedLeadOwnerWhereClause, documentEmployeeOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const documentsRouter = Router();
 
@@ -56,18 +56,24 @@ documentsRouter.get("/", asyncHandler(async (req, res) => {
   const { category, q, leadId } = req.query;
   const docs = await prisma.document.findMany({
     where: {
-      ...relatedLeadOwnerWhereClause(req),
-      ...(leadId ? { leadId: String(leadId) } : {}),
-      ...(category && category !== "All" ? { category } : {}),
-      ...(q
-        ? {
-            OR: [
-              { originalName: { contains: String(q), mode: "insensitive" } },
-              { description: { contains: String(q), mode: "insensitive" } },
-              { extractedText: { contains: String(q), mode: "insensitive" } }
-            ]
-          }
-        : {})
+      // AND-array, not spread -- documentEmployeeOwnerWhereClause and the
+      // search filter below each need their own OR key, and spreading two
+      // OR-bearing objects into one where clause would silently drop one.
+      AND: [
+        relatedLeadOwnerWhereClause(req),
+        documentEmployeeOwnerWhereClause(req),
+        leadId ? { leadId: String(leadId) } : {},
+        category && category !== "All" ? { category } : {},
+        q
+          ? {
+              OR: [
+                { originalName: { contains: String(q), mode: "insensitive" } },
+                { description: { contains: String(q), mode: "insensitive" } },
+                { extractedText: { contains: String(q), mode: "insensitive" } }
+              ]
+            }
+          : {}
+      ]
     },
     include: {
       uploadedBy: { select: { id: true, name: true } },
@@ -83,7 +89,7 @@ documentsRouter.get("/categories", asyncHandler(async (req, res) => {
   const { leadId } = req.query;
   const grouped = await prisma.document.groupBy({
     by: ["category"],
-    where: { ...relatedLeadOwnerWhereClause(req), ...(leadId ? { leadId: String(leadId) } : {}) },
+    where: { ...relatedLeadOwnerWhereClause(req), ...documentEmployeeOwnerWhereClause(req), ...(leadId ? { leadId: String(leadId) } : {}) },
     _count: { category: true }
   });
   res.json(grouped.map((g) => ({ category: g.category, count: g._count.category })).sort((a, b) => a.category.localeCompare(b.category)));
@@ -101,7 +107,7 @@ documentsRouter.get("/required-documents", (_req, res) => res.json(REQUIRED_DOCU
 documentsRouter.get("/kpis", asyncHandler(async (req, res) => {
   const { leadId } = req.query;
   const docs = await prisma.document.findMany({
-    where: { ...relatedLeadOwnerWhereClause(req), category: { in: REQUIRED_DOCUMENT_LABELS }, ...(leadId ? { leadId: String(leadId) } : {}) },
+    where: { ...relatedLeadOwnerWhereClause(req), ...documentEmployeeOwnerWhereClause(req), category: { in: REQUIRED_DOCUMENT_LABELS }, ...(leadId ? { leadId: String(leadId) } : {}) },
     select: { category: true, verified: true }
   });
 
@@ -222,7 +228,7 @@ documentsRouter.post("/gap-check", blockChannelPartner, asyncHandler(async (req,
 }));
 
 documentsRouter.get("/:id/download", asyncHandler(async (req, res) => {
-  const doc = await prisma.document.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) } });
+  const doc = await prisma.document.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...documentEmployeeOwnerWhereClause(req) } });
   if (!doc) return res.status(404).json({ error: "Document not found" });
 
   const filePath = path.join(UPLOAD_DIR, doc.storedName);
@@ -250,7 +256,7 @@ documentsRouter.get("/:id/download", asyncHandler(async (req, res) => {
 // text extraction in documentText.js) to convert the real document content
 // to HTML, rather than adding a second parsing path.
 documentsRouter.get("/:id/preview", asyncHandler(async (req, res) => {
-  const doc = await prisma.document.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req) } });
+  const doc = await prisma.document.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...documentEmployeeOwnerWhereClause(req) } });
   if (!doc) return res.status(404).json({ error: "Document not found" });
 
   const ext = doc.originalName.toLowerCase().split(".").pop();

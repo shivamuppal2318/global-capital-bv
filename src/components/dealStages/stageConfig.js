@@ -48,8 +48,9 @@ export const STAGE_CONFIG = {
     // "PLANNED" status — just restricted to these two here, everywhere
     // this stage shows status, and relabeled so it reads naturally.
     statuses: ["NOT_STARTED", "COMPLETED"],
-    statusLabels: { NOT_STARTED: "Planned" },
-    plannedNote: "Not yet visited"
+    statusLabels: { NOT_STARTED: "Field Visit Planned", COMPLETED: "Visit Completed" },
+    plannedNote: "Visit planned",
+    completedNote: "Visit completed"
   },
   TERM_SHEET: {
     label: "Term Sheet",

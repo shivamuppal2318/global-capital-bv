@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { EyeIcon, EyeOffIcon } from "./Icons";
+
 export const noteToneClass = {
   blue: "bg-[#eef1ff] text-[#4766cc]",
   cyan: "bg-[#dff3fb] text-[#1192cb]",
@@ -142,6 +145,37 @@ export function ProgressBar({ width, tone = "bg-[#3046b2]" }) {
   return (
     <div className="h-2 rounded-full bg-[#e8edf5]">
       <div className={`h-2 rounded-full ${tone}`} style={{ width }} />
+    </div>
+  );
+}
+
+// A password <input> with a show/hide eye toggle — shared by every login,
+// reset-password and credential form in the app (staff, Channel Partner,
+// Admin Panel integrations, mailbox settings) so the toggle only needs to
+// be built once. `className` should be the same input styling the caller
+// would otherwise put directly on the <input>; the toggle button is
+// absolutely positioned over its right edge, so the input gets extra
+// right padding to keep typed text from running under it.
+export function PasswordInput({ className = "", value, onChange, ...rest }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        type={visible ? "text" : "password"}
+        className={`${className} pr-11`}
+        value={value}
+        onChange={onChange}
+        {...rest}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? "Hide password" : "Show password"}
+        className="absolute inset-y-0 right-0 flex items-center px-3.5 text-[#8592ab] hover:text-[#5f6f89]"
+      >
+        {visible ? <EyeOffIcon className="size-[18px]" /> : <EyeIcon className="size-[18px]" />}
+      </button>
     </div>
   );
 }

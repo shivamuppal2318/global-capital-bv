@@ -16,6 +16,33 @@ export const channelPartnersRouter = Router();
 
 const STATUSES = ["ACTIVE", "INACTIVE", "PROSPECTIVE"];
 
+function parseMoneyAmount(value) {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw || raw === "Not specified") return null;
+  const lower = raw.toLowerCase();
+  const match = lower.replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  let amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return null;
+  if (/\b(bn|billion|b)\b/.test(lower)) amount *= 1_000_000_000;
+  else if (/\b(mn|million|m)\b/.test(lower)) amount *= 1_000_000;
+  else if (/\b(k|thousand)\b/.test(lower)) amount *= 1_000;
+  return amount;
+}
+
+function currentStageForLead({ termSheet, ioi, nda, meetings, documents }) {
+  if (termSheet?.status === "COMPLETED") return "Term Sheet Closed";
+  if (termSheet) return "Term Sheet";
+  if (ioi?.status === "SIGNED") return "IOI Signed";
+  if (ioi) return "IOI";
+  if (documents > 0) return "Data Room";
+  if (meetings > 0) return "Zoom Call";
+  if (nda?.status === "SIGNED") return "NDA Signed";
+  if (nda) return "NDA";
+  return "Referred";
+}
+
 // Matched to leads by name (see schema.prisma comment on the model for why
 // this isn't a foreign key) — real counts, computed fresh on every request
 // rather than a stored/denormalised total that could drift. Also where
@@ -96,6 +123,76 @@ channelPartnersRouter.get("/:id/estimate-commission", asyncHandler(async (req, r
 
   const result = computeChannelPartnerCommission(borrowingAmount, partner.commissionPct);
   res.json({ borrowingAmount, ...result });
+}));
+
+channelPartnersRouter.get("/:id/commission-ledger", asyncHandler(async (req, res) => {
+  const partner = await prisma.channelPartner.findUnique({ where: { id: req.params.id } });
+  if (!partner) {
+    return res.status(404).json({ error: "Channel partner not found" });
+  }
+
+  const leads = await prisma.lead.findMany({
+    where: { channelPartner: partner.name },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      name: true,
+      company: true,
+      owner: true,
+      doe: true,
+      capitalAsk: true,
+      createdAt: true,
+      ndaRecord: { select: { status: true } },
+      ioiRecord: { select: { status: true } },
+      _count: { select: { meetings: true, documents: true } },
+      dealStages: {
+        where: { stage: "TERM_SHEET" },
+        orderBy: { updatedAt: "desc" },
+        take: 1,
+        select: { status: true, amount: true, completedAt: true, updatedAt: true }
+      }
+    }
+  });
+
+  const rows = leads.map((lead) => {
+    const termSheet = lead.dealStages[0] ?? null;
+    const closed = termSheet?.status === "COMPLETED";
+    const borrowingAmount = parseMoneyAmount(termSheet?.amount) ?? parseMoneyAmount(lead.capitalAsk);
+    const commission = closed && borrowingAmount != null ? computeChannelPartnerCommission(borrowingAmount, partner.commissionPct) : null;
+
+    return {
+      leadId: lead.id,
+      leadName: lead.name,
+      company: lead.company,
+      doe: lead.doe || lead.owner || null,
+      referredAt: lead.createdAt,
+      currentStage: currentStageForLead({
+        termSheet,
+        ioi: lead.ioiRecord,
+        nda: lead.ndaRecord,
+        meetings: lead._count.meetings,
+        documents: lead._count.documents
+      }),
+      termSheetStatus: termSheet?.status ?? null,
+      closedAt: termSheet?.completedAt ?? null,
+      amountText: termSheet?.amount || lead.capitalAsk || null,
+      borrowingAmount,
+      commissionPct: commission?.pct ?? null,
+      commissionAmount: commission?.commissionAmount ?? null,
+      payable: Boolean(closed && commission?.commissionAmount != null),
+      usedCustomRate: Boolean(commission?.usedCustomRate)
+    };
+  });
+
+  res.json({
+    partner: { id: partner.id, name: partner.name, commissionPct: partner.commissionPct },
+    rows,
+    summary: {
+      referred: rows.length,
+      closed: rows.filter((row) => row.payable).length,
+      payableAmount: rows.reduce((sum, row) => sum + (row.commissionAmount ?? 0), 0)
+    }
+  });
 }));
 
 // Generates the real signed link to the public agreement-signing page (see
