@@ -4,9 +4,9 @@ import { ActionButton, Badge, Card, SectionTitle } from "../ui";
 import {
   CalendarIcon,
   GridIcon,
-  LinkIcon,
   RadarIcon,
   SlidersIcon,
+  TagIcon,
   UserCheckIcon,
   UsersIcon,
   WorkflowIcon,
@@ -42,7 +42,7 @@ const asOptions = (list) => list.map((v) => ({ key: v, label: v }));
 
 const EMPTY_FILTERS = {
   leadId: "",
-  channelPartner: "",
+  leadSource: "",
   doe: "",
   timeFrom: "",
   timeTo: "",
@@ -129,7 +129,7 @@ export function UniversalFiltersModule() {
     [facets]
   );
   const doeOptions = useMemo(() => asOptions(facets?.does ?? []), [facets]);
-  const channelPartnerOptions = useMemo(() => asOptions(facets?.channelPartners ?? []), [facets]);
+  const leadSourceOptions = useMemo(() => asOptions(facets?.leadSources ?? []), [facets]);
   const industryOptions = useMemo(() => asOptions(facets?.industries ?? []), [facets]);
   const geographyOptions = useMemo(() => asOptions(facets?.geographies ?? []), [facets]);
 
@@ -171,8 +171,8 @@ export function UniversalFiltersModule() {
             <Select label="" value={filters.leadId} onChange={set("leadId")} options={leadOptions} />
           </FilterCard>
 
-          <FilterCard icon={LinkIcon} label="Channel Partner">
-            <Select label="" value={filters.channelPartner} onChange={set("channelPartner")} options={channelPartnerOptions} />
+          <FilterCard icon={TagIcon} label="Lead Source">
+            <Select label="" value={filters.leadSource} onChange={set("leadSource")} options={leadSourceOptions} />
           </FilterCard>
 
           <FilterCard icon={CalendarIcon} label="Time Window">
@@ -207,7 +207,7 @@ export function UniversalFiltersModule() {
           <table className="w-full min-w-[900px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e7edf5]">
-                {["Lead", "Status", "Lifecycle Phase", "Industry", "Geography", "Owner"].map((h) => (
+                {["Lead", "Status", "Lead Source", "Lifecycle Phase", "Industry", "Geography", "Owner"].map((h) => (
                   <th key={h} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
                     {h}
                   </th>
@@ -224,6 +224,7 @@ export function UniversalFiltersModule() {
                   <td className="py-3 pr-4">
                     <Badge tone={STATUS_TONE[lead.status]}>{lead.status}</Badge>
                   </td>
+                  <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.leadSource ?? "—"}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.lifecyclePhaseLabel}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.industry ?? "—"}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.territory ?? "—"}</td>
