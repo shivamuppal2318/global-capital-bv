@@ -20,7 +20,7 @@ const fmtDate = (v) => (v ? new Date(v).toLocaleDateString() : "—");
 // One screen serving NDA, IOI, Visit Planning, Field Visit and Term Sheet.
 // They share a table and a lifecycle; STAGE_CONFIG decides which fields and
 // labels each one shows.
-export function DealStageModule({ stage, defaultOwner }) {
+export function DealStageModule({ stage, defaultChannelPartner }) {
   const config = STAGE_CONFIG[stage];
   // Most stages use the full 5-value status vocabulary; a stage's own
   // config can narrow it (see FIELD_VISIT in stageConfig.js) and relabel
@@ -40,8 +40,10 @@ export function DealStageModule({ stage, defaultOwner }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchLeadId, setSearchLeadId] = useState("");
   const [searchOwner, setSearchOwner] = useState("");
+  const [searchChannelPartner, setSearchChannelPartner] = useState("");
   const [appliedLeadId, setAppliedLeadId] = useState("");
   const [appliedOwner, setAppliedOwner] = useState("");
+  const [appliedChannelPartner, setAppliedChannelPartner] = useState("");
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -65,7 +67,10 @@ export function DealStageModule({ stage, defaultOwner }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([dealStagesApi.list({ stage, status: statusFilter, q: query, leadId: appliedLeadId, owner: appliedOwner }), dealStagesApi.summary()])
+    Promise.all([
+      dealStagesApi.list({ stage, status: statusFilter, q: query, leadId: appliedLeadId, owner: appliedOwner, channelPartner: appliedChannelPartner }),
+      dealStagesApi.summary()
+    ])
       .then(([rows, sum]) => {
         setRecords(rows);
         setSummary(sum);
@@ -73,7 +78,7 @@ export function DealStageModule({ stage, defaultOwner }) {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [stage, statusFilter, query, appliedLeadId, appliedOwner]);
+  }, [stage, statusFilter, query, appliedLeadId, appliedOwner, appliedChannelPartner]);
 
   useEffect(() => {
     const t = setTimeout(load, query ? 300 : 0);
@@ -106,14 +111,13 @@ export function DealStageModule({ stage, defaultOwner }) {
       location: "",
       attendees: "",
       counterparty: "",
+      owner: "",
       // A Channel Partner filling this out from their own portal is
-      // creating a record for a deal that's theirs — defaultOwner (their
-      // own channelPartnerNames entry, passed down by the partner portal
-      // shell) fills this in instead of making them pick their own name
-      // out of a dropdown every time. Staff still get a blank field, since
-      // a staff member isn't necessarily the right owner for whatever
-      // they're recording.
-      owner: defaultOwner ?? "",
+      // creating a record for a deal that's theirs — defaultChannelPartner
+      // (passed down by the partner portal shell) fills this in instead of
+      // making them pick their own name out of a dropdown every time.
+      // Staff still get a blank field.
+      channelPartner: defaultChannelPartner ?? "",
       clientRating: "",
       notes: "",
       documentId: "",
@@ -130,14 +134,17 @@ export function DealStageModule({ stage, defaultOwner }) {
     e?.preventDefault();
     setAppliedLeadId(searchLeadId);
     setAppliedOwner(searchOwner);
+    setAppliedChannelPartner(searchChannelPartner);
     setSearchOpen(false);
   };
 
   const clearSearch = () => {
     setSearchLeadId("");
     setSearchOwner("");
+    setSearchChannelPartner("");
     setAppliedLeadId("");
     setAppliedOwner("");
+    setAppliedChannelPartner("");
   };
 
   const startEdit = (r) => {
@@ -154,6 +161,7 @@ export function DealStageModule({ stage, defaultOwner }) {
       attendees: r.attendees ?? "",
       counterparty: r.counterparty ?? "",
       owner: r.owner ?? "",
+      channelPartner: r.channelPartner ?? "",
       clientRating: r.clientRating ?? "",
       notes: r.notes ?? "",
       documentId: r.document?.id ?? "",
@@ -278,16 +286,21 @@ export function DealStageModule({ stage, defaultOwner }) {
                   <label className={labelClass}>Owner</label>
                   <select className={inputClass} value={searchOwner} onChange={(e) => setSearchOwner(e.target.value)}>
                     <option value="">All owners</option>
-                    <optgroup label="Employees">
-                      {doeNames.map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Channel Partners">
-                      {channelPartnerNames.map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </optgroup>
+                    {doeNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {uses("owner") ? (
+                <div>
+                  <label className={labelClass}>Channel Partner</label>
+                  <select className={inputClass} value={searchChannelPartner} onChange={(e) => setSearchChannelPartner(e.target.value)}>
+                    <option value="">All channel partners</option>
+                    {channelPartnerNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
                   </select>
                 </div>
               ) : null}
@@ -353,25 +366,32 @@ export function DealStageModule({ stage, defaultOwner }) {
                 <div>
                   <label className={labelClass}>{FIELD_LABEL.owner}</label>
                   <select className={inputClass} value={editing.owner} onChange={(e) => setEditing({ ...editing, owner: e.target.value })}>
-                    <option value="">Select a DOE or Channel Partner…</option>
+                    <option value="">Select a DOE…</option>
                     {/* Keeps an existing value selectable even if it's since
-                        fallen out of both live lists (e.g. no cold-outreach
-                        leads currently assigned to that DOE, or the partner
-                        record was removed) rather than silently blanking out
-                        real, already-saved data. */}
-                    {editing.owner && !doeNames.includes(editing.owner) && !channelPartnerNames.includes(editing.owner) ? (
+                        fallen out of the live list (e.g. no cold-outreach
+                        leads currently assigned to that DOE) rather than
+                        silently blanking out real, already-saved data. */}
+                    {editing.owner && !doeNames.includes(editing.owner) ? (
                       <option value={editing.owner}>{editing.owner}</option>
                     ) : null}
-                    <optgroup label="Employees">
-                      {doeNames.map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Channel Partners">
-                      {channelPartnerNames.map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </optgroup>
+                    {doeNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {uses("owner") ? (
+                <div>
+                  <label className={labelClass}>{FIELD_LABEL.channelPartner}</label>
+                  <select className={inputClass} value={editing.channelPartner} onChange={(e) => setEditing({ ...editing, channelPartner: e.target.value })}>
+                    <option value="">None</option>
+                    {editing.channelPartner && !channelPartnerNames.includes(editing.channelPartner) ? (
+                      <option value={editing.channelPartner}>{editing.channelPartner}</option>
+                    ) : null}
+                    {channelPartnerNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
                   </select>
                 </div>
               ) : null}
@@ -551,6 +571,7 @@ export function DealStageModule({ stage, defaultOwner }) {
                       {r.valuation ? ` @ ${r.valuation}` : ""}
                       {r.location ? ` · ${r.location}` : ""}
                       {r.owner ? ` · ${r.owner}` : ""}
+                      {r.channelPartner ? ` · Partner: ${r.channelPartner}` : ""}
                       {r.clientRating != null ? ` · Rated ${r.clientRating}/5` : ""}
                       {r.lead?.leadSource ? ` · Source: ${r.lead.leadSource}` : ""}
                     </p>

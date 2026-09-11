@@ -103,6 +103,7 @@ export const FIELD_LABEL = {
   attendees: "Attendees",
   counterparty: "Counterparty contact",
   owner: "Owner",
+  channelPartner: "Channel Partner",
   clientRating: "Client rating (0–5)",
   notes: "Notes"
 };

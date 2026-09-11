@@ -257,7 +257,7 @@ export function authShell({ title, subtitle, bodyHtml }) {
 // (clientPortal.js already owns the status-to-color mapping for the
 // stage rows themselves) so this file stays pure rendering with no
 // status logic of its own.
-export function dashboardShell({ title, clientName, companyName, stages = [], activeKey = null, bodyHtml }) {
+export function dashboardShell({ title, clientName, companyName, stages = [], activeKey = null, bodyHtml, previewMode = false }) {
   const initials =
     String(clientName ?? "")
       .trim()
@@ -286,6 +286,31 @@ export function dashboardShell({ title, clientName, companyName, stages = [], ac
           </div>
         </div>
         <p class="gc-sidebar-section-label">Deal Progress</p>
+        ${
+          // A staff preview has no real client session behind it (see
+          // GET /preview/:leadId's own comment) -- these links normally go
+          // to requireClientAuth-gated routes, which would silently bounce
+          // a previewing staff member straight to the client login page
+          // the moment they clicked any of them (confirmed live). Left as
+          // plain, non-navigating labels instead, matching the same
+          // "look, don't act" promise the preview banner already makes; the
+          // Overview page already lists every stage's real status inline.
+          previewMode
+            ? `
+        <span class="gc-sidebar-item active">
+          <span class="gc-sidebar-item-dot" style="background:#9aa6bd;"></span>
+          Overview
+        </span>
+        ${stages
+          .map(
+            (s) => `
+          <span class="gc-sidebar-item">
+            <span class="gc-sidebar-item-dot" style="background:${s.dotColor};"></span>
+            ${escapeHtml(s.label)}
+          </span>`
+          )
+          .join("")}`
+            : `
         <a href="/api/client-portal/dashboard" class="gc-sidebar-item${activeKey ? "" : " active"}">
           <span class="gc-sidebar-item-dot" style="background:#9aa6bd;"></span>
           Overview
@@ -298,7 +323,8 @@ export function dashboardShell({ title, clientName, companyName, stages = [], ac
             ${escapeHtml(s.label)}
           </a>`
           )
-          .join("")}
+          .join("")}`
+        }
         <div class="gc-sidebar-spacer"></div>
         <div class="gc-sidebar-tag">
           <p>Strategic Investments,</p>
