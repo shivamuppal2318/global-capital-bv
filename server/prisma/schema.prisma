@@ -356,7 +356,19 @@ model DealStageRecord {
 
   counterparty String?
   notes        String?
+  // Internal DOE only now — a real Channel Partner has its own separate
+  // field below, no longer a second kind of value this one could hold (see
+  // channelPartner's own comment for why they split).
   owner        String?
+
+  // A deal's real external Channel Partner, kept apart from owner (DOE)
+  // above rather than sharing one dropdown between the two — a staff
+  // member picking "who owns this" was seeing both internal reps and
+  // outside partners mixed into one list with no way to tell them apart
+  // except an optgroup label, and a Channel Partner filling this out from
+  // their own portal doesn't belong in the DOE field just because it was
+  // the only place their own name showed up.
+  channelPartner String?
 
   // Field Visit KPI framework's "Client Rating" target (4.5+) — out of 5,
   // decimals allowed (4.5). Only meaningful once a visit is actually

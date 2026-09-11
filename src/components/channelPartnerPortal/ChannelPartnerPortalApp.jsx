@@ -831,7 +831,7 @@ function PartnerShell() {
                 stage={activeSection.stage}
                 section={section}
                 permissions={permissions}
-                defaultOwner={partnerUser.channelPartner.name}
+                defaultChannelPartner={partnerUser.channelPartner.name}
                 partnerUser={partnerUser}
               />
             ) : (
