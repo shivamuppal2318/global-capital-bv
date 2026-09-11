@@ -1352,7 +1352,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
           <SectionTitle
             icon={RadarIcon}
             iconClass="text-[#2f96da]"
-            subtitle="Where each deal is stuck right now — its earliest stage not yet resolved, one column per lead. Not the same as the cumulative milestone counts above."
+            subtitle="Every stage each deal has actually reached — a deal can appear in more than one column at once (e.g. Field Visit has started while its NDA is still unresolved). Counts here match the milestones above. The highlighted card in each deal's group is where it's really stuck right now."
           >
             Deal pipeline
           </SectionTitle>
@@ -1377,10 +1377,20 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                             setInviteResult(null);
                             setEnrichResult(null);
                           }}
-                          className="cursor-pointer rounded-[14px] border border-[#e7edf5] bg-white px-3 py-3 shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:border-[#c3cfe6]"
+                          className={`cursor-pointer rounded-[14px] border bg-white px-3 py-3 shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:border-[#c3cfe6] ${
+                            deal.isBottleneck ? "border-[#3046b2]" : "border-[#e7edf5]"
+                          }`}
                         >
-                          <p className="truncate text-[13.5px] font-semibold text-[#102246]">{deal.name}</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-[13.5px] font-semibold text-[#102246]">{deal.name}</p>
+                            {deal.isBottleneck ? (
+                              <span className="shrink-0 rounded-full bg-[#eef1fb] px-2 py-0.5 text-[10px] font-semibold text-[#3046b2]">Stuck here</span>
+                            ) : null}
+                          </div>
                           <p className="mt-1 truncate text-[12px] text-[#5f6f89]">{deal.company}</p>
+                          <p className={`mt-1 truncate text-[11.5px] font-medium ${PIPELINE_STATUS_STYLE[deal.stageStatus]?.label ?? "text-[#8592ab]"}`}>
+                            {deal.stageDetail}
+                          </p>
                           <div className="mt-2 flex items-center justify-between gap-2">
                             <span className="truncate text-[12px] font-semibold text-[#3046b2]">{deal.capitalAsk}</span>
                             <span className="shrink-0 text-[11px] text-[#8592ab]">{new Date(deal.updatedAt).toLocaleDateString()}</span>

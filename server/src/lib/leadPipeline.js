@@ -248,10 +248,17 @@ export async function computePipelineSummary(where = {}) {
 }
 
 // A Kanban view of the SAME per-lead pipeline computeLeadPipeline already
-// tracks. Later-stage columns are current-stage only, but Outreach is a
-// deliberate exception: that column is the "real outreach was sent" pool,
-// so it should include every emailed lead, even if that same deal has
-// since moved on to Interested/NDA/IOI.
+// tracks. A deal gets a card in EVERY column it has reached (matching
+// computePipelineSummary's own counts 1:1) -- not just one "current"
+// column -- since real deals often run in parallel (a lead's NDA can sit
+// unsigned at Reminder 2 while its Field Visit has already started).
+// Confirmed live: with the old single-column version, a real deal like
+// that showed 0 in Field Visit despite computePipelineSummary correctly
+// counting it as reached -- the two panels contradicted each other on the
+// same CRM Workspace screen. `isBottleneck` still flags which one of a
+// deal's (possibly several) cards is its real current hold-up, so "where
+// is this deal actually stuck" isn't lost, just no longer the only stage
+// a deal is allowed to appear under.
 export async function computeDealBoard(where = {}) {
   const leads = await prisma.lead.findMany({ where, select: { id: true, name: true, company: true, capitalAsk: true, updatedAt: true } });
   const pipelines = await Promise.all(leads.map((l) => computeLeadPipeline(l.id)));
@@ -261,56 +268,34 @@ export async function computeDealBoard(where = {}) {
   leads.forEach((lead, leadIdx) => {
     const pipeline = pipelines[leadIdx];
 
-    // A lead nothing has actually happened for yet (still status NEW, so
-    // even Outreach itself reads not_started) doesn't belong on a board
-    // about deals actively moving through stages — currentIdx below
-    // defaults to 0 when nothing has been reached, which used to dump
-    // every freshly added/imported lead straight into the Outreach column
-    // whether or not real outreach (or anything else) had actually
-    // happened for them. Confirmed live: a batch of CSV-imported leads,
-    // status NEW, never emailed, was filling up Outreach for exactly this
-    // reason. They still show up in New Enquiries and everywhere else —
-    // only this board, which is about current stage progress, excludes them.
-    const everReached = pipeline.some((stageSummary) => stageSummary.status !== "not_started");
-    if (!everReached) return;
-
-    const dealCard = (idx) => ({
-      id: lead.id,
-      name: lead.name,
-      company: lead.company,
-      capitalAsk: lead.capitalAsk,
-      updatedAt: lead.updatedAt,
-      stageStatus: pipeline[idx].status,
-      stageDetail: pipeline[idx].detail
-    });
-
-    if (pipeline[0].status !== "not_started") {
-      board[0].deals.push(dealCard(0));
-    }
-
-    // The deal's real current column is its earliest unresolved gate
-    // (in_progress or blocked) — e.g. an NDA that's been sent but not
-    // signed yet — not just whichever stage was touched most recently.
-    // Real deals often have parallel activity (a Zoom call can happen, or
-    // Data Room docs get requested, before the NDA is actually countersigned),
-    // and "furthest touched" was placing the card past a stage that hadn't
-    // actually been resolved — an unsigned NDA would vanish from the NDA
-    // column the moment ANY later stage had activity, even though the deal
-    // is really still stuck at NDA. Only when nothing is currently
-    // unresolved (every reached stage is "done") does the card fall back
-    // to the furthest one reached, same as before.
-    let currentIdx = 0;
+    // The bottleneck is the earliest unresolved gate (in_progress or
+    // blocked) — e.g. an NDA that's been sent but not signed yet — not
+    // just whichever stage was touched most recently. Only when nothing
+    // is currently unresolved (every reached stage is "done") does it
+    // fall back to the furthest stage reached.
+    let bottleneckIdx = 0;
     let firstUnresolvedIdx = null;
     pipeline.forEach((stageSummary, idx) => {
-      if (stageSummary.status !== "not_started") currentIdx = idx;
+      if (stageSummary.status !== "not_started") bottleneckIdx = idx;
       if (firstUnresolvedIdx === null && (stageSummary.status === "in_progress" || stageSummary.status === "blocked")) {
         firstUnresolvedIdx = idx;
       }
     });
-    if (firstUnresolvedIdx !== null) currentIdx = firstUnresolvedIdx;
+    if (firstUnresolvedIdx !== null) bottleneckIdx = firstUnresolvedIdx;
 
-    if (currentIdx === 0) return;
-    board[currentIdx].deals.push(dealCard(currentIdx));
+    pipeline.forEach((stageSummary, idx) => {
+      if (stageSummary.status === "not_started") return;
+      board[idx].deals.push({
+        id: lead.id,
+        name: lead.name,
+        company: lead.company,
+        capitalAsk: lead.capitalAsk,
+        updatedAt: lead.updatedAt,
+        stageStatus: stageSummary.status,
+        stageDetail: stageSummary.detail,
+        isBottleneck: idx === bottleneckIdx
+      });
+    });
   });
 
   return board;
