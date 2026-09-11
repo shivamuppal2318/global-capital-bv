@@ -4,6 +4,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { doeScorecard, doeOverallMetrics, outreachMetrics, whatsappReplyRateMetrics, zoomBookingMetrics } from "../lib/doeScorecard.js";
 import { computeExecutiveKpis } from "../lib/executiveKpis.js";
 import { TICKET_SIZE_BANDS, bucketTicketSize } from "../lib/universalFilters.js";
+import { normalizeCountryName } from "../lib/countryNames.js";
 
 const TEMPERATURES = ["HOT", "WARM", "COLD"];
 
@@ -45,7 +46,13 @@ outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
 
   res.json({
     does,
-    geographies: [...new Set(leads.map((l) => l.country).filter(Boolean))].sort(),
+    // EmailLead.country is unvalidated free text (CSV imports, the inbound
+    // webhook, manual entry) -- "IN"/"India"/"ind"/"india" all mean the
+    // same country, so this normalizes each to one canonical name before
+    // deduping. Without it the dropdown shows the same country several
+    // times and picking any single one misses the rows recorded under a
+    // different spelling.
+    geographies: [...new Set(leads.map((l) => normalizeCountryName(l.country)).filter(Boolean))].sort(),
     leadSources: [...new Set(leads.map((l) => l.source).filter(Boolean))].sort(),
     // Real CRM Lead attributes (see the "/" handler's convertedLeadById
     // note), same fixed option lists Universal Filters already uses —
@@ -90,7 +97,11 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
 
   const leads = allLeads.filter((l) => {
     if (doe && l.owner !== doe) return false;
-    if (geography && l.country !== geography) return false;
+    // Compared against the same normalized name /facets offers in the
+    // dropdown -- matching the raw l.country directly would miss every row
+    // recorded under a differently-cased or coded spelling of the country
+    // that was actually picked.
+    if (geography && normalizeCountryName(l.country) !== geography) return false;
     if (leadSource && l.source !== leadSource) return false;
     if (dateFrom && l.createdAt < new Date(dateFrom)) return false;
     if (dateTo && l.createdAt > new Date(dateTo)) return false;
