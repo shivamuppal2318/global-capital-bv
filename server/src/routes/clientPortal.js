@@ -646,6 +646,11 @@ function fmtPortalDate(value) {
   return value ? new Date(value).toLocaleDateString() : "—";
 }
 
+function portalCompanyName(lead) {
+  const company = lead?.company && lead.company !== "—" ? lead.company : null;
+  return company || lead?.name || "your company";
+}
+
 function visitPlanningDetailsHtml(visits) {
   if (!visits.length) return "";
 
@@ -691,6 +696,50 @@ function visitPlanningDetailsHtml(visits) {
   return `<div class="gc-sign-box"><div style="display:grid;gap:12px;">${rows}</div></div>`;
 }
 
+function fieldVisitDetailsHtml(fieldVisit) {
+  if (!fieldVisit) return "";
+  const effectiveStatus = fieldVisit.completedAt || fieldVisit.reportSubmitted ? "COMPLETED" : fieldVisit.status;
+
+  const facts = [
+    ["Status", effectiveStatus ? effectiveStatus.replaceAll("_", " ") : null],
+    ["Scheduled for", fmtPortalDate(fieldVisit.scheduledAt)],
+    ["Completed on", fmtPortalDate(fieldVisit.completedAt)],
+    ["Location", fieldVisit.location],
+    ["Attendees", fieldVisit.attendees],
+    ["Visit owner", fieldVisit.owner],
+    ["Channel partner", fieldVisit.lead?.channelPartner],
+    ["Counterparty", fieldVisit.counterparty],
+    ["Amount", fieldVisit.amount],
+    ["Valuation", fieldVisit.valuation],
+    ["Client rating", fieldVisit.clientRating !== null && fieldVisit.clientRating !== undefined ? `${fieldVisit.clientRating}/5` : null],
+    ["Report", fieldVisit.reportSubmitted ? "Submitted" : "Not submitted yet"],
+    ["Report date", fieldVisit.reportAt ? fmtPortalDate(fieldVisit.reportAt) : null]
+  ].filter(([, value]) => value && value !== "—");
+
+  if (!facts.length && !fieldVisit.notes && !fieldVisit.document) return "";
+
+  return `
+    <div class="gc-sign-box">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;">
+        ${facts
+          .map(
+            ([label, value]) => `
+              <div>
+                <p style="margin:0;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#8592ab;">${escapeHtml(label)}</p>
+                <p style="margin:4px 0 0;font-size:13px;color:#334463;line-height:1.5;">${escapeHtml(value)}</p>
+              </div>`
+          )
+          .join("")}
+      </div>
+      ${fieldVisit.notes ? `<p style="margin:12px 0 0;font-size:13px;color:#5c6b87;line-height:1.6;">${escapeHtml(fieldVisit.notes)}</p>` : ""}
+      ${
+        fieldVisit.document
+          ? `<p style="margin:12px 0 0;font-size:13px;"><a href="/api/client-portal/documents/${fieldVisit.document.id}/preview" style="color:#3046b2;font-weight:600;text-decoration:none;">View visit report: ${escapeHtml(fieldVisit.document.originalName)}</a></p>`
+          : ""
+      }
+    </div>`;
+}
+
 // Both /dashboard (the overview) and /stage/:key (one stage on its own
 // page) need the exact same underlying records and the same 8-stage
 // computation — the only difference is how much of it gets rendered.
@@ -701,7 +750,13 @@ async function loadPortalData(leadId) {
     prisma.meeting.findMany({ where: { leadId } }),
     prisma.ioiRecord.findUnique({ where: { leadId } }),
     prisma.visitPlan.findMany({ where: { leadId } }),
-    prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "FIELD_VISIT" } } }),
+    prisma.dealStageRecord.findUnique({
+      where: { leadId_stage: { leadId, stage: "FIELD_VISIT" } },
+      include: {
+        document: { select: { id: true, originalName: true } },
+        lead: { select: { channelPartner: true } }
+      }
+    }),
     prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "TERM_SHEET" } } }),
     // Scoped to this lead's own uploads — unscoped before, which meant any
     // client's portal could show a checklist item "received" just because
@@ -739,7 +794,7 @@ async function loadPortalData(leadId) {
     termSheet
   });
 
-  return { nda, ioi, visits, stages, uploadedCategories, stageReportDocs };
+  return { nda, ioi, visits, fieldVisit, stages, uploadedCategories, stageReportDocs };
 }
 
 // Matches a stage key to its generated report, if one exists yet -- same
@@ -776,7 +831,7 @@ clientPortalRouter.get(
   requireClientAuth,
   asyncHandler(async (req, res) => {
     const leadId = req.clientUser.leadId;
-    const { nda, ioi, visits, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
+    const { nda, ioi, visits, fieldVisit, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
 
     const completedCount = stages.filter((s) => s.status === "completed").length;
 
@@ -798,12 +853,13 @@ clientPortalRouter.get(
     const ioiActionable = ioi && Boolean(ioi.sentAt) && !["DECLINED", "EXPIRED"].includes(ioi.status);
     const ioiError = req.query.ioiError ? String(req.query.ioiError) : null;
     const editIoi = req.query.editIoi === "1";
+    const displayCompany = portalCompanyName(req.clientUser.lead);
 
     // Read once per request (the .map() below rendering each stage row
     // can't itself be async) — the real document text with the client's
     // current values already filled into the editable fields.
-    const ndaDocHtml = ndaActionable ? await ndaFillFormFragment(ndaFilledValues(nda), req.clientUser.lead.company) : null;
-    const ioiDocHtml = ioiActionable ? await ioiFillFormFragment(ioiFilledValues(ioi), req.clientUser.lead.company, ioi) : null;
+    const ndaDocHtml = ndaActionable ? await ndaFillFormFragment(ndaFilledValues(nda), displayCompany) : null;
+    const ioiDocHtml = ioiActionable ? await ioiFillFormFragment(ioiFilledValues(ioi), displayCompany, ioi) : null;
 
     // Mirrors the SPA's own StatCard row (see e.g. MeetingsModule's five
     // cards) — a quick-read summary above the full stage-by-stage list,
@@ -834,11 +890,11 @@ clientPortalRouter.get(
       dashboardShell({
         title: "Your deal",
         clientName: req.clientUser.name,
-        companyName: req.clientUser.lead.company,
+        companyName: displayCompany,
         stages: sidebarStagesFrom(stages),
         bodyHtml: `
           <span class="gc-badge-pill">Your Deal</span>
-          <h1 class="gc-heading">${escapeHtml(req.clientUser.lead.company)}</h1>
+          <h1 class="gc-heading">${escapeHtml(displayCompany)}</h1>
           <p class="gc-subheading">Welcome back, ${escapeHtml(req.clientUser.name)} — track your NDA, IOI and every step in between, right here.</p>
 
           <div class="gc-stats">${stats.map(statCardHtml).join("")}</div>
@@ -862,7 +918,7 @@ clientPortalRouter.get(
                       doeName: nda.owner,
                       alreadySigned: nda.status === "SIGNED",
                       editMode: editNda,
-                      companyName: req.clientUser.lead.company,
+                      companyName: displayCompany,
                       filled: ndaFilledValues(nda),
                       documentHtml: ndaDocHtml
                     });
@@ -872,7 +928,7 @@ clientPortalRouter.get(
                       doeName: ioi.owner,
                       alreadySigned: ioi.status === "SIGNED",
                       editMode: editIoi,
-                      companyName: req.clientUser.lead.company,
+                      companyName: displayCompany,
                       filled: ioiFilledValues(ioi),
                       documentHtml: ioiDocHtml
                     });
@@ -880,6 +936,8 @@ clientPortalRouter.get(
                     extraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
                   } else if (s.key === "visitPlanning") {
                     extraHtml = visitPlanningDetailsHtml(visits);
+                  } else if (s.key === "fieldVisit") {
+                    extraHtml = fieldVisitDetailsHtml(fieldVisit);
                   }
                   if (s.status === "completed") {
                     const report = reportDocFor(s.key, stageReportDocs);
@@ -907,7 +965,7 @@ clientPortalRouter.get(
     if (!stageMeta) return res.redirect("/api/client-portal/dashboard");
 
     const leadId = req.clientUser.leadId;
-    const { nda, ioi, visits, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
+    const { nda, ioi, visits, fieldVisit, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
     const stage = stages.find((s) => s.key === stageMeta.key);
 
     const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
@@ -917,6 +975,7 @@ clientPortalRouter.get(
     const ioiError = req.query.ioiError ? String(req.query.ioiError) : null;
     const editIoi = req.query.editIoi === "1";
     const docError = req.query.docError ? String(req.query.docError) : null;
+    const displayCompany = portalCompanyName(req.clientUser.lead);
 
     let stageExtraHtml = "";
     if (stage.key === "nda" && ndaActionable) {
@@ -925,9 +984,9 @@ clientPortalRouter.get(
         doeName: nda.owner,
         alreadySigned: nda.status === "SIGNED",
         editMode: editNda,
-        companyName: req.clientUser.lead.company,
+        companyName: displayCompany,
         filled: ndaFilledValues(nda),
-        documentHtml: await ndaFillFormFragment(ndaFilledValues(nda), req.clientUser.lead.company)
+        documentHtml: await ndaFillFormFragment(ndaFilledValues(nda), displayCompany)
       });
     } else if (stage.key === "ioi" && ioiActionable) {
       stageExtraHtml = ioiRespondFormHtml({
@@ -935,14 +994,16 @@ clientPortalRouter.get(
         doeName: ioi.owner,
         alreadySigned: ioi.status === "SIGNED",
         editMode: editIoi,
-        companyName: req.clientUser.lead.company,
+        companyName: displayCompany,
         filled: ioiFilledValues(ioi),
-        documentHtml: await ioiFillFormFragment(ioiFilledValues(ioi), req.clientUser.lead.company, ioi)
+        documentHtml: await ioiFillFormFragment(ioiFilledValues(ioi), displayCompany, ioi)
       });
     } else if (stage.key === "dataRoom") {
       stageExtraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
     } else if (stage.key === "visitPlanning") {
       stageExtraHtml = visitPlanningDetailsHtml(visits);
+    } else if (stage.key === "fieldVisit") {
+      stageExtraHtml = fieldVisitDetailsHtml(fieldVisit);
     }
     if (stage.status === "completed") {
       const report = reportDocFor(stage.key, stageReportDocs);
@@ -953,7 +1014,7 @@ clientPortalRouter.get(
       dashboardShell({
         title: stage.label,
         clientName: req.clientUser.name,
-        companyName: req.clientUser.lead.company,
+        companyName: displayCompany,
         stages: sidebarStagesFrom(stages),
         activeKey: stage.key,
         bodyHtml: `
@@ -962,7 +1023,7 @@ clientPortalRouter.get(
           </p>
           <span class="gc-badge-pill">Deal Stage</span>
           <h1 class="gc-heading" style="margin-top:10px;font-size:1.7rem;">${escapeHtml(stage.label)}</h1>
-          <p class="gc-subheading" style="margin-top:6px;">Part of your deal with ${escapeHtml(req.clientUser.lead.company)}.</p>
+          <p class="gc-subheading" style="margin-top:6px;">Part of your deal with ${escapeHtml(displayCompany)}.</p>
 
           <div class="gc-card" style="margin-top:16px;">
             ${stageRowHtml(stage, stageExtraHtml)}

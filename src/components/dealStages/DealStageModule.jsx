@@ -224,6 +224,17 @@ export function DealStageModule({ stage, defaultChannelPartner }) {
   const stageSummary = summary?.byStage?.[stage];
   const uses = (f) => config.fields.includes(f);
   const isTermSheet = stage === "TERM_SHEET";
+  const updateEditingField = (field, value) => {
+    setEditing((current) => {
+      if (!current) return current;
+      const next = { ...current, [field]: value };
+      if (stage === "FIELD_VISIT" && (field === "completedAt" || field === "reportSubmitted")) {
+        const completed = field === "completedAt" ? Boolean(value) : Boolean(value || next.completedAt);
+        next.status = completed ? "COMPLETED" : "NOT_STARTED";
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-5">
@@ -351,7 +362,7 @@ export function DealStageModule({ stage, defaultChannelPartner }) {
               {uses("completedAt") ? (
                 <div>
                   <label className={labelClass}>{config.completedLabel}</label>
-                  <input type="date" className={inputClass} value={editing.completedAt} onChange={(e) => setEditing({ ...editing, completedAt: e.target.value })} />
+                  <input type="date" className={inputClass} value={editing.completedAt} onChange={(e) => updateEditingField("completedAt", e.target.value)} />
                 </div>
               ) : null}
 
@@ -484,7 +495,7 @@ export function DealStageModule({ stage, defaultChannelPartner }) {
                     <input
                       type="checkbox"
                       checked={editing.reportSubmitted}
-                      onChange={(e) => setEditing({ ...editing, reportSubmitted: e.target.checked })}
+                      onChange={(e) => updateEditingField("reportSubmitted", e.target.checked)}
                     />
                     Report submitted
                   </label>

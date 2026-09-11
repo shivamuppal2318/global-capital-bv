@@ -107,6 +107,7 @@ export function deriveVisitStage(visits) {
 // derivation, just a different label per caller.
 export function deriveDealStage(record) {
   if (!record) return { status: "not_started", detail: "Not started" };
+  if (record.completedAt || record.reportSubmitted) return { status: "completed", detail: record.completedAt ? `Completed ${fmtDate(record.completedAt)}` : "Completed" };
   if (record.status === "COMPLETED") return { status: "completed", detail: record.completedAt ? `Completed ${fmtDate(record.completedAt)}` : "Completed" };
   if (record.status === "DECLINED") return { status: "declined", detail: "Declined" };
   if (record.status === "IN_PROGRESS") return { status: "in_progress", detail: "In progress" };
