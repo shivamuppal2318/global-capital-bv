@@ -5,6 +5,14 @@ import { RichTextEditor } from "./RichTextEditor.jsx";
 
 const BLANK_TEMPLATE_FORM = { key: "", subject: "", html: "" };
 
+// Matches server/src/routes/emailTemplates.js's own PROTECTED_TEMPLATE_KEYS
+// exactly — autoRespond.js maps classified replies straight to these, so
+// deleting one wouldn't error loudly, just silently stop auto-sending for
+// that reply type. The backend already refuses (409) with this same
+// reasoning; disabling the button here too avoids a pointless click-then-
+// error round trip instead of being the only thing standing in the way.
+const PROTECTED_TEMPLATE_KEYS = new Set(["interested", "zoom-request", "info-request", "no-reply"]);
+
 function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -100,6 +108,17 @@ export function EmailTemplatesCadencesModule() {
       loadTemplates();
     } catch (error) {
       setNotice(`Could not save "${key}" — backend unreachable (${error.message}).`);
+    }
+  }
+
+  async function handleDeleteTemplate(template) {
+    if (!window.confirm(`Delete template "${template.key}"? This cannot be undone.`)) return;
+    try {
+      await emailTemplatesApi.remove(template.key);
+      setNotice(`Template "${template.key}" deleted.`);
+      loadTemplates();
+    } catch (error) {
+      setNotice(`Could not delete "${template.key}" (${error.message}).`);
     }
   }
 
@@ -260,13 +279,28 @@ export function EmailTemplatesCadencesModule() {
                     <td className="px-4 py-3 font-medium text-[#102246]">{template.key}</td>
                     <td className="px-4 py-3">{template.subject}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleEditTemplate(template)}
-                        className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#3046b2]"
-                      >
-                        Open
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditTemplate(template)}
+                          className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#3046b2]"
+                        >
+                          Open
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTemplate(template)}
+                          disabled={PROTECTED_TEMPLATE_KEYS.has(template.key)}
+                          title={
+                            PROTECTED_TEMPLATE_KEYS.has(template.key)
+                              ? "Used by the auto-responder for real replies — can't be deleted."
+                              : "Delete template"
+                          }
+                          className="rounded-[10px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#e0483f] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

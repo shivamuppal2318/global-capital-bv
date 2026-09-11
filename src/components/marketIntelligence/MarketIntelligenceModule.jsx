@@ -36,6 +36,8 @@ function relevanceBarTone(score) {
   return "bg-[#9aa6ba]";
 }
 
+const SIGNALS_PAGE_SIZE = 10;
+
 function initialsFor(name) {
   return name
     .split(/\s+/)
@@ -140,6 +142,11 @@ export function MarketIntelligenceModule() {
   const [addToListCampaignId, setAddToListCampaignId] = useState("");
   const [addToListBusy, setAddToListBusy] = useState(false);
   const [addToListResult, setAddToListResult] = useState(null);
+  // Which page of the (already-loaded) captured-signals feed is showing —
+  // reset to page 1 whenever the search text or the "seeking funding only"
+  // toggle changes, otherwise narrowing the list could leave the view
+  // stuck on a page number that no longer has anything on it.
+  const [signalsPage, setSignalsPage] = useState(1);
 
   const loadStatusAndSignals = () => {
     marketIntelligenceApi
@@ -165,6 +172,10 @@ export function MarketIntelligenceModule() {
   useEffect(() => {
     loadStatusAndSignals();
   }, []);
+
+  useEffect(() => {
+    setSignalsPage(1);
+  }, [searchText, seekingOnly]);
 
   async function handleRunPipeline() {
     setRunning(true);
@@ -287,6 +298,9 @@ export function MarketIntelligenceModule() {
     .filter((s) => s.status !== "FAILED")
     .filter((s) => !seekingOnly || s.isSeekingFunding)
     .filter((s) => !searchText.trim() || `${s.entityName ?? ""} ${s.rawTitle}`.toLowerCase().includes(searchText.trim().toLowerCase()));
+
+  const signalsPageCount = Math.max(1, Math.ceil(filteredSignals.length / SIGNALS_PAGE_SIZE));
+  const pagedSignals = filteredSignals.slice((signalsPage - 1) * SIGNALS_PAGE_SIZE, signalsPage * SIGNALS_PAGE_SIZE);
 
   const chatEnabled = Boolean(status?.aiProcessor);
 
@@ -472,8 +486,8 @@ export function MarketIntelligenceModule() {
         </div>
 
         {filteredSignals.length > 0 ? (
-          <div className="mt-5 space-y-3">
-            {filteredSignals.map((signal) => {
+          <div className="mt-5 max-h-[900px] space-y-3 overflow-y-auto pr-1">
+            {pagedSignals.map((signal) => {
               const hasAiData = Boolean(signal.entityName);
               const typeConfig = signalTypeConfig[signal.signalType] ?? null;
               return (
@@ -652,6 +666,36 @@ export function MarketIntelligenceModule() {
                 : `No captured headlines match "${searchText}"${seekingOnly ? " among companies seeking funding" : ""}.`}
           </p>
         )}
+
+        {filteredSignals.length > 0 ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#e7edf5] pt-3">
+            <p className="text-[12.5px] text-[#6d7c96]">
+              Showing {(signalsPage - 1) * SIGNALS_PAGE_SIZE + 1}–{Math.min(signalsPage * SIGNALS_PAGE_SIZE, filteredSignals.length)} of{" "}
+              {filteredSignals.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSignalsPage((p) => Math.max(1, p - 1))}
+                disabled={signalsPage <= 1}
+                className="rounded-[8px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#435471] disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="text-[12.5px] font-medium text-[#435471]">
+                Page {signalsPage} of {signalsPageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSignalsPage((p) => Math.min(signalsPageCount, p + 1))}
+                disabled={signalsPage >= signalsPageCount}
+                className="rounded-[8px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#435471] disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="rounded-[18px] border border-[#e7edf5] bg-[#f8faff] px-5 py-4">
