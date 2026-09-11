@@ -5,16 +5,20 @@ import { doeScorecard, doeOverallMetrics, outreachMetrics, whatsappReplyRateMetr
 import { computeExecutiveKpis } from "../lib/executiveKpis.js";
 import { TICKET_SIZE_BANDS, bucketTicketSize } from "../lib/universalFilters.js";
 import { normalizeCountryName } from "../lib/countryNames.js";
-import { regionForCountry, SALES_REGIONS } from "../lib/salesRegions.js";
 
-// EmailLead.country is a single country ("Germany"); Universal Filters'
-// own Geography filter is Lead.territory, a sales region ("DACH",
-// "Benelux") -- showing raw countries here made the two screens' Geography
-// filters look like they disagreed about what "Geography" even means, even
-// though the underlying concept -- which part of the world -- is the same.
-// This buckets each country up to that same region vocabulary.
-function geographyForEmailLead(l) {
-  return regionForCountry(normalizeCountryName(l.country));
+function round(n, places = 1) {
+  const f = 10 ** places;
+  return Math.round(n * f) / f;
+}
+
+// Outreach/DOE is driven by Email Automation contacts, but once an email
+// contact becomes a CRM lead the richer Universal Filters geography lives
+// on Lead.territory. Keep both: exact CRM territory when present, otherwise
+// the normalized EmailLead.country. That makes this dropdown as detailed as
+// Universal Filters while still working for not-yet-converted campaign rows.
+function geographyForEmailLead(l, convertedLeadById = new Map()) {
+  const convertedTerritory = l.convertedToLeadId ? convertedLeadById.get(l.convertedToLeadId)?.territory : null;
+  return convertedTerritory || normalizeCountryName(l.country) || l.country || null;
 }
 
 const TEMPERATURES = ["HOT", "WARM", "COLD"];
@@ -35,7 +39,7 @@ const TARGETS = {
 outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
   const emailLeadWhere = req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {};
   const crmLeadWhere = req.channelPartner ? { channelPartner: req.channelPartner.businessName } : {};
-  const leads = await prisma.emailLead.findMany({ where: emailLeadWhere, select: { owner: true, country: true, source: true } });
+  const leads = await prisma.emailLead.findMany({ where: emailLeadWhere, select: { owner: true, country: true, source: true, convertedToLeadId: true } });
 
   // A Channel Partner's own DOE list is just the real owners already on
   // their own referred EmailLeads. An ADMIN sees every real employee (Admin
@@ -55,14 +59,16 @@ outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
     does = [req.user.name];
   }
 
+  const convertedLeadIds = leads.map((l) => l.convertedToLeadId).filter(Boolean);
+  const convertedLeads = convertedLeadIds.length
+    ? await prisma.lead.findMany({ where: { id: { in: convertedLeadIds }, ...crmLeadWhere }, select: { id: true, territory: true } })
+    : [];
+  const convertedLeadById = new Map(convertedLeads.map((l) => [l.id, l]));
+  const geographies = [...new Set(leads.map((l) => geographyForEmailLead(l, convertedLeadById)).filter(Boolean))].sort();
+
   res.json({
     does,
-    // Region, not raw country -- see geographyForEmailLead above. Sorted
-    // against SALES_REGIONS' own order (roughly by market size/proximity)
-    // rather than alphabetically, so related regions stay grouped in the
-    // dropdown instead of scattering (e.g. DACH landing between Central
-    // African Republic-adjacent and Cyprus-adjacent alphabetical neighbors).
-    geographies: SALES_REGIONS.filter((region) => leads.some((l) => geographyForEmailLead(l) === region)),
+    geographies,
     leadSources: [...new Set(leads.map((l) => l.source).filter(Boolean))].sort(),
     // Real CRM Lead attributes (see the "/" handler's convertedLeadById
     // note), same fixed option lists Universal Filters already uses —
@@ -106,17 +112,13 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   // than guessing at one.
   const convertedLeadIds = allLeads.map((l) => l.convertedToLeadId).filter(Boolean);
   const convertedLeads = convertedLeadIds.length
-    ? await prisma.lead.findMany({ where: { id: { in: convertedLeadIds } }, select: { id: true, industry: true, capitalAsk: true, temperature: true } })
+    ? await prisma.lead.findMany({ where: { id: { in: convertedLeadIds } }, select: { id: true, industry: true, capitalAsk: true, temperature: true, territory: true } })
     : [];
   const convertedLeadById = new Map(convertedLeads.map((l) => [l.id, l]));
 
   const leads = allLeads.filter((l) => {
     if (doe && l.owner !== doe) return false;
-    // Compared against the same region /facets offers in the dropdown --
-    // matching the raw l.country directly would miss every row whose
-    // country is spelled differently, or belongs to the same region under
-    // a different country entirely.
-    if (geography && geographyForEmailLead(l) !== geography) return false;
+    if (geography && geographyForEmailLead(l, convertedLeadById) !== geography) return false;
     if (leadSource && l.source !== leadSource) return false;
     if (dateFrom && l.createdAt < new Date(dateFrom)) return false;
     if (dateTo && l.createdAt > new Date(dateTo)) return false;
@@ -170,9 +172,10 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
     targets: TARGETS,
     top: {
       outreachSent: top.totalOutreach,
+      emailsSent: overall.emailsSent,
       responses: top.responded,
       callsBooked,
-      responseRate: top.responseRate
+      responseRate: overall.emailsSent ? round((top.responded / overall.emailsSent) * 100) : null
     },
     scorecard,
     overall,
