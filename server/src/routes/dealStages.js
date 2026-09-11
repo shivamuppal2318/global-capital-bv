@@ -40,6 +40,7 @@ function publicRecord(r) {
     counterparty: r.counterparty,
     notes: r.notes,
     owner: r.owner,
+    channelPartner: r.channelPartner,
     clientRating: r.clientRating,
     reportSubmitted: r.reportSubmitted,
     reportAt: r.reportAt,
@@ -102,7 +103,7 @@ dealStagesRouter.get("/summary", asyncHandler(async (req, res) => {
 }));
 
 dealStagesRouter.get("/", asyncHandler(async (req, res) => {
-  const { stage, status, q, leadId, owner } = req.query;
+  const { stage, status, q, leadId, owner, channelPartner } = req.query;
   if (stage && !DEAL_STAGE_IDS.includes(String(stage))) {
     return res.status(400).json({ error: `Unknown stage "${stage}".` });
   }
@@ -122,6 +123,7 @@ dealStagesRouter.get("/", asyncHandler(async (req, res) => {
       ...(status && status !== "All" ? { status: String(status) } : {}),
       ...(leadId ? { leadId: String(leadId) } : {}),
       ...(owner ? { owner: String(owner) } : {}),
+      ...(channelPartner ? { channelPartner: String(channelPartner) } : {}),
       ...(q
         ? {
             OR: [
@@ -131,6 +133,7 @@ dealStagesRouter.get("/", asyncHandler(async (req, res) => {
               { location: { contains: String(q), mode: "insensitive" } },
               { attendees: { contains: String(q), mode: "insensitive" } },
               { owner: { contains: String(q), mode: "insensitive" } },
+              { channelPartner: { contains: String(q), mode: "insensitive" } },
               { notes: { contains: String(q), mode: "insensitive" } }
             ]
           }
@@ -158,6 +161,7 @@ const upsertSchema = z.object({
   counterparty: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   owner: z.string().nullable().optional(),
+  channelPartner: z.string().nullable().optional(),
   documentId: z.string().nullable().optional(),
   clientRating: z.number().min(0).max(5).nullable().optional(),
   reportSubmitted: z.boolean().optional()
@@ -190,6 +194,7 @@ dealStagesRouter.post("/", ensureChannelPartnerStage, asyncHandler(async (req, r
     counterparty: toText(rest.counterparty),
     notes: toText(rest.notes),
     owner: toText(rest.owner),
+    channelPartner: toText(rest.channelPartner),
     ...(rest.documentId !== undefined ? { documentId: rest.documentId || null } : {}),
     ...(rest.clientRating !== undefined ? { clientRating: rest.clientRating } : {}),
     ...(rest.reportSubmitted !== undefined ? { reportSubmitted: rest.reportSubmitted } : {})
@@ -225,7 +230,7 @@ dealStagesRouter.patch("/:id", asyncHandler(async (req, res) => {
   if (rest.status !== undefined) data.status = rest.status;
   if (rest.scheduledAt !== undefined) data.scheduledAt = toDate(rest.scheduledAt);
   if (rest.completedAt !== undefined) data.completedAt = toDate(rest.completedAt);
-  for (const key of ["amount", "valuation", "location", "attendees", "counterparty", "notes", "owner"]) {
+  for (const key of ["amount", "valuation", "location", "attendees", "counterparty", "notes", "owner", "channelPartner"]) {
     if (rest[key] !== undefined) data[key] = toText(rest[key]);
   }
   if (rest.documentId !== undefined) data.documentId = rest.documentId || null;

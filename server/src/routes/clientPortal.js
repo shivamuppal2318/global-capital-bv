@@ -1013,6 +1013,7 @@ clientPortalRouter.get(
         clientName: lead.clientUser.name,
         companyName: lead.company,
         stages: sidebarStagesFrom(stages),
+        previewMode: true,
         bodyHtml: `
           <div style="display:flex;align-items:center;gap:10px;background:#fff4e0;border:1px solid #f4d9a8;color:#8a5a12;border-radius:12px;padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:20px;">
             <span aria-hidden="true">👁</span>

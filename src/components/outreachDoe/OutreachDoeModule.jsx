@@ -106,13 +106,13 @@ export function OutreachDoeModule() {
 
   const cards = useMemo(
     () => [
-      // Despite the field's own internal name (outreachSent), this counts
-      // distinct leads in this DOE's outreach pipeline, not real send
-      // events -- a lead sits here the moment it's assigned, whether or not
-      // any email has actually gone out yet (e.g. queue disabled, no
-      // cadence steps configured). Labeling it "sent"/"Emails sent" implied
-      // real delivery and didn't match Email Automation's own Sent count,
-      // which correctly only counts BRANCH_EMAIL_SENT/CAMPAIGN_BLAST_SENT.
+      // data.top.outreachSent is emailLeads.length (see
+      // lib/executiveMetrics.js's outreachMetrics) -- a headcount of leads
+      // in scope, not a count of real send events. The Email Automation
+      // dashboard's own "Emails Sent" stat IS a real send count, and
+      // labeling this one the same way made the two screens look like they
+      // disagreed about the same number when they were measuring different
+      // things.
       { label: "Leads in Outreach", value: fmtNum(data?.top.outreachSent), note: "Assigned to this DOE", noteTone: "blue" },
       { label: "Responses", value: fmtNum(data?.top.responses), note: "Any reply", noteTone: "green" },
       { label: "Calls Booked", value: fmtNum(data?.top.callsBooked), note: "Zoom follow-ups", noteTone: "amber" },

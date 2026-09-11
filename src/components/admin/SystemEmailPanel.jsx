@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { adminApi } from "../../lib/adminApi";
 import { useAuth } from "../../context/AuthContext";
 import { ActionButton, Badge, Card, SectionTitle } from "../ui";
@@ -48,9 +48,18 @@ export function SystemEmailPanel() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Pre-fills "Send test to" with the admin's own email as a one-time
+  // convenience, not a locked default -- testTo was in this effect's own
+  // dependency array before, so clearing the field re-ran the effect and
+  // the empty-check immediately refilled it, making the field impossible
+  // to actually clear. The ref makes this fire at most once.
+  const prefilledTestTo = useRef(false);
   useEffect(() => {
-    if (user?.email && !testTo) setTestTo(user.email);
-  }, [user, testTo]);
+    if (user?.email && !prefilledTestTo.current) {
+      prefilledTestTo.current = true;
+      setTestTo(user.email);
+    }
+  }, [user]);
 
   const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
