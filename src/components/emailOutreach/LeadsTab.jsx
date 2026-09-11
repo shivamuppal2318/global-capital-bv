@@ -370,7 +370,11 @@ export function LeadsTab({ mailing }) {
                         <button
                           type="button"
                           onClick={() => {
-                            if (window.confirm(`Delete "${row.name}"? This only works if it has no subscribers — otherwise pause it instead.`)) {
+                            if (
+                              window.confirm(
+                                `Delete "${row.name}"? This permanently deletes it and all ${row.leadCount ?? allLeads.length} of its leads, including their full send/activity history. This cannot be undone.`
+                              )
+                            ) {
                               handleDeleteCampaign(row);
                             }
                           }}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton, Field } from "../ui.jsx";
-import { FunnelIcon, SendIcon, MegaphoneIcon, SearchIcon, EyeIcon, XIcon } from "../Icons.jsx";
+import { FunnelIcon, SendIcon, MegaphoneIcon, SearchIcon, EyeIcon, XIcon, PencilIcon, TrashIcon } from "../Icons.jsx";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
 import { emailTemplatesApi } from "../../lib/emailTemplatesApi.js";
 import { RichTextEditor } from "../emailTemplates/RichTextEditor.jsx";
@@ -68,7 +68,8 @@ export function CampaignsTab({ mailing }) {
   const {
     campaigns, selectedCampaignId, selectCampaign, startNewCampaign,
     selectedCampaign, emailAccounts, handleAssignAccountToCampaign, handleToggleCampaignStatus,
-    automationForm, handleFormChange, handleSaveAutomation, handleSendNow, sendingNowBusy, automationNotice, systemStatus
+    automationForm, handleFormChange, handleSaveAutomation, handleSendNow, sendingNowBusy, automationNotice, systemStatus,
+    handleDeleteCampaign
   } = mailing;
 
   const targetListName = automationForm.targetCampaignId
@@ -95,6 +96,28 @@ export function CampaignsTab({ mailing }) {
   const [viewMode, setViewMode] = useState("list");
   const [searchText, setSearchText] = useState("");
   const [blastPreviewHtml, setBlastPreviewHtml] = useState(null);
+
+  // Deleting a campaign is NOT a safe no-op when it has real leads — the
+  // backend (routes/emailCampaigns.js's DELETE /:id) cascades a real,
+  // permanent delete of every one of its leads plus their full
+  // activity/reply/AI-draft history, regardless of count. There is no
+  // "refuses if non-empty" guard server-side (the List tab's own delete
+  // button used to claim there was — confirmed live there isn't, and fixed
+  // that misleading text too). So this needs a real confirmation showing
+  // the actual recipient count, not a bare click.
+  const [deleteConfirmCampaign, setDeleteConfirmCampaign] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  async function confirmDeleteCampaign() {
+    if (!deleteConfirmCampaign) return;
+    setDeleteBusy(true);
+    try {
+      await handleDeleteCampaign(deleteConfirmCampaign);
+      setDeleteConfirmCampaign(null);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
 
   // Real saved Templates (Templates tab, server/src/routes/emailTemplates.js)
   // — loaded here so a rep can pick one and have its real subject/HTML
@@ -854,6 +877,7 @@ export function CampaignsTab({ mailing }) {
                 <th className="px-4 py-4 text-right">Emails Sent</th>
                 <th className="px-4 py-4 text-right">Activity</th>
                 <th className="px-4 py-4 text-right">Open Rate</th>
+                <th className="px-4 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -877,11 +901,31 @@ export function CampaignsTab({ mailing }) {
                       </button>
                     </td>
                     <td className="px-4 py-4 text-right">{campaign.open}</td>
+                    <td className="px-4 py-4 text-right">
+                      <div className="ml-auto flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openCampaign(campaign)}
+                          title="Edit campaign"
+                          className="grid size-7 place-items-center rounded-[8px] text-[#8592ab] hover:bg-[#f0f3f9] hover:text-[#3046b2]"
+                        >
+                          <PencilIcon className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmCampaign(campaign)}
+                          title="Delete campaign"
+                          className="grid size-7 place-items-center rounded-[8px] text-[#8592ab] hover:bg-[#ffe4ee] hover:text-[#e0483f]"
+                        >
+                          <TrashIcon className="size-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="6" className="px-4 py-5 text-[14px] text-[#7a7d9c]">
+                  <td colSpan="7" className="px-4 py-5 text-[14px] text-[#7a7d9c]">
                     No entries found
                   </td>
                 </tr>
@@ -897,6 +941,40 @@ export function CampaignsTab({ mailing }) {
       </div>
 
       {activityDetailPopup}
+
+      {deleteConfirmCampaign ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" onClick={() => (deleteBusy ? null : setDeleteConfirmCampaign(null))}>
+          <div
+            className="w-full max-w-[440px] rounded-[16px] border border-[#d6deea] bg-white p-5 shadow-[0_12px_36px_rgba(16,34,70,0.18)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-[15px] font-semibold text-[#102246]">Delete "{deleteConfirmCampaign.name}"?</p>
+            <p className="mt-3 text-[13px] leading-6 text-[#5d6286]">
+              This permanently deletes this campaign and{" "}
+              <strong>all {deleteConfirmCampaign.leadCount ?? 0} of its leads</strong>, including their full
+              send/open/click/reply activity history. This cannot be undone.
+            </p>
+            <div className="mt-5 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmCampaign(null)}
+                disabled={deleteBusy}
+                className="rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#435471] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteCampaign}
+                disabled={deleteBusy}
+                className="rounded-[10px] bg-[#e0483f] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+              >
+                {deleteBusy ? "Deleting…" : "Delete permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
