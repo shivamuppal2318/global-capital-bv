@@ -161,6 +161,20 @@ export function CampaignsTab({ mailing }) {
 
   const [activityPage, setActivityPage] = useState(null);
   const [activityPageLoading, setActivityPageLoading] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState(null);
+
+  async function handleExportActivityCsv(campaignId) {
+    setExportBusy(true);
+    setExportError(null);
+    try {
+      await emailCampaignsApi.exportActivityCsv(campaignId);
+    } catch (err) {
+      setExportError(err.message);
+    } finally {
+      setExportBusy(false);
+    }
+  }
 
   function openListActivity(campaign) {
     setViewMode("activity");
@@ -387,15 +401,31 @@ export function CampaignsTab({ mailing }) {
               <p className="mt-1 truncate text-[12px] text-[#73829d]">{campaign.subject || "No subject saved yet"}</p>
             </div>
             </div>
-            <button
-              type="button"
-              onClick={() => campaign.id && openListActivity(campaign)}
-              disabled={activityPageLoading || !campaign.id}
-              className="inline-flex items-center gap-2 rounded-[10px] border border-[#cfd9eb] bg-white px-4 py-2 text-[13px] font-semibold text-[#3046b2] shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:border-[#3046b2] disabled:opacity-50"
-            >
-              {activityPageLoading ? "Refreshing..." : "Refresh"}
-            </button>
+            <div className="flex shrink-0 items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => campaign.id && handleExportActivityCsv(campaign.id)}
+                disabled={exportBusy || !campaign.id}
+                title="Download every recipient's full activity data as CSV"
+                className="inline-flex items-center gap-2 rounded-[10px] border border-[#cfd9eb] bg-white px-4 py-2 text-[13px] font-semibold text-[#3046b2] shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:border-[#3046b2] disabled:opacity-50"
+              >
+                {exportBusy ? "Preparing…" : "Download CSV"}
+              </button>
+              <button
+                type="button"
+                onClick={() => campaign.id && openListActivity(campaign)}
+                disabled={activityPageLoading || !campaign.id}
+                className="inline-flex items-center gap-2 rounded-[10px] border border-[#cfd9eb] bg-white px-4 py-2 text-[13px] font-semibold text-[#3046b2] shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:border-[#3046b2] disabled:opacity-50"
+              >
+                {activityPageLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
           </div>
+          {exportError ? (
+            <div className="border-b border-[#ffe4ee] bg-[#fff6f9] px-5 py-2.5 text-[12.5px] font-medium text-[#c43d72]">
+              Could not download CSV: {exportError}
+            </div>
+          ) : null}
           <div className="grid gap-3 px-5 py-4 md:grid-cols-3 xl:grid-cols-6">
             {statCards.map(([label, value, note, toneClass, borderClass]) => (
               <div key={label} className={`rounded-[14px] border ${borderClass} bg-white px-4 py-3 shadow-[0_3px_12px_rgba(30,48,87,0.04)]`}>

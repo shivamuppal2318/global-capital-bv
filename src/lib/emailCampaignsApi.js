@@ -1,10 +1,31 @@
 import { API_ROOT } from "./config";
-import { apiFetch } from "./apiFetch";
+import { apiFetch, getToken } from "./apiFetch";
 
 const API_BASE_URL = `${API_ROOT}/api/email/campaigns`;
 
 function request(path, options = {}) {
   return apiFetch(`${API_BASE_URL}${path}`, options);
+}
+
+// The download route needs the Authorization header, so it can't just be
+// an <a href> — same reasoning as documentsApi.open/relationshipsApi's own
+// downloadBlob.
+async function downloadBlob(url) {
+  const token = getToken();
+  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error ?? `Could not download that file (${response.status})`);
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "download.csv";
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
 }
 
 export const emailCampaignsApi = {
@@ -42,6 +63,10 @@ export const emailCampaignsApi = {
   // view's per-campaign sent-leads popup.
   sentActivity: (id) => request(`/${id}/sent-activity`),
   activityDetail: (id) => request(`/${id}/activity-detail`),
+  // Same per-recipient data as activityDetail above, as a real .csv download
+  // (name/company/email, sent/opened/clicked counts, reply type, bounce/
+  // unsubscribe flags, last activity) instead of a screen fetch.
+  exportActivityCsv: (id) => downloadBlob(`${API_BASE_URL}/${id}/activity-detail/export.csv`),
   // Which leads make up the Dashboard's Opened/Clicked/Unsubscribed stat
   // cards. kind: "opened" | "clicked" | "unsubscribed".
   engagementDetail: (kind) => request(`/engagement-detail/${kind}`),

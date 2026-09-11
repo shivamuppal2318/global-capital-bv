@@ -8,6 +8,7 @@ import { recordAudit } from "../lib/auditLog.js";
 import { ownerWhereClause, ownerFieldsForCreate } from "../lib/channelPartnerScope.js";
 import { filterMatchingLeads } from "../lib/segmentMatching.js";
 import { sendCampaignBlastEmail } from "../lib/campaignBlastSender.js";
+import { toCsv } from "../lib/csv.js";
 
 export const emailCampaignsRouter = Router();
 
@@ -748,10 +749,10 @@ emailCampaignsRouter.get("/:id/recent-sends", asyncHandler(async (req, res) => {
   );
 }));
 
-emailCampaignsRouter.get("/:id/activity-detail", asyncHandler(async (req, res) => {
-  const campaign = await loadOwnedCampaignOr404(req, res, req.params.id);
-  if (!campaign) return;
-
+// Shared by the JSON route below and its CSV-export sibling — same
+// recipients/events/stats every time, so the downloaded file can never
+// show different numbers than the screen it was downloaded from.
+async function computeCampaignActivityDetail(campaign) {
   const [leads, activityRows] = await Promise.all([
     prisma.emailLead.findMany({
       where: { campaignId: campaign.id },
@@ -903,7 +904,7 @@ emailCampaignsRouter.get("/:id/activity-detail", asyncHandler(async (req, res) =
   const bounced = recipients.filter((lead) => lead.bounced || lead.bounceCount > 0).length;
   const unsubscribed = recipients.filter((lead) => lead.unsubscribed).length;
 
-  res.json({
+  return {
     campaign: {
       id: campaign.id,
       name: campaign.name,
@@ -925,7 +926,45 @@ emailCampaignsRouter.get("/:id/activity-detail", asyncHandler(async (req, res) =
     },
     recipients,
     events
-  });
+  };
+}
+
+emailCampaignsRouter.get("/:id/activity-detail", asyncHandler(async (req, res) => {
+  const campaign = await loadOwnedCampaignOr404(req, res, req.params.id);
+  if (!campaign) return;
+  res.json(await computeCampaignActivityDetail(campaign));
+}));
+
+// Real per-recipient data behind the same Activity Detail screen, as a
+// download instead of a fetch — every column shown on screen (sent/opened/
+// clicked/reply status/last activity) plus a few not visible there
+// (bounce/unsubscribe flags, when the lead was added), since "download the
+// full data" implies more than just what fits in the table's own columns.
+emailCampaignsRouter.get("/:id/activity-detail/export.csv", asyncHandler(async (req, res) => {
+  const campaign = await loadOwnedCampaignOr404(req, res, req.params.id);
+  if (!campaign) return;
+  const { recipients } = await computeCampaignActivityDetail(campaign);
+
+  const csv = toCsv(recipients, [
+    { label: "Lead Name", value: (r) => r.leadName },
+    { label: "Company", value: (r) => r.company },
+    { label: "Email", value: (r) => r.leadEmail },
+    { label: "Sent Count", value: (r) => r.sentCount },
+    { label: "Opened Count", value: (r) => r.openCount },
+    { label: "Clicked Count", value: (r) => r.clickCount },
+    { label: "Reply Type", value: (r) => r.replyType },
+    { label: "Bounced", value: (r) => (r.bounced || r.bounceCount > 0 ? "Yes" : "No") },
+    { label: "Bounce Reason", value: (r) => r.bounceKind ?? "" },
+    { label: "Unsubscribed", value: (r) => (r.unsubscribed ? "Yes" : "No") },
+    { label: "Last Activity At", value: (r) => (r.lastActivityAt ? new Date(r.lastActivityAt).toISOString() : "") },
+    { label: "Last Activity Detail", value: (r) => r.lastDetail ?? "" },
+    { label: "Added At", value: (r) => (r.addedAt ? new Date(r.addedAt).toISOString() : "") }
+  ]);
+
+  const safeName = campaign.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "") || "campaign";
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${safeName}-activity.csv"`);
+  res.send(csv);
 }));
 
 // Every real send this campaign has ever made -- unlike /recent-sends above
