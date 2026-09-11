@@ -3,10 +3,13 @@ import { ActionButton, Field, noteToneClass } from "../ui.jsx";
 import { SearchIcon } from "../Icons.jsx";
 import { WebsiteLeadsApiPanel } from "../admin/WebsiteLeadsApiPanel.jsx";
 
-// Matches the auto-created campaign's name in server/src/routes/emailLeads.js
-// (WEBSITE_LEADS_CAMPAIGN_NAME) — that campaign only exists once a real
-// website lead has actually landed, so "no campaign by this name yet"
-// genuinely means "nothing captured yet" rather than a lookup bug.
+// Matches server/src/lib/websiteLeadsCampaign.js's WEBSITE_LEADS_CAMPAIGN_NAME
+// — that campaign only exists once a real website lead has actually landed,
+// so "no campaign by this name yet" genuinely means "nothing captured yet"
+// rather than a lookup bug. Also relies on the campaigns list (`campaigns`
+// below) actually including it for the logged-in user — see
+// channelPartnerScope.js's ownerWhereClause, which carves this one shared,
+// ownerless campaign out for every employee regardless of who created it.
 const WEBSITE_LEADS_LIST_NAME = "Website Leads";
 
 function downloadSampleLeadsCsv() {
