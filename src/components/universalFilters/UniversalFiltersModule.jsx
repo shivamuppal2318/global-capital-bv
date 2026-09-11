@@ -81,12 +81,19 @@ function FilterCard({ icon: Icon, label, children }) {
   );
 }
 
+const RESULTS_PAGE_SIZE = 25;
+
 export function UniversalFiltersModule() {
   const [facets, setFacets] = useState(null);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Which page of the (already-fetched) results is showing — a fresh
+  // search always starts back at page 1, otherwise changing filters could
+  // leave the view stuck on e.g. page 4 of a brand-new, much shorter result
+  // set with nothing to show there.
+  const [resultsPage, setResultsPage] = useState(1);
 
   // Previously swallowed silently — a facets-load failure (403 from the
   // module permission gate, an expired session, network issue) left every
@@ -107,6 +114,7 @@ export function UniversalFiltersModule() {
       .search(filters)
       .then((r) => {
         setResults(r);
+        setResultsPage(1);
         setError(null);
       })
       .catch((err) => setError(err.message))
@@ -128,6 +136,14 @@ export function UniversalFiltersModule() {
     () => (facets?.leads ?? []).map((l) => ({ key: l.id, label: `${l.name} — ${l.company}` })),
     [facets]
   );
+  // Paged over the results this screen already has in hand — the backend
+  // itself caps at 500 rows ("a working set, not a full export", see
+  // routes/universalFilters.js), so there's no need for a second
+  // server round-trip just to turn pages within that same set.
+  const allResultLeads = results?.leads ?? [];
+  const resultsPageCount = Math.max(1, Math.ceil(allResultLeads.length / RESULTS_PAGE_SIZE));
+  const pagedResultLeads = allResultLeads.slice((resultsPage - 1) * RESULTS_PAGE_SIZE, resultsPage * RESULTS_PAGE_SIZE);
+
   const doeOptions = useMemo(() => asOptions(facets?.does ?? []), [facets]);
   const leadSourceOptions = useMemo(() => asOptions(facets?.leadSources ?? []), [facets]);
   const industryOptions = useMemo(() => asOptions(facets?.industries ?? []), [facets]);
@@ -203,21 +219,21 @@ export function UniversalFiltersModule() {
 
         {error ? <p className="mt-4 text-[13px] font-medium text-[#e0483f]">{error}</p> : null}
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 max-h-[520px] overflow-auto rounded-[10px] border border-[#e7edf5]">
           <table className="w-full min-w-[900px] border-collapse text-left">
-            <thead>
+            <thead className="sticky top-0 bg-white">
               <tr className="border-b border-[#e7edf5]">
                 {["Lead", "Status", "Lead Source", "Lifecycle Phase", "Industry", "Geography", "Owner"].map((h) => (
-                  <th key={h} className="py-2.5 pr-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
+                  <th key={h} className="py-2.5 pr-4 pl-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#5c6b87]">
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {(results?.leads ?? []).map((lead) => (
+              {pagedResultLeads.map((lead) => (
                 <tr key={lead.id} className="border-b border-[#f1f4f9] last:border-0">
-                  <td className="py-3 pr-4 text-[13px]">
+                  <td className="py-3 pr-4 pl-4 text-[13px]">
                     <p className="font-semibold text-[#102246]">{lead.name}</p>
                     <p className="text-[12px] text-[#8592ab]">{lead.company}</p>
                   </td>
@@ -235,11 +251,40 @@ export function UniversalFiltersModule() {
           </table>
 
           {!loading && results && results.leads.length === 0 ? (
-            <p className="rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[14px] text-[#5c6b87]">
-              No leads match this combination of filters.
-            </p>
+            <p className="px-4 py-6 text-center text-[14px] text-[#5c6b87]">No leads match this combination of filters.</p>
           ) : null}
         </div>
+
+        {results && allResultLeads.length ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[12.5px] text-[#6d7c96]">
+              Showing {(resultsPage - 1) * RESULTS_PAGE_SIZE + 1}–{Math.min(resultsPage * RESULTS_PAGE_SIZE, allResultLeads.length)} of{" "}
+              {allResultLeads.length}
+              {results.total > allResultLeads.length ? ` (${results.total} total matches — only the first ${allResultLeads.length} are loaded)` : ""}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setResultsPage((p) => Math.max(1, p - 1))}
+                disabled={resultsPage <= 1}
+                className="rounded-[8px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#435471] disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="text-[12.5px] font-medium text-[#435471]">
+                Page {resultsPage} of {resultsPageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setResultsPage((p) => Math.min(resultsPageCount, p + 1))}
+                disabled={resultsPage >= resultsPageCount}
+                className="rounded-[8px] border border-[#d6deea] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#435471] disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
       </Card>
     </div>
   );
