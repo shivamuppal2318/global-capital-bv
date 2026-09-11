@@ -1,4 +1,5 @@
 import { prisma } from "../db.js";
+import { employeeOwnerWhereClause } from "./channelPartnerLeadScope.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -26,13 +27,15 @@ function daysSince(date) {
   return Math.floor((Date.now() - new Date(date).getTime()) / DAY_MS);
 }
 
-async function staleInterestedReplies(channelPartner) {
+async function staleInterestedReplies(req) {
+  const channelPartner = req?.channelPartner ?? null;
   const outreachWhere = channelPartner ? { campaign: { ownerChannelPartnerId: channelPartner.id } } : {};
   const interested = await prisma.emailLead.findMany({
     where: {
       replyType: "INTERESTED",
       convertedToLeadId: { not: null },
-      ...outreachWhere
+      ...outreachWhere,
+      ...employeeOwnerWhereClause(req ?? {})
     },
     select: {
       id: true,
@@ -113,37 +116,45 @@ async function staleInterestedReplies(channelPartner) {
 //     SIGNED/DECLINED/EXPIRED, aged from sentAt (or generatedAt if never sent).
 //   - Term Sheet: DealStageRecord(stage=TERM_SHEET) still open — this is
 //     the one stage that hasn't outgrown the shared table yet.
-// `channelPartner` (optional): a { id, businessName } pair -- scopes every
-// phase to just that partner's own referred leads when passed (Outreach
-// via EmailCampaign.ownerChannelPartnerId, everything else via
-// Lead.channelPartner), full company-wide view otherwise. See
-// server/src/routes/ageingReport.js.
-export async function computeAgeingReport(channelPartner = null) {
+// `req` (optional, defaults to {}): the real Express request -- scopes
+// every phase to just what the caller is allowed to see. A Channel Partner
+// (req.channelPartner) sees only their own referred leads (Outreach via
+// EmailCampaign.ownerChannelPartnerId, everything else via
+// Lead.channelPartner). A non-admin staff EMPLOYEE (req.user) sees only
+// records whose own `owner` field is their name -- see
+// employeeOwnerWhereClause -- the same restriction every other per-lead
+// screen already applies; this report previously had no such check at all,
+// so any employee saw the full company-wide breakdown (including every
+// other rep's overdue counts by name), same as an ADMIN. An ADMIN, or a
+// call with no req at all, is unscoped. See server/src/routes/ageingReport.js.
+export async function computeAgeingReport(req = {}) {
+  const channelPartner = req.channelPartner ?? null;
   const outreachWhere = channelPartner ? { campaign: { ownerChannelPartnerId: channelPartner.id } } : {};
   const leadWhere = channelPartner ? { lead: { channelPartner: channelPartner.businessName } } : {};
+  const employeeWhere = employeeOwnerWhereClause(req);
 
   const [openOutreachLeads, openNdaRecords, dataRoomStageRecords, openIoiRecords, termSheetStageRecords, staleInterested] = await Promise.all([
     prisma.emailLead.findMany({
-      where: { replyType: "NO_REPLY", unsubscribed: false, bounced: false, ...outreachWhere },
+      where: { replyType: "NO_REPLY", unsubscribed: false, bounced: false, ...outreachWhere, ...employeeWhere },
       select: { id: true, name: true, company: true, owner: true, createdAt: true }
     }),
     prisma.ndaRecord.findMany({
-      where: { status: { notIn: ["SIGNED", "DECLINED", "EXPIRED"] }, ...leadWhere },
+      where: { status: { notIn: ["SIGNED", "DECLINED", "EXPIRED"] }, ...leadWhere, ...employeeWhere },
       select: { id: true, sentAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
     }),
     prisma.dealStageRecord.findMany({
-      where: { stage: "DATA_ROOM", status: { in: ["NOT_STARTED", "IN_PROGRESS"] }, ...leadWhere },
+      where: { stage: "DATA_ROOM", status: { in: ["NOT_STARTED", "IN_PROGRESS"] }, ...leadWhere, ...employeeWhere },
       select: { id: true, scheduledAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
     }),
     prisma.ioiRecord.findMany({
-      where: { status: { notIn: ["SIGNED", "DECLINED", "EXPIRED"] }, ...leadWhere },
+      where: { status: { notIn: ["SIGNED", "DECLINED", "EXPIRED"] }, ...leadWhere, ...employeeWhere },
       select: { id: true, sentAt: true, generatedAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
     }),
     prisma.dealStageRecord.findMany({
-      where: { stage: "TERM_SHEET", status: { in: ["NOT_STARTED", "IN_PROGRESS"] }, ...leadWhere },
+      where: { stage: "TERM_SHEET", status: { in: ["NOT_STARTED", "IN_PROGRESS"] }, ...leadWhere, ...employeeWhere },
       select: { id: true, scheduledAt: true, createdAt: true, owner: true, lead: { select: { name: true, company: true } } }
     }),
-    staleInterestedReplies(channelPartner)
+    staleInterestedReplies(req)
   ]);
 
   const dealsByPhase = {
