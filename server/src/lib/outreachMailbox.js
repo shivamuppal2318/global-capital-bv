@@ -37,3 +37,32 @@ export async function sendLeadRoutedTransactionalEmail(lead, { subject, html, te
     return { sent: false, reason: err.message };
   }
 }
+
+// ownerName is a plain name string (NdaRecord.owner / IoiRecord.owner), the
+// same "matches User.name" convention accountRouting.js already uses for
+// campaign sends — these records predate any per-employee ownership FK, so
+// there's no id to join on directly. Falls back to the shared system mailbox
+// when the name doesn't match a real employee, or that employee has no
+// personal mailbox connected — a reminder should still go out either way,
+// just not necessarily "from" that person.
+export async function sendDoeRoutedTransactionalEmail(ownerName, to, { subject, html, text }) {
+  const doeUser = ownerName ? await prisma.user.findFirst({ where: { name: ownerName } }) : null;
+  const doeMailbox = doeUser
+    ? await prisma.emailAccount.findFirst({
+        where: { isActive: true, ownerId: doeUser.id },
+        orderBy: { updatedAt: "desc" }
+      })
+    : null;
+
+  if (!doeMailbox) {
+    return sendSystemEmail({ to, subject, html, text });
+  }
+
+  try {
+    const emailProvider = getEmailProvider(doeMailbox);
+    const { providerMessageId } = await emailProvider.send({ to, subject, body: text, html });
+    return { sent: true, messageId: providerMessageId };
+  } catch (err) {
+    return { sent: false, reason: err.message };
+  }
+}

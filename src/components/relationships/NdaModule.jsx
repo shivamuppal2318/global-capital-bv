@@ -243,8 +243,9 @@ export function NdaModule() {
 
   // One click per step: the server stamps today onto the right field and
   // moves the status, so a reminder can never be logged without a date.
-  // "Send" is also the one step that emails the client — see the
-  // emailResult branch below.
+  // Send/Reminder 1/Reminder 2 all email the client too — "Signed" is the
+  // only step that's purely internal record-keeping (no emailResult comes
+  // back for it) — see the emailResult branch below.
   async function advance(record, step) {
     setBusyId(record.id);
     setNotice(null);

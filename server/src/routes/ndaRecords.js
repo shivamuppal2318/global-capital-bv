@@ -4,8 +4,8 @@ import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { ndaMetrics } from "../lib/relationshipMetrics.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
-import { ndaReadyToSignEmail } from "../lib/systemMailer.js";
-import { sendLeadRoutedTransactionalEmail } from "../lib/outreachMailbox.js";
+import { ndaReadyToSignEmail, ndaReminderEmail } from "../lib/systemMailer.js";
+import { sendLeadRoutedTransactionalEmail, sendDoeRoutedTransactionalEmail } from "../lib/outreachMailbox.js";
 import { relatedLeadOwnerWhereClause, employeeOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { renderSignedNda, slugify } from "../lib/signedDocumentRenderer.js";
 import { generateStageReport, ndaReportFacts } from "../lib/stageCompletionReports.js";
@@ -183,13 +183,15 @@ ndaRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
     include
   });
 
-  // "Send" is the one action a client actually needs to hear about — it's
-  // what puts the ball in their court. Reminders/signing stay internal
-  // record-keeping (a reminder nudge is a real conversation, not an
-  // automated email; signing is either the client's own portal action or a
-  // rep recording something that happened offline).
+  // "Send" goes out through whichever mailbox last actually emailed this
+  // lead (sendLeadRoutedTransactionalEmail) — continuing whatever
+  // conversation thread the lead is already in. A reminder is different: the
+  // client hasn't replied, so there's no "last mailbox that reached them" to
+  // continue — it should come from the DOE on the record by identity
+  // (sendDoeRoutedTransactionalEmail), so the client sees the same rep
+  // chasing them down, not a different address each time.
   let emailResult = null;
-  if (req.params.action === "send") {
+  if (["send", "remind1", "remind2"].includes(req.params.action)) {
     const lead = await prisma.lead.findUnique({ where: { id: existing.leadId }, include: { clientUser: true } });
     const portalUrl = lead.clientUser
       ? `${apiBaseUrl()}/api/client-portal/login`
@@ -197,7 +199,7 @@ ndaRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
 
     if (!lead.email) {
       emailResult = { emailed: false, reason: "This lead has no email address on file.", portalUrl: null };
-    } else {
+    } else if (req.params.action === "send") {
       const { subject, html, text } = ndaReadyToSignEmail({
         contactName: lead.name,
         company: lead.company,
@@ -206,6 +208,17 @@ ndaRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
         isNewAccount: !lead.clientUser
       });
       const result = await sendLeadRoutedTransactionalEmail(lead, { subject, html, text });
+      emailResult = { emailed: result.sent, reason: result.sent ? undefined : result.reason, portalUrl };
+    } else {
+      const { subject, html, text } = ndaReminderEmail({
+        contactName: lead.name,
+        company: lead.company,
+        doeName: record.owner,
+        portalUrl,
+        isNewAccount: !lead.clientUser,
+        reminderNumber: req.params.action === "remind2" ? 2 : 1
+      });
+      const result = await sendDoeRoutedTransactionalEmail(record.owner, lead.email, { subject, html, text });
       emailResult = { emailed: result.sent, reason: result.sent ? undefined : result.reason, portalUrl };
     }
   }
