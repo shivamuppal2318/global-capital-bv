@@ -9,6 +9,7 @@ import { calculateLeadScore, deriveQualification } from "../lib/leadScoring.js";
 import { verifyEmailDeliverability, verifyEmailsDeliverability } from "../lib/emailValidation.js";
 import { recordAudit } from "../lib/auditLog.js";
 import { ownerWhereClause } from "../lib/channelPartnerScope.js";
+import { WEBSITE_LEADS_CAMPAIGN_NAME } from "../lib/websiteLeadsCampaign.js";
 
 export const emailLeadsRouter = Router();
 
@@ -221,14 +222,9 @@ function pickInboundField(flatBody, aliases) {
   return null;
 }
 
-// Where a lead lands when the caller doesn't specify a campaign — a generic
-// website contact form has no business knowing this system's campaign
-// names, so rather than rejecting it, the lead goes into one shared list
-// instead. Created lazily on first use, and deliberately never gets cadence
-// steps: these are inbound inquiries, not a cold-outreach sequence, so
+// Created lazily on first use, and deliberately never gets cadence steps:
+// these are inbound inquiries, not a cold-outreach sequence, so
 // scheduleCadenceSteps below naturally schedules zero for it.
-export const WEBSITE_LEADS_CAMPAIGN_NAME = "Website Leads";
-
 async function getOrCreateWebsiteLeadsCampaign() {
   const existing = await prisma.emailCampaign.findFirst({
     where: { name: WEBSITE_LEADS_CAMPAIGN_NAME, ownerChannelPartnerId: null },

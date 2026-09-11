@@ -163,8 +163,9 @@ emailCampaignsRouter.get("/", asyncHandler(async (req, res) => {
   res.json(withRates);
 }));
 
-// Loads a campaign only if the caller is allowed to see it — staff get
-// everything (ownerWhereClause is {}), a Channel Partner only their own.
+// Loads a campaign only if the caller is allowed to see it — an Admin gets
+// shared/ownerless campaigns, an employee their own plus the shared Website
+// Leads inbox, a Channel Partner only their own (see ownerWhereClause).
 // Used by every :id route below instead of a bare findUnique, so a partner
 // can't act on another partner's (or admin's) campaign just by knowing its
 // id — the "own data" isolation the portal promises has to hold for
