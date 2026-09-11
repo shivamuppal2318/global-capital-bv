@@ -5,6 +5,17 @@ import { doeScorecard, doeOverallMetrics, outreachMetrics, whatsappReplyRateMetr
 import { computeExecutiveKpis } from "../lib/executiveKpis.js";
 import { TICKET_SIZE_BANDS, bucketTicketSize } from "../lib/universalFilters.js";
 import { normalizeCountryName } from "../lib/countryNames.js";
+import { regionForCountry, SALES_REGIONS } from "../lib/salesRegions.js";
+
+// EmailLead.country is a single country ("Germany"); Universal Filters'
+// own Geography filter is Lead.territory, a sales region ("DACH",
+// "Benelux") -- showing raw countries here made the two screens' Geography
+// filters look like they disagreed about what "Geography" even means, even
+// though the underlying concept -- which part of the world -- is the same.
+// This buckets each country up to that same region vocabulary.
+function geographyForEmailLead(l) {
+  return regionForCountry(normalizeCountryName(l.country));
+}
 
 const TEMPERATURES = ["HOT", "WARM", "COLD"];
 
@@ -46,13 +57,12 @@ outreachDoeRouter.get("/facets", asyncHandler(async (req, res) => {
 
   res.json({
     does,
-    // EmailLead.country is unvalidated free text (CSV imports, the inbound
-    // webhook, manual entry) -- "IN"/"India"/"ind"/"india" all mean the
-    // same country, so this normalizes each to one canonical name before
-    // deduping. Without it the dropdown shows the same country several
-    // times and picking any single one misses the rows recorded under a
-    // different spelling.
-    geographies: [...new Set(leads.map((l) => normalizeCountryName(l.country)).filter(Boolean))].sort(),
+    // Region, not raw country -- see geographyForEmailLead above. Sorted
+    // against SALES_REGIONS' own order (roughly by market size/proximity)
+    // rather than alphabetically, so related regions stay grouped in the
+    // dropdown instead of scattering (e.g. DACH landing between Central
+    // African Republic-adjacent and Cyprus-adjacent alphabetical neighbors).
+    geographies: SALES_REGIONS.filter((region) => leads.some((l) => geographyForEmailLead(l) === region)),
     leadSources: [...new Set(leads.map((l) => l.source).filter(Boolean))].sort(),
     // Real CRM Lead attributes (see the "/" handler's convertedLeadById
     // note), same fixed option lists Universal Filters already uses —
@@ -70,7 +80,7 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   // EMPLOYEE's own name always wins over whatever was actually sent.
   const doe = !req.channelPartner && req.user.role !== "ADMIN" ? req.user.name : req.query.doe;
 
-  const [allLeads, allActivity, agents, allMeetings] = await Promise.all([
+  const [allLeads, allActivity, agents, allMeetings, employees] = await Promise.all([
     prisma.emailLead.findMany({
       where: req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {},
       select: { id: true, owner: true, country: true, source: true, replyType: true, callBookedAt: true, createdAt: true, convertedToLeadId: true }
@@ -80,7 +90,12 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
     prisma.meeting.findMany({
       where: req.channelPartner ? { lead: { channelPartner: req.channelPartner.businessName } } : {},
       select: { createdAt: true }
-    })
+    }),
+    // Only needed to filter the per-rep scorecard below -- see that
+    // comment for why. Skipped for a Channel Partner request, whose own
+    // "DOE" names are real owners on their referred leads, not staff
+    // accounts.
+    req.channelPartner ? Promise.resolve([]) : prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } })
   ]);
 
   // Industry/Ticket Size/Hot-Warm-Cold live on the CRM Lead this
@@ -97,11 +112,11 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
 
   const leads = allLeads.filter((l) => {
     if (doe && l.owner !== doe) return false;
-    // Compared against the same normalized name /facets offers in the
-    // dropdown -- matching the raw l.country directly would miss every row
-    // recorded under a differently-cased or coded spelling of the country
-    // that was actually picked.
-    if (geography && normalizeCountryName(l.country) !== geography) return false;
+    // Compared against the same region /facets offers in the dropdown --
+    // matching the raw l.country directly would miss every row whose
+    // country is spelled differently, or belongs to the same region under
+    // a different country entirely.
+    if (geography && geographyForEmailLead(l) !== geography) return false;
     if (leadSource && l.source !== leadSource) return false;
     if (dateFrom && l.createdAt < new Date(dateFrom)) return false;
     if (dateTo && l.createdAt > new Date(dateTo)) return false;
@@ -119,10 +134,20 @@ outreachDoeRouter.get("/", asyncHandler(async (req, res) => {
   const activity = allActivity.filter((a) => leadIds.has(a.leadId));
 
   const top = outreachMetrics(leads);
-  // The compression table should reflect the real owners recorded on the
-  // outreach rows, including historical/imported owner names. Filtering this
-  // down to currently-active employee accounts can hide valid campaign data.
-  const scorecard = doeScorecard(leads, activity);
+  // One row per real employee (Admin Panel -> Employees) — same
+  // real-accounts-only restriction /facets' own `does` list already
+  // applies. EmailLead.owner is free text (CSV imports, "Add to List",
+  // the inbound webhook can all set it to anything, including stale/demo
+  // values left over from testing), so an unfiltered groupby would give a
+  // row to every one of those instead of just the people who actually
+  // work here. `overall` below stays unfiltered — the full historical/
+  // imported picture is still there in the combined total, just not
+  // exploded into a row per stray name.
+  const employeeNames = new Set(employees.map((e) => e.name));
+  const scorecard = doeScorecard(
+    req.channelPartner ? leads : leads.filter((l) => employeeNames.has(l.owner)),
+    activity
+  );
   const overall = doeOverallMetrics(leads, activity);
   const callsBooked = leads.filter((l) => l.callBookedAt).length;
 

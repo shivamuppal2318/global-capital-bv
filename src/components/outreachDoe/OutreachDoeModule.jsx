@@ -106,7 +106,14 @@ export function OutreachDoeModule() {
 
   const cards = useMemo(
     () => [
-      { label: "Outreach Sent", value: fmtNum(data?.top.outreachSent), note: "Emails sent", noteTone: "blue" },
+      // data.top.outreachSent is emailLeads.length (see
+      // lib/executiveMetrics.js's outreachMetrics) -- a headcount of leads
+      // in scope, not a count of real send events. The Email Automation
+      // dashboard's own "Emails Sent" stat IS a real send count, and
+      // labeling this one the same way made the two screens look like they
+      // disagreed about the same number when they were measuring different
+      // things.
+      { label: "Leads in Outreach", value: fmtNum(data?.top.outreachSent), note: "Assigned to this DOE", noteTone: "blue" },
       { label: "Responses", value: fmtNum(data?.top.responses), note: "Any reply", noteTone: "green" },
       { label: "Calls Booked", value: fmtNum(data?.top.callsBooked), note: "Zoom follow-ups", noteTone: "amber" },
       { label: "Response Rate", value: fmtPct(data?.top.responseRate), note: "Responses / Outreach", noteTone: "violet" }
