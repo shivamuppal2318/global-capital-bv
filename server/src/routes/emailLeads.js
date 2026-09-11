@@ -8,7 +8,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 import { calculateLeadScore, deriveQualification } from "../lib/leadScoring.js";
 import { verifyEmailDeliverability, verifyEmailsDeliverability } from "../lib/emailValidation.js";
 import { recordAudit } from "../lib/auditLog.js";
-import { ownerWhereClause } from "../lib/channelPartnerScope.js";
+import { ownerWhereClause, WEBSITE_LEADS_CAMPAIGN_NAME } from "../lib/channelPartnerScope.js";
 
 export const emailLeadsRouter = Router();
 
@@ -227,8 +227,6 @@ function pickInboundField(flatBody, aliases) {
 // instead. Created lazily on first use, and deliberately never gets cadence
 // steps: these are inbound inquiries, not a cold-outreach sequence, so
 // scheduleCadenceSteps below naturally schedules zero for it.
-export const WEBSITE_LEADS_CAMPAIGN_NAME = "Website Leads";
-
 async function getOrCreateWebsiteLeadsCampaign() {
   const existing = await prisma.emailCampaign.findFirst({
     where: { name: WEBSITE_LEADS_CAMPAIGN_NAME, ownerChannelPartnerId: null },
