@@ -20,7 +20,7 @@ import { EmailTemplatesCadencesModule } from "../emailTemplates/EmailTemplatesCa
 const tabs = [
   { id: "dashboard", label: "Dashboard", icon: GridIcon },
   { id: "campaigns", label: "Campaigns", icon: MailIcon },
-  { id: "leads", label: "Leads", icon: UsersIcon },
+  { id: "leads", label: "List", icon: UsersIcon },
   { id: "templates", label: "Templates", icon: TagIcon },
   { id: "mailbox", label: "Mailbox", icon: MailIcon },
   { id: "settings", label: "Settings", icon: CogIcon }

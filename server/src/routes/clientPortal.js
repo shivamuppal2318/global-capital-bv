@@ -142,7 +142,16 @@ clientPortalRouter.post(
         name: parsed.data.name,
         email: parsed.data.email,
         phone: parsed.data.phone || null,
-        passwordHash: await hashPassword(parsed.data.password)
+        passwordHash: await hashPassword(parsed.data.password),
+        lastLoginAt: new Date()
+      }
+    });
+    await prisma.leadActivityLog.create({
+      data: {
+        leadId: lead.id,
+        kind: "STATUS_CHANGED",
+        title: "Client portal account created",
+        detail: `${clientUser.name} registered with ${clientUser.email}.`
       }
     });
 
@@ -177,6 +186,7 @@ function loginFormHtml({ error } = {}) {
 clientPortalRouter.get("/login", (_req, res) => res.send(loginFormHtml()));
 
 const loginSchema = z.object({ email: z.string().trim().email(), password: z.string().min(1) });
+const updateNameSchema = z.object({ name: z.string().trim().min(1, "Enter your name.").max(120, "Name is too long.") });
 
 clientPortalRouter.post(
   "/login",
@@ -195,8 +205,44 @@ clientPortalRouter.post(
       return res.status(401).send(loginFormHtml({ error: "Incorrect email or password." }));
     }
 
-    await prisma.clientUser.update({ where: { id: clientUser.id }, data: { lastLoginAt: new Date() } });
+    const loggedInAt = new Date();
+    await prisma.clientUser.update({ where: { id: clientUser.id }, data: { lastLoginAt: loggedInAt } });
+    await prisma.leadActivityLog.create({
+      data: {
+        leadId: clientUser.leadId,
+        kind: "STATUS_CHANGED",
+        title: "Client portal sign in",
+        detail: `${clientUser.email} signed in to the client dashboard.`
+      }
+    });
     setClientSessionCookie(res, signClientToken(clientUser));
+    res.redirect("/api/client-portal/dashboard");
+  })
+);
+
+clientPortalRouter.post(
+  "/profile/name",
+  requireClientAuth,
+  asyncHandler(async (req, res) => {
+    const parsed = updateNameSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.redirect("/api/client-portal/dashboard");
+    }
+
+    const name = parsed.data.name;
+    await prisma.$transaction([
+      prisma.clientUser.update({ where: { id: req.clientUser.id }, data: { name } }),
+      prisma.lead.update({ where: { id: req.clientUser.leadId }, data: { name } }),
+      prisma.leadActivityLog.create({
+        data: {
+          leadId: req.clientUser.leadId,
+          kind: "STATUS_CHANGED",
+          title: "Client portal name updated",
+          detail: `${req.clientUser.email} changed their display name to ${name}.`
+        }
+      })
+    ]);
+
     res.redirect("/api/client-portal/dashboard");
   })
 );
@@ -401,18 +447,28 @@ function ndaFilledValues(nda) {
 // signed/scanned copy back, or upload an NDA of their own instead of ours
 // — the last two share the same upload control, since the system can't
 // tell (and doesn't need to) which one a given file is.
-function ndaSignFormHtml({ error, doeName, alreadySigned, companyName, filled, documentHtml } = {}) {
+function ndaSignFormHtml({ error, doeName, alreadySigned, editMode = false, companyName, filled, documentHtml } = {}) {
+  if (alreadySigned && !editMode) {
+    return `
+    <div class="gc-sign-box">
+      ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
+      <div style="border:1px solid #c7ead8;background:#f3fbf6;border-radius:14px;padding:16px;">
+        <p style="margin:0;font-size:14px;font-weight:600;color:#1f7a4a;">NDA submitted successfully.</p>
+        <p style="margin:6px 0 0;font-size:13px;color:#5c6b87;line-height:1.6;">You've already accepted this NDA. No further action is required right now.</p>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;">
+        <a href="/api/client-portal/nda/signed-document" class="gc-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;">Download signed copy</a>
+        <a href="/api/client-portal/dashboard?editNda=1#stage-nda" class="gc-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;">Edit signed details</a>
+      </div>
+    </div>`;
+  }
+
   return `
     <div class="gc-sign-box">
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
-      ${
-        alreadySigned
-          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this NDA. <a href="/api/client-portal/nda/signed-document" style="color:#3046b2;font-weight:600;text-decoration:none;">Download your signed copy</a>, fill in the form again to update the details, or upload a copy for your own records.</p>`
-          : ""
-      }
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
 
-      <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#102246;">Option 1 — Fill in your details online</p>
+      <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#102246;">${alreadySigned ? "Edit signed details" : "Option 1 — Fill in your details online"}</p>
       <p style="margin:0 0 12px;font-size:12.5px;color:#5c6b87;">This is the actual agreement — edit the highlighted fields directly in the text below, then confirm and submit.</p>
       <form method="POST" action="/api/client-portal/nda/fill-details" style="margin:0 0 22px;">
         ${documentHtml}
@@ -420,10 +476,10 @@ function ndaSignFormHtml({ error, doeName, alreadySigned, companyName, filled, d
           <input type="checkbox" name="agree" required />
           I have read and agree to the terms of this NDA
         </label>
-        <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">Submit &amp; Accept</button>
+        <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">${alreadySigned ? "Update signed details" : "Submit &amp; Accept"}</button>
       </form>
 
-      <div style="border-top:1px solid #e7edf5;padding-top:16px;">
+      <div style="border-top:1px solid #e7edf5;padding-top:16px;${alreadySigned ? "display:none;" : ""}">
         <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#102246;">Prefer a document instead?</p>
         <p style="margin:0 0 12px;font-size:13px;color:#5c6b87;line-height:1.6;">
           Option 2 — download our template, sign it by hand, then upload it back. Option 3 — already have your own NDA? Upload that instead.
@@ -467,18 +523,28 @@ function ioiFilledValues(ioi) {
 // own offer, not something a client would independently produce): fill in
 // the LOI template's actual blanks (assets/ioi-template.docx) right here,
 // or download it, sign by hand, and upload the scanned/completed copy.
-function ioiRespondFormHtml({ error, doeName, alreadySigned, companyName, filled, documentHtml } = {}) {
+function ioiRespondFormHtml({ error, doeName, alreadySigned, editMode = false, companyName, filled, documentHtml } = {}) {
+  if (alreadySigned && !editMode) {
+    return `
+    <div class="gc-sign-box">
+      ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
+      <div style="border:1px solid #c7ead8;background:#f3fbf6;border-radius:14px;padding:16px;">
+        <p style="margin:0;font-size:14px;font-weight:600;color:#1f7a4a;">IOI submitted successfully.</p>
+        <p style="margin:6px 0 0;font-size:13px;color:#5c6b87;line-height:1.6;">You've already accepted this IOI. No further action is required right now.</p>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;">
+        <a href="/api/client-portal/ioi/signed-document" class="gc-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;">Download signed copy</a>
+        <a href="/api/client-portal/dashboard?editIoi=1#stage-ioi" class="gc-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;">Edit signed details</a>
+      </div>
+    </div>`;
+  }
+
   return `
     <div class="gc-sign-box">
       ${doeName ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">Your Global Capital BV contact: <strong style="color:#334463;">${escapeHtml(doeName)}</strong></p>` : ""}
-      ${
-        alreadySigned
-          ? `<p style="margin:0 0 12px;font-size:13px;color:#5c6b87;">You've already accepted this IOI. <a href="/api/client-portal/ioi/signed-document" style="color:#3046b2;font-weight:600;text-decoration:none;">Download your signed copy</a>, fill in the form again to update the details, or upload a copy for your own records.</p>`
-          : ""
-      }
       ${error ? `<p class="gc-error" style="margin-bottom:12px;">${escapeHtml(error)}</p>` : ""}
 
-      <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#102246;">Option 1 — Fill in your details online</p>
+      <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#102246;">${alreadySigned ? "Edit signed details" : "Option 1 — Fill in your details online"}</p>
       <p style="margin:0 0 12px;font-size:12.5px;color:#5c6b87;">This is the actual Letter of Intent — edit the highlighted fields directly in the text below, then confirm and submit.</p>
       <form method="POST" action="/api/client-portal/ioi/fill-details" style="margin:0 0 22px;">
         ${documentHtml}
@@ -486,10 +552,10 @@ function ioiRespondFormHtml({ error, doeName, alreadySigned, companyName, filled
           <input type="checkbox" name="agree" required />
           I have read and agree to the terms of this IOI
         </label>
-        <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">Submit &amp; Accept</button>
+        <button type="submit" class="gc-btn-primary" style="width:auto;padding:10px 22px;border-radius:12px;">${alreadySigned ? "Update signed details" : "Submit &amp; Accept"}</button>
       </form>
 
-      <div style="border-top:1px solid #e7edf5;padding-top:16px;">
+      <div style="border-top:1px solid #e7edf5;padding-top:16px;${alreadySigned ? "display:none;" : ""}">
         <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#102246;">Prefer a document instead?</p>
         <p style="margin:0 0 12px;font-size:13px;color:#5c6b87;line-height:1.6;">
           Option 2 — download our template, sign it by hand, then upload it back.
@@ -576,6 +642,55 @@ function dataRoomUploadFormHtml({ error, uploadedCategories }) {
     </div>`;
 }
 
+function fmtPortalDate(value) {
+  return value ? new Date(value).toLocaleDateString() : "—";
+}
+
+function visitPlanningDetailsHtml(visits) {
+  if (!visits.length) return "";
+
+  const ordered = [...visits].sort((a, b) => new Date(b.plannedFor ?? b.completedAt ?? b.createdAt) - new Date(a.plannedFor ?? a.completedAt ?? a.createdAt));
+  const rows = ordered
+    .map((visit) => {
+      const facts = [
+        ["Planned from", fmtPortalDate(visit.plannedFor)],
+        ["Planned to", fmtPortalDate(visit.completedAt)],
+        ["Location", visit.location],
+        ["Region", visit.region],
+        ["Country", visit.country],
+        ["Attendees", visit.attendees],
+        ["Purpose", visit.purpose],
+        ["Travel mode", visit.travelMode],
+        ["Visit owner", visit.owner],
+        ["Cost", visit.costAmount ? `${visit.costCurrency ?? ""} ${Number(visit.costAmount).toLocaleString()}`.trim() : null],
+        ["Report", visit.reportSubmitted ? "Submitted" : "Not submitted yet"]
+      ].filter(([, value]) => value);
+
+      return `
+        <div style="border:1px solid #e7edf5;background:#fbfcfe;border-radius:14px;padding:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <p style="margin:0;font-size:14px;font-weight:600;color:#102246;">${escapeHtml(visit.location || visit.country || "Planned visit")}</p>
+            <span class="gc-badge" style="background:${STATUS_STYLE[visit.status === "COMPLETED" ? "completed" : visit.status === "CANCELLED" ? "declined" : "in_progress"].bg};color:${STATUS_STYLE[visit.status === "COMPLETED" ? "completed" : visit.status === "CANCELLED" ? "declined" : "in_progress"].fg};">${escapeHtml(visit.status)}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px;">
+            ${facts
+              .map(
+                ([label, value]) => `
+                  <div>
+                    <p style="margin:0;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#8592ab;">${escapeHtml(label)}</p>
+                    <p style="margin:4px 0 0;font-size:13px;color:#334463;line-height:1.5;">${escapeHtml(value)}</p>
+                  </div>`
+              )
+              .join("")}
+          </div>
+          ${visit.notes ? `<p style="margin:12px 0 0;font-size:13px;color:#5c6b87;line-height:1.6;">${escapeHtml(visit.notes)}</p>` : ""}
+        </div>`;
+    })
+    .join("");
+
+  return `<div class="gc-sign-box"><div style="display:grid;gap:12px;">${rows}</div></div>`;
+}
+
 // Both /dashboard (the overview) and /stage/:key (one stage on its own
 // page) need the exact same underlying records and the same 8-stage
 // computation — the only difference is how much of it gets rendered.
@@ -624,7 +739,7 @@ async function loadPortalData(leadId) {
     termSheet
   });
 
-  return { nda, ioi, stages, uploadedCategories, stageReportDocs };
+  return { nda, ioi, visits, stages, uploadedCategories, stageReportDocs };
 }
 
 // Matches a stage key to its generated report, if one exists yet -- same
@@ -661,7 +776,7 @@ clientPortalRouter.get(
   requireClientAuth,
   asyncHandler(async (req, res) => {
     const leadId = req.clientUser.leadId;
-    const { nda, ioi, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
+    const { nda, ioi, visits, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
 
     const completedCount = stages.filter((s) => s.status === "completed").length;
 
@@ -675,12 +790,14 @@ clientPortalRouter.get(
     // something the client should be able to override from the portal.
     const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
     const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
+    const editNda = req.query.editNda === "1";
     const docError = req.query.docError ? String(req.query.docError) : null;
     // Same gate as ndaActionable — sent and not a deliberate staff-side
     // decline/expiry — mirrored for IOI rather than reused, since the two
     // records' status enums and sentAt semantics are independent.
     const ioiActionable = ioi && Boolean(ioi.sentAt) && !["DECLINED", "EXPIRED"].includes(ioi.status);
     const ioiError = req.query.ioiError ? String(req.query.ioiError) : null;
+    const editIoi = req.query.editIoi === "1";
 
     // Read once per request (the .map() below rendering each stage row
     // can't itself be async) — the real document text with the client's
@@ -744,6 +861,7 @@ clientPortalRouter.get(
                       error: ndaError,
                       doeName: nda.owner,
                       alreadySigned: nda.status === "SIGNED",
+                      editMode: editNda,
                       companyName: req.clientUser.lead.company,
                       filled: ndaFilledValues(nda),
                       documentHtml: ndaDocHtml
@@ -753,12 +871,15 @@ clientPortalRouter.get(
                       error: ioiError,
                       doeName: ioi.owner,
                       alreadySigned: ioi.status === "SIGNED",
+                      editMode: editIoi,
                       companyName: req.clientUser.lead.company,
                       filled: ioiFilledValues(ioi),
                       documentHtml: ioiDocHtml
                     });
                   } else if (s.key === "dataRoom") {
                     extraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
+                  } else if (s.key === "visitPlanning") {
+                    extraHtml = visitPlanningDetailsHtml(visits);
                   }
                   if (s.status === "completed") {
                     const report = reportDocFor(s.key, stageReportDocs);
@@ -786,13 +907,15 @@ clientPortalRouter.get(
     if (!stageMeta) return res.redirect("/api/client-portal/dashboard");
 
     const leadId = req.clientUser.leadId;
-    const { nda, ioi, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
+    const { nda, ioi, visits, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
     const stage = stages.find((s) => s.key === stageMeta.key);
 
     const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
     const ndaError = req.query.ndaError ? String(req.query.ndaError) : null;
+    const editNda = req.query.editNda === "1";
     const ioiActionable = ioi && Boolean(ioi.sentAt) && !["DECLINED", "EXPIRED"].includes(ioi.status);
     const ioiError = req.query.ioiError ? String(req.query.ioiError) : null;
+    const editIoi = req.query.editIoi === "1";
     const docError = req.query.docError ? String(req.query.docError) : null;
 
     let stageExtraHtml = "";
@@ -801,6 +924,7 @@ clientPortalRouter.get(
         error: ndaError,
         doeName: nda.owner,
         alreadySigned: nda.status === "SIGNED",
+        editMode: editNda,
         companyName: req.clientUser.lead.company,
         filled: ndaFilledValues(nda),
         documentHtml: await ndaFillFormFragment(ndaFilledValues(nda), req.clientUser.lead.company)
@@ -810,12 +934,15 @@ clientPortalRouter.get(
         error: ioiError,
         doeName: ioi.owner,
         alreadySigned: ioi.status === "SIGNED",
+        editMode: editIoi,
         companyName: req.clientUser.lead.company,
         filled: ioiFilledValues(ioi),
         documentHtml: await ioiFillFormFragment(ioiFilledValues(ioi), req.clientUser.lead.company, ioi)
       });
     } else if (stage.key === "dataRoom") {
       stageExtraHtml = dataRoomUploadFormHtml({ error: docError, uploadedCategories });
+    } else if (stage.key === "visitPlanning") {
+      stageExtraHtml = visitPlanningDetailsHtml(visits);
     }
     if (stage.status === "completed") {
       const report = reportDocFor(stage.key, stageReportDocs);

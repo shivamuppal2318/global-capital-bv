@@ -11,6 +11,7 @@ import { plainTextToHtml } from "../lib/leadSender.js";
 import { CHANNEL_PARTNER_OPTIONAL_MODULES, CHANNEL_PARTNER_OPTIONAL_MODULE_IDS } from "../lib/channelPartnerPermissions.js";
 import { renderSignedChannelPartnerAgreement, slugify } from "../lib/signedDocumentRenderer.js";
 import { appBaseUrl } from "../lib/appUrl.js";
+import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
 export const channelPartnersRouter = Router();
 
@@ -48,10 +49,10 @@ function currentStageForLead({ termSheet, ioi, nda, meetings, documents }) {
 // rather than a stored/denormalised total that could drift. Also where
 // maintenanceFeeEligible (Clause 7.4 of the standard agreement — 10+
 // referred clients) gets attached, since it's derived from this same count.
-async function withReferredLeads(partners) {
+async function withReferredLeads(partners, req) {
   const counts = await prisma.lead.groupBy({
     by: ["channelPartner"],
-    where: { channelPartner: { in: partners.map((p) => p.name) } },
+    where: { channelPartner: { in: partners.map((p) => p.name) }, ...leadOwnerWhereClause(req) },
     _count: { _all: true }
   });
   const byName = Object.fromEntries(counts.map((c) => [c.channelPartner, c._count._all]));
@@ -78,12 +79,12 @@ channelPartnersRouter.get("/", asyncHandler(async (req, res) => {
     },
     orderBy: { name: "asc" }
   });
-  res.json(await withReferredLeads(partners));
+  res.json(await withReferredLeads(partners, req));
 }));
 
-channelPartnersRouter.get("/metrics", asyncHandler(async (_req, res) => {
+channelPartnersRouter.get("/metrics", asyncHandler(async (req, res) => {
   const partners = await prisma.channelPartner.findMany();
-  const withCounts = await withReferredLeads(partners);
+  const withCounts = await withReferredLeads(partners, req);
   const totalLeadsReferred = withCounts.reduce((sum, p) => sum + p.referredLeads, 0);
   const top = withCounts.slice().sort((a, b) => b.referredLeads - a.referredLeads)[0];
 
@@ -132,7 +133,7 @@ channelPartnersRouter.get("/:id/commission-ledger", asyncHandler(async (req, res
   }
 
   const leads = await prisma.lead.findMany({
-    where: { channelPartner: partner.name },
+    where: { channelPartner: partner.name, ...leadOwnerWhereClause(req) },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -498,7 +499,31 @@ channelPartnersRouter.patch("/:id", asyncHandler(async (req, res) => {
 }));
 
 channelPartnersRouter.delete("/:id", asyncHandler(async (req, res) => {
-  const deleted = await prisma.channelPartner.delete({ where: { id: req.params.id } }).catch(() => null);
-  if (!deleted) return res.status(404).json({ error: "Channel partner not found" });
+  const partner = await prisma.channelPartner.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!partner) return res.status(404).json({ error: "Channel partner not found" });
+  const campaigns = await prisma.emailCampaign.findMany({
+    where: { ownerChannelPartnerId: partner.id },
+    select: { id: true, leads: { select: { id: true } } }
+  });
+  const campaignIds = campaigns.map((campaign) => campaign.id);
+  const leadIds = campaigns.flatMap((campaign) => campaign.leads.map((lead) => lead.id));
+
+  await prisma.$transaction(async (tx) => {
+    if (leadIds.length) {
+      await tx.marketSignal.updateMany({ where: { matchedLeadId: { in: leadIds } }, data: { matchedLeadId: null } });
+      await tx.marketSignal.updateMany({ where: { createdLeadId: { in: leadIds } }, data: { createdLeadId: null } });
+      await tx.aiReplyDraft.deleteMany({ where: { leadId: { in: leadIds } } });
+      await tx.emailActivityLog.deleteMany({ where: { leadId: { in: leadIds } } });
+      await tx.replyEvent.deleteMany({ where: { leadId: { in: leadIds } } });
+      await tx.emailLead.deleteMany({ where: { id: { in: leadIds } } });
+    }
+    if (campaignIds.length) {
+      await tx.emailSegment.deleteMany({ where: { campaignId: { in: campaignIds } } });
+      await tx.cadenceStep.deleteMany({ where: { campaignId: { in: campaignIds } } });
+      await tx.emailCampaign.deleteMany({ where: { id: { in: campaignIds } } });
+    }
+    await tx.emailAccount.deleteMany({ where: { ownerChannelPartnerId: partner.id } });
+    await tx.channelPartner.delete({ where: { id: partner.id } });
+  });
   res.status(204).end();
 }));

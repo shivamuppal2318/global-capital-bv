@@ -316,11 +316,18 @@ export function ChannelPartnerModule() {
   async function remove(partner) {
     if (!window.confirm(`Delete "${partner.name}"? This cannot be undone.`)) return;
     setBusyId(partner.id);
+    setNotice(null);
     try {
       await channelPartnersApi.remove(partner.id);
       load();
     } catch (err) {
-      setNotice(err.message);
+      if (/not found/i.test(err.message)) {
+        setPartners((rows) => rows.filter((row) => row.id !== partner.id));
+        setNotice(`"${partner.name}" was already deleted, so I removed it from this list.`);
+        load();
+      } else {
+        setNotice(err.message);
+      }
     } finally {
       setBusyId(null);
     }

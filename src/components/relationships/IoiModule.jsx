@@ -204,11 +204,9 @@ export function IoiModule() {
     }
   }
 
-  // Saves the form, then immediately fires "generate" — the first real step
-  // in the IOI lifecycle (Generate -> Send -> Sign), same idea as the NDA
-  // quick form's Save/Send pair. Unlike NDA's "send", IOI's actions don't
-  // email anyone — they're internal status/timestamp advances only, so
-  // "Generate" is the honest equivalent, not "Send".
+  // Saves the form, then immediately generates and sends it. A generated
+  // IOI that is not sent never becomes visible/actionable in the client
+  // portal, so the quick path should carry the whole handoff.
   async function handleSaveAndGenerate(e) {
     e?.preventDefault?.();
     if (!editing.leadId) return setFormError("Pick which lead this IOI is for.");
@@ -221,8 +219,15 @@ export function IoiModule() {
       body.documentId = body.documentId || null;
       const record = editing.id ? await ioiApi.update(editing.id, body) : await ioiApi.save(body);
       await ioiApi.advance(record.id, "generate");
+      const sent = await ioiApi.advance(record.id, "send");
       closeForm();
-      setNotice(`Saved and generated for ${record.lead?.company ?? "the client"}.`);
+      if (sent.emailResult?.emailed) {
+        setNotice(`Saved, generated, and emailed to ${record.lead?.company ?? "the client"}.`);
+      } else if (sent.emailResult) {
+        setNotice(`Saved and generated, but not emailed (${sent.emailResult.reason}). Portal link: ${sent.emailResult.portalUrl}`);
+      } else {
+        setNotice(`Saved and generated for ${record.lead?.company ?? "the client"}.`);
+      }
       load();
     } catch (err) {
       setFormError(err.message);
@@ -235,8 +240,14 @@ export function IoiModule() {
     setBusyId(record.id);
     setNotice(null);
     try {
-      await ioiApi.advance(record.id, step.action);
-      setNotice(`${step.label} recorded for ${record.lead?.company ?? "this lead"}.`);
+      const updated = await ioiApi.advance(record.id, step.action);
+      if (updated.emailResult?.emailed) {
+        setNotice(`${step.label} recorded and emailed to ${record.lead?.company ?? "this lead"}.`);
+      } else if (updated.emailResult) {
+        setNotice(`${step.label} recorded, but not emailed (${updated.emailResult.reason}). Portal link: ${updated.emailResult.portalUrl}`);
+      } else {
+        setNotice(`${step.label} recorded for ${record.lead?.company ?? "this lead"}.`);
+      }
       load();
     } catch (err) {
       setNotice(err.message);
@@ -493,7 +504,7 @@ export function IoiModule() {
             <div className="mt-4 flex flex-wrap gap-2">
               <ActionButton label={saving ? "Saving…" : "Save"} small onClick={handleSave} disabled={saving} />
               <ActionButton
-                label={saving ? "Generating…" : "Generate"}
+                label={saving ? "Sending…" : "Generate & Send"}
                 primary
                 small
                 onClick={handleSaveAndGenerate}

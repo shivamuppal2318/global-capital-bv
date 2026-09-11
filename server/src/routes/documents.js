@@ -211,7 +211,11 @@ documentsRouter.post("/", uploadDataRoomDocument.single("file"), asyncHandler(as
 documentsRouter.post("/gap-check", blockChannelPartner, asyncHandler(async (req, res) => {
   const { leadId } = req.body ?? {};
   const documents = await prisma.document.findMany({
-    where: leadId ? { leadId: String(leadId) } : {},
+    where: {
+      ...(leadId ? { leadId: String(leadId) } : {}),
+      ...relatedLeadOwnerWhereClause(req),
+      ...documentEmployeeOwnerWhereClause(req)
+    },
     orderBy: { createdAt: "desc" },
     select: { id: true, originalName: true, category: true, description: true, extractedText: true }
   });
@@ -285,9 +289,15 @@ documentsRouter.get("/:id/preview", asyncHandler(async (req, res) => {
 // this app doesn't have a reviewer-vs-uploader role split yet.
 documentsRouter.post("/:id/verify", blockChannelPartner, asyncHandler(async (req, res) => {
   const verified = req.body?.verified !== false;
+  const existing = await prisma.document.findFirst({
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...documentEmployeeOwnerWhereClause(req) },
+    select: { id: true }
+  });
+  if (!existing) return res.status(404).json({ error: "Document not found" });
+
   const doc = await prisma.document
     .update({
-      where: { id: req.params.id },
+      where: { id: existing.id },
       data: verified
         ? { verified: true, verifiedAt: new Date(), verifiedById: req.user?.id ?? null }
         : { verified: false, verifiedAt: null, verifiedById: null },
@@ -309,9 +319,15 @@ documentsRouter.post("/:id/verify", blockChannelPartner, asyncHandler(async (req
 
 documentsRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
   const { category, description } = req.body ?? {};
+  const existing = await prisma.document.findFirst({
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...documentEmployeeOwnerWhereClause(req) },
+    select: { id: true }
+  });
+  if (!existing) return res.status(404).json({ error: "Document not found" });
+
   const doc = await prisma.document
     .update({
-      where: { id: req.params.id },
+      where: { id: existing.id },
       data: {
         ...(category !== undefined ? { category: String(category).trim() || "General" } : {}),
         ...(description !== undefined ? { description: String(description).trim() || null } : {})
@@ -324,7 +340,9 @@ documentsRouter.patch("/:id", blockChannelPartner, asyncHandler(async (req, res)
 }));
 
 documentsRouter.delete("/:id", blockChannelPartner, asyncHandler(async (req, res) => {
-  const doc = await prisma.document.findUnique({ where: { id: req.params.id } });
+  const doc = await prisma.document.findFirst({
+    where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...documentEmployeeOwnerWhereClause(req) }
+  });
   if (!doc) return res.status(404).json({ error: "Document not found" });
 
   await prisma.document.delete({ where: { id: doc.id } });

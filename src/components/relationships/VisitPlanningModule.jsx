@@ -4,6 +4,7 @@ import { leadsApi } from "../../lib/leadsApi";
 import { documentsApi } from "../../lib/documentsApi";
 import { ActionButton, Badge, Card, SectionTitle, StatCard } from "../ui";
 import { CheckCircleIcon, PlusIcon, SearchIcon, XIcon } from "../Icons";
+import { useOptionalAuth } from "../../context/AuthContext";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
@@ -23,6 +24,7 @@ const MONTH_NAMES = [
 ];
 
 export function VisitPlanningModule() {
+  const user = useOptionalAuth()?.user;
   const [plans, setPlans] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [calendar, setCalendar] = useState({});
@@ -100,7 +102,7 @@ export function VisitPlanningModule() {
       travelMode: "",
       costAmount: "",
       costCurrency: "USD",
-      owner: "",
+      owner: user?.name ?? "",
       notes: "",
       reportSubmitted: false,
       reportId: ""

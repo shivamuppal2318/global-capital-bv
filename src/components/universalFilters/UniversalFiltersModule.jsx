@@ -228,7 +228,7 @@ export function UniversalFiltersModule() {
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.lifecyclePhaseLabel}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.industry ?? "—"}</td>
                   <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.territory ?? "—"}</td>
-                  <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.owner ?? "Unassigned"}</td>
+                  <td className="py-3 pr-4 text-[13px] text-[#334463]">{lead.doe ?? lead.owner ?? "Unassigned"}</td>
                 </tr>
               ))}
             </tbody>

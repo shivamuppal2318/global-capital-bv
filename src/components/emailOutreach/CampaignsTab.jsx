@@ -68,7 +68,7 @@ export function CampaignsTab({ mailing }) {
   const {
     campaigns, selectedCampaignId, selectCampaign, startNewCampaign,
     selectedCampaign, emailAccounts, handleAssignAccountToCampaign, handleToggleCampaignStatus,
-    automationForm, handleFormChange, handleSaveAutomation, handleSendNow, automationNotice, systemStatus
+    automationForm, handleFormChange, handleSaveAutomation, handleSendNow, sendingNowBusy, automationNotice, systemStatus
   } = mailing;
 
   const targetListName = automationForm.targetCampaignId
@@ -81,8 +81,16 @@ export function CampaignsTab({ mailing }) {
   // the real send pipeline (emailProvider.js's `from` is always a bare
   // address, never a "Display Name <email>" pair), so this shows the one
   // real value instead of a second, fictional field.
-  const assignedAccount = selectedCampaign?.emailAccountId ? emailAccounts.find((a) => a.id === selectedCampaign.emailAccountId) : null;
-  const resolvedFromAddress = assignedAccount?.fromAddress ?? systemStatus?.smtpFromAddress ?? "Not configured yet";
+  const selectedEmailAccountId = selectedCampaign?.emailAccountId ?? automationForm.emailAccountId ?? "";
+  const assignedAccount = selectedEmailAccountId ? emailAccounts.find((a) => a.id === selectedEmailAccountId) : null;
+  const defaultActiveAccount = emailAccounts.find((account) => account.isActive) ?? null;
+  const resolvedFromAccount = assignedAccount ?? defaultActiveAccount;
+  const resolvedFromAddress = resolvedFromAccount?.fromAddress ?? systemStatus?.smtpFromAddress ?? "Not configured yet";
+  const resolvedFromLabel = resolvedFromAccount
+    ? `${resolvedFromAccount.label}${selectedEmailAccountId ? "" : " (default)"}`
+    : systemStatus?.smtpFromAddress
+      ? "Global SMTP fallback"
+      : "No mailbox configured";
 
   const [viewMode, setViewMode] = useState("list");
   const [searchText, setSearchText] = useState("");
@@ -609,7 +617,7 @@ export function CampaignsTab({ mailing }) {
                   className="w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#4b5370] outline-none"
                 />
                 <p className="mt-1.5 text-[11px] leading-4 text-[#8593ac]">
-                  From the mailbox assigned below — change it there, not here.
+                  {resolvedFromLabel}
                 </p>
               </Field>
 
@@ -694,21 +702,23 @@ export function CampaignsTab({ mailing }) {
                 </label>
               </div>
 
-              {selectedCampaign ? (
-                <div className="rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3">
-                  <p className="text-[12px] font-semibold text-[#102246]">Selected campaign mailbox</p>
-                  <select
-                    value={selectedCampaign.emailAccountId ?? ""}
-                    onChange={handleAssignAccountToCampaign}
-                    className="mt-2 w-full rounded-[12px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] text-[#102246] outline-none"
-                  >
-                    <option value="">Default (global env provider)</option>
-                    {emailAccounts.map((account) => (
-                      <option key={account.id} value={account.id} disabled={!account.isActive}>
-                        {account.label} {account.country ? `(${account.country})` : ""} {account.isActive ? "" : "(inactive)"}
-                      </option>
-                    ))}
-                  </select>
+              <div className="rounded-[14px] border border-[#d6deea] bg-[#f8faff] px-4 py-3">
+                <p className="text-[12px] font-semibold text-[#102246]">Selected campaign mailbox</p>
+                <select
+                  value={selectedEmailAccountId}
+                  onChange={handleAssignAccountToCampaign}
+                  className="mt-2 w-full rounded-[12px] border border-[#d6deea] bg-white px-3 py-2 text-[13px] text-[#102246] outline-none"
+                >
+                  <option value="">
+                    {defaultActiveAccount ? `Default (${defaultActiveAccount.fromAddress})` : "Default (global env provider)"}
+                  </option>
+                  {emailAccounts.map((account) => (
+                    <option key={account.id} value={account.id} disabled={!account.isActive}>
+                      {account.label} {account.country ? `(${account.country})` : ""} {account.isActive ? "" : "(inactive)"}
+                    </option>
+                  ))}
+                </select>
+                {selectedCampaign ? (
                   <div className="mt-2.5">
                     <ActionButton
                       label={selectedCampaign.status === "Sending" ? "Pause automation" : "Resume automation"}
@@ -717,8 +727,8 @@ export function CampaignsTab({ mailing }) {
                       onClick={handleToggleCampaignStatus}
                     />
                   </div>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
 
               <div className="border-t border-[#e7edf5] pt-3 space-y-2.5">
                 <button
@@ -732,10 +742,10 @@ export function CampaignsTab({ mailing }) {
                   <button
                     type="button"
                     onClick={handleSendNowAndRefresh}
-                    disabled={!automationForm.subject?.trim() || !automationForm.bodyHtml?.trim()}
+                    disabled={sendingNowBusy || !automationForm.subject?.trim() || !automationForm.bodyHtml?.trim()}
                     className="w-full rounded-[14px] bg-[#1b295f] px-4 py-3 text-[15px] font-semibold text-white shadow-[0_8px_18px_rgba(27,41,95,0.22)] disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Send Now
+                    {sendingNowBusy ? "Sending…" : "Send Now"}
                   </button>
                 ) : null}
               </div>

@@ -7,6 +7,35 @@ const statusTone = { green: "green", amber: "amber", red: "red" };
 const statusLabel = { green: "Green", amber: "Amber", red: "Red" };
 const statusDot = { green: "bg-[#2b9b60]", amber: "bg-[#f29b3a]", red: "bg-[#e0483f]" };
 
+function ReportTable({ columns, rows, emptyText }) {
+  return (
+    <div className="mt-4 overflow-hidden rounded-[14px] border border-[#e1e8f2]">
+      <table className="w-full min-w-[720px] border-collapse text-left">
+        <thead>
+          <tr className="bg-[#eef4fb] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6e7c95]">
+            {columns.map((column) => (
+              <th key={column.key} className={`px-4 py-3 ${column.className ?? ""}`}>
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[#e7edf5] bg-white text-[13px] text-[#435471]">
+          {rows.length ? (
+            rows
+          ) : (
+            <tr>
+              <td colSpan={columns.length} className="px-4 py-4 text-[#9aa6ba]">
+                {emptyText}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // SLA-based ageing across the deal pipeline — Outreach is aged from an
 // EmailLead still awaiting a reply; NDA/Data Room/IOI/Term Sheet are aged
 // from their DealStageRecord for whichever deals are still open in that
@@ -129,101 +158,99 @@ export function AgeingReportModule({ onNavigate }) {
               DOE follow-up pending
             </SectionTitle>
 
-            {(data.staleInterested ?? []).length === 0 ? (
-              <p className="mt-5 text-[14px] text-[#9aa6ba]">No interested replies are waiting on DOE follow-up right now.</p>
-            ) : (
-              <div className="mt-5 grid gap-3 lg:grid-cols-2">
-                {data.staleInterested.map((lead) => (
-                  <div key={lead.id} className="rounded-[14px] border border-[#dfe7f2] bg-[#f8fbff] px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-[14px] font-semibold text-[#102246]">{lead.name}</p>
-                        <p className="mt-0.5 truncate text-[12px] text-[#7b8aa5]">{lead.company}</p>
-                      </div>
-                      <Badge tone={lead.days > 2 ? "red" : "amber"}>{lead.days}d pending</Badge>
-                    </div>
-                    <div className="mt-3 grid gap-2 text-[12px] text-[#5f6f89] sm:grid-cols-2">
-                      <p>
-                        <span className="block uppercase tracking-[0.08em] text-[#9aa6ba]">DOE</span>
-                        <span className="font-semibold text-[#102246]">{lead.owner || "Unassigned"}</span>
-                      </p>
-                      <p>
-                        <span className="block uppercase tracking-[0.08em] text-[#9aa6ba]">Source</span>
-                        <span className="font-semibold text-[#102246]">{lead.channelPartner ? `Partner: ${lead.channelPartner}` : "Cold outreach reply"}</span>
-                      </p>
-                    </div>
+            <ReportTable
+              columns={[
+                { key: "lead", label: "Lead" },
+                { key: "company", label: "Company" },
+                { key: "doe", label: "DOE" },
+                { key: "source", label: "Source" },
+                { key: "age", label: "Pending" },
+                { key: "action", label: "Action", className: "text-right" }
+              ]}
+              emptyText="No interested replies are waiting on DOE follow-up right now."
+              rows={(data.staleInterested ?? []).map((lead) => (
+                <tr key={lead.id} className="transition hover:bg-[#f8fbff]">
+                  <td className="px-4 py-3 font-semibold text-[#102246]">{lead.name}</td>
+                  <td className="px-4 py-3">{lead.company || "—"}</td>
+                  <td className="px-4 py-3">{lead.owner || "Unassigned"}</td>
+                  <td className="px-4 py-3">{lead.channelPartner ? `Partner: ${lead.channelPartner}` : "Cold outreach reply"}</td>
+                  <td className="px-4 py-3">
+                    <Badge tone={lead.days > 2 ? "red" : "amber"}>{lead.days}d pending</Badge>
+                  </td>
+                  <td className="px-4 py-3 text-right">
                     {onNavigate ? (
-                      <button type="button" onClick={() => onNavigate("crm-workspace")} className="mt-3 text-[12px] font-semibold text-[#3046b2] hover:underline">
-                        Open CRM Workspace →
+                      <button type="button" onClick={() => onNavigate("crm-workspace")} className="text-[12px] font-semibold text-[#3046b2] hover:underline">
+                        Open CRM →
                       </button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              ))}
+            />
           </Card>
 
-          <div className="grid gap-4 xl:grid-cols-[1.6fr_0.4fr]">
-            <Card className="px-5 py-5">
-              <SectionTitle
-                icon={ClockIcon}
-                iconClass="text-[#e0483f]"
-                subtitle="Every open deal past its phase's SLA — oldest first."
-              >
-                Overdue deals
-              </SectionTitle>
+          <Card className="px-5 py-5">
+            <SectionTitle
+              icon={ClockIcon}
+              iconClass="text-[#e0483f]"
+              subtitle="Every open deal past its phase's SLA — oldest first."
+            >
+              Overdue deals
+            </SectionTitle>
 
-              {data.overdueDeals.length === 0 ? (
-                <p className="mt-5 text-[14px] text-[#9aa6ba]">Nothing overdue right now — every open deal is within its phase's SLA.</p>
-              ) : (
-                <div className="mt-5 space-y-2">
-                  {data.overdueDeals.map((deal, index) => (
-                    <div
-                      key={`${deal.name}-${deal.phase}-${index}`}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#ffe3e3] bg-[#fff8f8] px-4 py-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-[14px] font-medium text-[#102246]">
-                          {deal.name} <span className="font-normal text-[#8592ab]">— {deal.company}</span>
-                        </p>
-                        <p className="mt-0.5 text-[12px] text-[#8592ab]">
-                          {deal.phase}
-                          {deal.owner ? ` · ${deal.owner}` : " · Unassigned"}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <Badge tone={statusTone.red}>{statusLabel.red}</Badge>
-                        <span className="text-[13px] font-semibold text-[#c94b6b]">{deal.days} days</span>
-                        {onNavigate ? (
-                          <ActionButton label="Open" small onClick={() => onNavigate(deal.navigateTo)} />
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+            <ReportTable
+              columns={[
+                { key: "lead", label: "Lead" },
+                { key: "company", label: "Company" },
+                { key: "phase", label: "Phase" },
+                { key: "owner", label: "DOE" },
+                { key: "age", label: "Age" },
+                { key: "status", label: "Status" },
+                { key: "action", label: "Action", className: "text-right" }
+              ]}
+              emptyText="Nothing overdue right now — every open deal is within its phase's SLA."
+              rows={data.overdueDeals.map((deal, index) => (
+                <tr key={`${deal.name}-${deal.phase}-${index}`} className="transition hover:bg-[#fff8f8]">
+                  <td className="px-4 py-3 font-semibold text-[#102246]">{deal.name}</td>
+                  <td className="px-4 py-3">{deal.company || "—"}</td>
+                  <td className="px-4 py-3">{deal.phase}</td>
+                  <td className="px-4 py-3">{deal.owner || "Unassigned"}</td>
+                  <td className="px-4 py-3 font-semibold text-[#c94b6b]">{deal.days} days</td>
+                  <td className="px-4 py-3">
+                    <Badge tone={statusTone.red}>{statusLabel.red}</Badge>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {onNavigate ? <ActionButton label="Open" small onClick={() => onNavigate(deal.navigateTo)} /> : "—"}
+                  </td>
+                </tr>
+              ))}
+            />
+          </Card>
 
-            <Card className="px-5 py-5">
-              <SectionTitle icon={UsersIcon} iconClass="text-[#8b52d0]" subtitle="Who owns the most overdue deals.">
-                Overdue by owner
-              </SectionTitle>
-              {data.byOwner.length === 0 ? (
-                <p className="mt-5 text-[13px] text-[#9aa6ba]">No overdue deals to attribute yet.</p>
-              ) : (
-                <div className="mt-5 space-y-2.5">
-                  {data.byOwner.map((row) => (
-                    <div key={row.owner} className="flex items-center justify-between gap-3">
-                      <p className="truncate text-[13px] font-medium text-[#102246]">{row.owner}</p>
-                      <span className="shrink-0 rounded-full bg-[#ffe3e3] px-2.5 py-1 text-[11px] font-semibold text-[#c94b6b]">
-                        {row.overdueCount}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </div>
+          <Card className="px-5 py-5">
+            <SectionTitle icon={UsersIcon} iconClass="text-[#8b52d0]" subtitle="Who owns the most overdue deals.">
+              Overdue by owner
+            </SectionTitle>
+            <ReportTable
+              columns={[
+                { key: "owner", label: "DOE" },
+                { key: "overdue", label: "Overdue", className: "text-right" }
+              ]}
+              emptyText="No overdue deals to attribute yet."
+              rows={data.byOwner.map((row) => (
+                <tr key={row.owner} className="transition hover:bg-[#f8fbff]">
+                  <td className="px-4 py-3 font-semibold text-[#102246]">{row.owner}</td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="inline-flex rounded-full bg-[#ffe3e3] px-2.5 py-1 text-[11px] font-semibold text-[#c94b6b]">
+                      {row.overdueCount}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            />
+          </Card>
         </>
       )}
     </div>

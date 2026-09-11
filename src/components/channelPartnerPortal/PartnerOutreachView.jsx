@@ -93,7 +93,10 @@ export function PartnerOutreachView() {
 
   const cards = useMemo(
     () => [
-      { label: "Outreach Sent", value: fmtNum(data?.top.outreachSent), note: "Emails sent", noteTone: "blue" },
+      // See OutreachDoeModule.jsx's matching comment -- this is a distinct
+      // lead count, not a real send-event count, so it's labeled that way
+      // rather than implying delivery that may not have happened yet.
+      { label: "Leads in Outreach", value: fmtNum(data?.top.outreachSent), note: "Assigned to this DOE", noteTone: "blue" },
       { label: "Responses", value: fmtNum(data?.top.responses), note: "Any reply", noteTone: "green" },
       { label: "Calls Booked", value: fmtNum(data?.top.callsBooked), note: "Zoom follow-ups", noteTone: "amber" },
       { label: "Response Rate", value: fmtPct(data?.top.responseRate), note: "Responses / Outreach", noteTone: "violet" }

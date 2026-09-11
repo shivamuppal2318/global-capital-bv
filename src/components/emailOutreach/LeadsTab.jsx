@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionButton, Field, noteToneClass } from "../ui.jsx";
 import { SearchIcon } from "../Icons.jsx";
 import { WebsiteLeadsApiPanel } from "../admin/WebsiteLeadsApiPanel.jsx";
@@ -13,7 +13,7 @@ import { WebsiteLeadsApiPanel } from "../admin/WebsiteLeadsApiPanel.jsx";
 const WEBSITE_LEADS_LIST_NAME = "Website Leads";
 
 function downloadSampleLeadsCsv() {
-  const csv = "email,first name,last name,country,company\njane@acme.com,Jane,Doe,IN,Acme Inc";
+  const csv = "email,first name,last name,country,company,owner\njane@acme.com,Jane,Doe,IN,Acme Inc,Jordan Lee";
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -29,7 +29,7 @@ export function LeadsTab({ mailing }) {
     selectedCampaign, selectedCampaignId, selectCampaign, startNewCampaign,
     leadsViewSignal, setLeadsViewSignal,
     newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead, handleDeleteCampaign,
-    csvText, handleCsvTextChange, handleImportCsv, csvImportBusy
+    csvText, handleCsvTextChange, handleImportCsv, csvImportBusy, leadOwnerName
   } = mailing;
   const [viewMode, setViewMode] = useState("list");
 
@@ -276,6 +276,7 @@ export function LeadsTab({ mailing }) {
         handleImportCsv={handleImportCsv}
         csvImportBusy={csvImportBusy}
         automationNotice={automationNotice}
+        leadOwnerName={leadOwnerName}
         onBack={() => setViewMode("list")}
       />
     );
@@ -412,14 +413,24 @@ function SubscribersView({
   selectedCampaign, selectedCampaignId, allLeads,
   newLeadForm, setNewLeadForm, handleAddLead, handleDeleteLead,
   csvText, handleCsvTextChange, handleImportCsv, csvImportBusy,
-  automationNotice, onBack
+  automationNotice, leadOwnerName, onBack
 }) {
   const inputClass = "w-full rounded-[12px] border border-[#dfe5f1] bg-white px-4 py-2.5 text-[14px] text-[#102246] outline-none";
+  const fileInputRef = useRef(null);
+  const [csvFileName, setCsvFileName] = useState(null);
+
+  // Cleared in step with csvText (which useEmailOutreachState.js resets to
+  // "" once the import actually completes), so the chosen-file name doesn't
+  // linger and imply a file is still queued after it's already been imported.
+  useEffect(() => {
+    if (!csvText) setCsvFileName(null);
+  }, [csvText]);
 
   function handleCsvFileChange(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    setCsvFileName(file.name);
     const reader = new FileReader();
     reader.onload = () => handleCsvTextChange(String(reader.result ?? ""));
     reader.readAsText(file);
@@ -480,13 +491,32 @@ function SubscribersView({
               />
             </Field>
             <ActionButton label="Add Subscriber" primary onClick={handleAddLead} disabled={!selectedCampaignId} />
+            <p className="text-[11px] leading-4 text-[#8593ac]">Will count as {leadOwnerName}'s outreach.</p>
           </div>
 
           <div className="mt-5 border-t border-[#e7edf5] pt-4">
             <h3 className="text-[13px] font-semibold text-[#222347]">Import (CSV)</h3>
-            <input type="file" accept=".csv,text/csv" onChange={handleCsvFileChange} className="mt-2 text-[13px] text-[#5d6286]" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleCsvFileChange}
+              className="hidden"
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-[10px] border border-[#d6deea] bg-white px-4 py-2 text-[13px] font-semibold text-[#435471] shadow-[0_2px_8px_rgba(30,48,87,0.04)] hover:bg-[#f4f7fb]"
+              >
+                Choose CSV File
+              </button>
+              <span className="text-[13px] text-[#8593ac]">{csvFileName ?? "No file chosen"}</span>
+            </div>
             <p className="mt-2 text-[11px] leading-4 text-[#8593ac]">
-              CSV columns: email, first name, last name, country (optional), company (optional), owner (optional). A header row is required.
+              CSV columns: email, first name, last name, country (optional), company (optional), owner (optional — the
+              rep this lead should count against; rows with no owner are marked "Unassigned" rather than
+              attributed to anyone). A header row is required.
             </p>
             <button type="button" onClick={downloadSampleLeadsCsv} className="mt-1 text-[12px] font-medium text-[#3046b2] hover:underline">
               Download sample CSV

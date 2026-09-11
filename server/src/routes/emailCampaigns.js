@@ -120,16 +120,39 @@ const OPEN_PROOF_KINDS = ["EMAIL_OPENED", "LINK_CLICKED", "REPLY_RECEIVED"];
 async function distinctLeadCount(campaignId, kind) {
   const kinds = Array.isArray(kind) ? kind : [kind];
   const rows = await prisma.emailActivityLog.findMany({
-    where: { kind: { in: kinds }, lead: { campaignId } },
+    where: activityWhereForCampaign(campaignId, kinds),
     distinct: ["leadId"],
     select: { leadId: true }
   });
   return rows.length;
 }
 
+function activityWhereForCampaign(campaignId, kind) {
+  const kinds = Array.isArray(kind) ? kind : [kind];
+  return {
+    kind: { in: kinds },
+    OR: [
+      { sourceCampaignId: campaignId },
+      { sourceCampaignId: null, lead: { campaignId } }
+    ]
+  };
+}
+
+function activityWhereForCampaignFilter(campaignFilter, kind, extra = {}) {
+  const kinds = Array.isArray(kind) ? kind : [kind];
+  return {
+    ...extra,
+    kind: { in: kinds },
+    OR: [
+      { sourceCampaign: campaignFilter },
+      { sourceCampaignId: null, lead: { campaign: campaignFilter } }
+    ]
+  };
+}
+
 async function withEngagementRates(campaign) {
   const [sent, opened, clicked, unsubscribed, bounced] = await Promise.all([
-    prisma.emailActivityLog.count({ where: { kind: { in: SEND_KINDS }, lead: { campaignId: campaign.id } } }),
+    prisma.emailActivityLog.count({ where: activityWhereForCampaign(campaign.id, SEND_KINDS) }),
     distinctLeadCount(campaign.id, OPEN_PROOF_KINDS),
     distinctLeadCount(campaign.id, "LINK_CLICKED"),
     prisma.emailLead.count({ where: { campaignId: campaign.id, unsubscribed: true } }),
@@ -141,6 +164,7 @@ async function withEngagementRates(campaign) {
   ]);
   return {
     ...campaign,
+    status: campaign.status === "DRAFT" && sent > 0 ? "COMPLETED" : campaign.status,
     engagement: {
       sent,
       opened,
@@ -221,17 +245,22 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
       : { ownerId: req.user.id, ownerChannelPartnerId: null };
 
   const [sentRows, openedRows, totalLeads, repliedLeads, interestedLeads, ndaSignedLeads, recentActivity, mailboxes] = await Promise.all([
-    prisma.emailActivityLog.findMany({ where: { kind: { in: SEND_KINDS }, createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
-    prisma.emailActivityLog.findMany({ where: { kind: { in: OPEN_PROOF_KINDS }, createdAt: { gte: sevenDaysAgo }, lead: { campaign: campaignFilter } }, select: { createdAt: true } }),
+    prisma.emailActivityLog.findMany({ where: activityWhereForCampaignFilter(campaignFilter, SEND_KINDS, { createdAt: { gte: sevenDaysAgo } }), select: { createdAt: true } }),
+    prisma.emailActivityLog.findMany({ where: activityWhereForCampaignFilter(campaignFilter, OPEN_PROOF_KINDS, { createdAt: { gte: sevenDaysAgo } }), select: { createdAt: true } }),
     prisma.emailLead.count({ where: { campaign: campaignFilter } }),
     prisma.emailLead.count({ where: { replyType: { not: "NO_REPLY" }, campaign: campaignFilter } }),
     prisma.emailLead.count({ where: { replyType: "INTERESTED", campaign: campaignFilter } }),
     prisma.emailLead.count({ where: { ndaSignedAt: { not: null }, campaign: campaignFilter } }),
     prisma.emailActivityLog.findMany({
-      where: { lead: { campaign: campaignFilter } },
+      where: {
+        OR: [
+          { sourceCampaign: campaignFilter },
+          { sourceCampaignId: null, lead: { campaign: campaignFilter } }
+        ]
+      },
       orderBy: { createdAt: "desc" },
       take: 8,
-      include: { lead: { select: { name: true, campaign: { select: { name: true } } } } }
+      include: { lead: { select: { name: true, campaign: { select: { name: true } } } }, sourceCampaign: { select: { name: true } } }
     }),
     prisma.emailAccount.findMany({ where: { isActive: true, ...mailboxFilter }, orderBy: { label: "asc" } })
   ]);
@@ -259,7 +288,7 @@ emailCampaignsRouter.get("/dashboard-summary", asyncHandler(async (req, res) => 
     recentActivity: recentActivity.map((row) => ({
       id: row.id,
       leadName: row.lead.name,
-      campaignName: row.lead.campaign.name,
+      campaignName: row.sourceCampaign?.name ?? row.lead.campaign.name,
       kind: row.kind,
       title: row.title,
       createdAt: row.createdAt
@@ -297,14 +326,14 @@ emailCampaignsRouter.get("/engagement-detail/:kind", asyncHandler(async (req, re
   // the list shorter than the number the card showed.
   if (req.params.kind === "sent") {
     const rows = await prisma.emailActivityLog.findMany({
-      where: { kind: { in: SEND_KINDS }, lead: { campaign: campaignFilter } },
+      where: activityWhereForCampaignFilter(campaignFilter, SEND_KINDS),
       orderBy: { createdAt: "desc" },
-      include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } } }
+      include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } }, sourceCampaign: { select: { name: true } } }
     });
     return res.json(rows.map((r) => ({
       leadName: r.lead.name,
       leadEmail: r.lead.email,
-      campaignName: r.lead.campaign.name,
+      campaignName: r.sourceCampaign?.name ?? r.lead.campaign.name,
       at: r.createdAt,
       detail: r.detail
     })));
@@ -322,15 +351,15 @@ emailCampaignsRouter.get("/engagement-detail/:kind", asyncHandler(async (req, re
   }
 
   const rows = await prisma.emailActivityLog.findMany({
-    where: { kind: { in: activityKinds }, lead: { campaign: campaignFilter } },
+    where: activityWhereForCampaignFilter(campaignFilter, activityKinds),
     orderBy: { createdAt: "desc" },
     distinct: ["leadId"],
-    include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } } }
+    include: { lead: { select: { name: true, email: true, campaign: { select: { name: true } } } }, sourceCampaign: { select: { name: true } } }
   });
   res.json(rows.map((r) => ({
     leadName: r.lead.name,
     leadEmail: r.lead.email,
-    campaignName: r.lead.campaign.name,
+    campaignName: r.sourceCampaign?.name ?? r.lead.campaign.name,
     at: r.createdAt,
     // Real detail worth surfacing for all three — the bounce kind/reason,
     // which link got clicked, or (for "opened") whatever the underlying
@@ -355,24 +384,36 @@ emailCampaignsRouter.post("/", asyncHandler(async (req, res) => {
   res.status(201).json(campaign);
 }));
 
-// Only allows deleting an empty campaign (no leads ever enrolled) — mainly
-// for cleaning up an accidental duplicate (e.g. from POST /campaigns being
-// called twice with the same name before PATCH existed for edits). A
-// campaign with real leads/activity attached should be paused, not deleted
-// — deleting it would cascade-orphan or block on its Lead/ActivityLog rows.
 emailCampaignsRouter.delete("/:id", asyncHandler(async (req, res) => {
   const campaign = await prisma.emailCampaign.findFirst({
     where: { id: req.params.id, ...ownerWhereClause(req) },
-    include: { _count: { select: { leads: true } } }
+    select: { id: true, name: true, leads: { select: { id: true } } }
   });
   if (!campaign) {
     return res.status(404).json({ error: "Campaign not found" });
   }
-  if (campaign._count.leads > 0) {
-    return res.status(409).json({ error: `"${campaign.name}" has ${campaign._count.leads} lead(s) enrolled — pause it instead of deleting.` });
-  }
-  await prisma.emailCampaign.delete({ where: { id: req.params.id } });
-  await recordAudit({ req, action: "campaign.deleted", entityType: "EmailCampaign", entityId: campaign.id, detail: campaign.name });
+  const leadIds = campaign.leads.map((lead) => lead.id);
+
+  await prisma.$transaction(async (tx) => {
+    if (leadIds.length) {
+      await tx.marketSignal.updateMany({ where: { matchedLeadId: { in: leadIds } }, data: { matchedLeadId: null } });
+      await tx.marketSignal.updateMany({ where: { createdLeadId: { in: leadIds } }, data: { createdLeadId: null } });
+      await tx.aiReplyDraft.deleteMany({ where: { leadId: { in: leadIds } } });
+      await tx.emailActivityLog.deleteMany({ where: { leadId: { in: leadIds } } });
+      await tx.replyEvent.deleteMany({ where: { leadId: { in: leadIds } } });
+      await tx.emailLead.deleteMany({ where: { id: { in: leadIds } } });
+    }
+    await tx.emailSegment.deleteMany({ where: { campaignId: campaign.id } });
+    await tx.cadenceStep.deleteMany({ where: { campaignId: campaign.id } });
+    await tx.emailCampaign.delete({ where: { id: campaign.id } });
+  });
+  await recordAudit({
+    req,
+    action: "campaign.deleted",
+    entityType: "EmailCampaign",
+    entityId: campaign.id,
+    detail: `${campaign.name} (${leadIds.length} lead${leadIds.length === 1 ? "" : "s"} removed)`
+  });
   res.status(204).end();
 }));
 
@@ -671,6 +712,10 @@ emailCampaignsRouter.post("/:id/send-now", asyncHandler(async (req, res) => {
       failed += 1;
     }
   }
+  await prisma.emailCampaign.update({
+    where: { id: campaign.id },
+    data: { status: sentImmediately > 0 ? "COMPLETED" : campaign.status }
+  });
   await recordAudit({ req, action: "campaign.blast_sent", entityType: "EmailCampaign", entityId: campaign.id, detail: `${sentImmediately} sent, ${failed} failed for "${campaign.name}"` });
   res.json({ queued: 0, sentImmediately, failed, scheduled: false });
 }));
@@ -685,7 +730,7 @@ emailCampaignsRouter.get("/:id/recent-sends", asyncHandler(async (req, res) => {
   if (!campaign) return;
 
   const rows = await prisma.emailActivityLog.findMany({
-    where: { kind: "CAMPAIGN_BLAST_SENT", lead: { campaignId: campaign.id } },
+    where: activityWhereForCampaign(campaign.id, "CAMPAIGN_BLAST_SENT"),
     orderBy: { createdAt: "desc" },
     take: 20,
     include: { lead: { select: { name: true, email: true } } }
@@ -726,10 +771,31 @@ emailCampaignsRouter.get("/:id/activity-detail", asyncHandler(async (req, res) =
       }
     }),
     prisma.emailActivityLog.findMany({
-      where: { lead: { campaignId: campaign.id } },
+      where: {
+        OR: [
+          { sourceCampaignId: campaign.id },
+          { sourceCampaignId: null, lead: { campaignId: campaign.id } }
+        ]
+      },
       orderBy: { createdAt: "desc" },
       take: 500,
-      include: { lead: { select: { id: true, name: true, email: true, company: true } } }
+      include: {
+        lead: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            company: true,
+            replyType: true,
+            stage: true,
+            unsubscribed: true,
+            bounced: true,
+            bounceKind: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }
+      }
     })
   ]);
 
@@ -764,6 +830,33 @@ emailCampaignsRouter.get("/:id/activity-detail", asyncHandler(async (req, res) =
   );
 
   const events = activityRows.map((row) => {
+    if (!perLead.has(row.leadId)) {
+      perLead.set(row.leadId, {
+        id: row.lead.id,
+        leadName: row.lead.name,
+        leadEmail: row.lead.email,
+        company: row.lead.company,
+        replyType: row.lead.replyType,
+        stage: row.lead.stage,
+        unsubscribed: row.lead.unsubscribed,
+        bounced: row.lead.bounced,
+        bounceKind: row.lead.bounceKind,
+        addedAt: row.lead.createdAt,
+        updatedAt: row.lead.updatedAt,
+        sentCount: 0,
+        openCount: 0,
+        clickCount: 0,
+        replyCount: 0,
+        bounceCount: 0,
+        lastSentAt: null,
+        lastOpenedAt: null,
+        lastClickedAt: null,
+        lastReplyAt: null,
+        lastActivityAt: null,
+        lastDetail: null
+      });
+    }
+
     const lead = perLead.get(row.leadId);
     if (lead) {
       lead.lastActivityAt ??= row.createdAt;
@@ -820,7 +913,7 @@ emailCampaignsRouter.get("/:id/activity-detail", asyncHandler(async (req, res) =
       updatedAt: campaign.updatedAt
     },
     stats: {
-      recipients: leads.length,
+      recipients: recipients.length,
       sent,
       opened,
       clicked,
@@ -847,7 +940,7 @@ emailCampaignsRouter.get("/:id/sent-activity", asyncHandler(async (req, res) => 
   if (!campaign) return;
 
   const rows = await prisma.emailActivityLog.findMany({
-    where: { kind: { in: SEND_KINDS }, lead: { campaignId: campaign.id } },
+    where: activityWhereForCampaign(campaign.id, SEND_KINDS),
     orderBy: { createdAt: "desc" },
     take: 100,
     include: { lead: { select: { name: true, email: true } } }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   GlobeIcon,
   MailIcon,
@@ -670,6 +670,13 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       .catch((err) => setLoadError(err.message));
   }
 
+  const refreshSelectedLead = useCallback(async () => {
+    if (!selectedId) return null;
+    const fresh = await leadsApi.get(selectedId);
+    setLeads((prev) => prev.map((lead) => (lead.id === fresh.id ? fresh : lead)));
+    return fresh;
+  }, [selectedId]);
+
   useEffect(() => {
     universalFiltersApi.facets().then(setFacets).catch(() => {});
   }, []);
@@ -989,6 +996,17 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       .finally(() => setReportsLoading(false));
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!selectedId) return undefined;
+    const onFocus = () => {
+      refreshSelectedLead().catch(() => {});
+      leadsApi.timeline(selectedId).then(setTimeline).catch(() => {});
+      leadsApi.interactions(selectedId).then(setInteractions).catch(() => {});
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshSelectedLead, selectedId]);
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -1057,6 +1075,9 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     try {
       const result = await leadsApi.sendPortalInvite(selectedLead.id);
       setInviteResult({ ok: true, ...result });
+      refreshSelectedLead().catch(() => {});
+      leadsApi.timeline(selectedLead.id).then(setTimeline).catch(() => {});
+      leadsApi.interactions(selectedLead.id).then(setInteractions).catch(() => {});
     } catch (err) {
       setInviteResult({ ok: false, error: err.message });
     } finally {
@@ -1251,7 +1272,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
 
   const overview = selectedLead
     ? [
-        ["Lead Owner", selectedLead.owner ?? "Unassigned"],
+        ["Lead Owner", selectedLead.doe ?? selectedLead.owner ?? "Unassigned"],
         ["Legal Entity Name", selectedLead.company],
         ["Email", selectedLead.email ?? "—"],
         ["Mobile", selectedLead.mobile ?? "—"],
@@ -1572,7 +1593,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                     </span>
                   </td>
                   <td className="px-4 py-4 align-top text-[#435471]">{lead.capitalAsk}</td>
-                  <td className="px-4 py-4 align-top text-[#435471]">{lead.owner || "Unassigned"}</td>
+                  <td className="px-4 py-4 align-top text-[#435471]">{lead.doe || lead.owner || "Unassigned"}</td>
                   <td className="px-4 py-4 align-top text-right">
                     <span className={`inline-block rounded-full px-2 py-1 text-[10.5px] font-semibold leading-tight ${noteToneClass[STATUS_TONE[lead.status]]}`}>
                       {STATUS_LABEL[lead.status]}

@@ -19,6 +19,7 @@ export function readClientSessionCookie(req) {
 }
 
 export function setClientSessionCookie(res, token) {
+  const appBaseUrl = process.env.APP_BASE_URL ?? "";
   const parts = [
     `${COOKIE_NAME}=${encodeURIComponent(token)}`,
     "Path=/",
@@ -26,7 +27,7 @@ export function setClientSessionCookie(res, token) {
     "SameSite=Lax",
     `Max-Age=${30 * 24 * 60 * 60}`
   ];
-  if (process.env.NODE_ENV === "production") parts.push("Secure");
+  if (appBaseUrl.startsWith("https://")) parts.push("Secure");
   res.setHeader("Set-Cookie", parts.join("; "));
 }
 

@@ -8,8 +8,10 @@ import { signStaffPreviewToken } from "../lib/staffPreviewToken.js";
 import { hashPassword } from "../lib/auth.js";
 import { sendSystemEmail, clientPortalInviteEmail, shell } from "../lib/systemMailer.js";
 import { plainTextToHtml } from "../lib/leadSender.js";
+import { sendLeadRoutedTransactionalEmail } from "../lib/outreachMailbox.js";
 import { computeLeadPipeline, computePipelineSummary, computeDealBoard, computeLeadTimeline } from "../lib/leadPipeline.js";
 import { leadOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
+import { ownerWhereClause } from "../lib/channelPartnerScope.js";
 import { getZoomInfoCredentials } from "../lib/zoominfoSettings.js";
 import { getAccessToken, searchCompanies, searchContacts, enrichContactByName, getZoomInfoCountries, getZoomInfoStates } from "../lib/zoominfoClient.js";
 import {
@@ -88,7 +90,7 @@ router.get("/deal-board", async (req, res, next) => {
 // to treat this path itself as a lead id.
 router.get("/enrich-candidates-count", blockChannelPartner, async (req, res, next) => {
   try {
-    const count = await prisma.lead.count({ where: enrichCandidateWhereClause() });
+    const count = await prisma.lead.count({ where: { ...enrichCandidateWhereClause(), ...leadOwnerWhereClause(req) } });
     res.json({ count });
   } catch (err) {
     next(err);
@@ -343,7 +345,7 @@ router.post("/:id/send-mail", async (req, res, next) => {
 // should still show ZoomInfo's data underneath it.
 router.post("/:id/enrich", blockChannelPartner, async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    const lead = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
 
     const credentials = await getZoomInfoCredentials();
@@ -394,7 +396,7 @@ router.post("/bulk-enrich", blockChannelPartner, async (req, res, next) => {
       return res.status(400).json({ error: "ZoomInfo isn't connected — set it up in Admin Panel → ZoomInfo first." });
     }
 
-    const candidates = await prisma.lead.findMany({ where: enrichCandidateWhereClause() });
+    const candidates = await prisma.lead.findMany({ where: { ...enrichCandidateWhereClause(), ...leadOwnerWhereClause(req) } });
     const token = await getAccessToken(credentials);
 
     let companyMatchedCount = 0;
@@ -638,7 +640,7 @@ async function sendPortalInviteForLead(lead) {
   const inviteUrl = `${apiBaseUrl()}/api/client-portal/register/${token}`;
 
   const { subject, html, text } = clientPortalInviteEmail({ contactName: lead.name, company: lead.company, registerUrl: inviteUrl });
-  const result = await sendSystemEmail({ to: lead.email, subject, html, text });
+  const result = await sendLeadRoutedTransactionalEmail(lead, { subject, html, text });
 
   return { ok: true, inviteUrl, sent: result.sent, reason: result.sent ? undefined : result.reason };
 }
@@ -653,7 +655,7 @@ async function sendPortalInviteForLead(lead) {
 // can copy/paste it by hand instead of the whole action failing.
 router.post("/:id/portal-invite", blockChannelPartner, async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: true } });
+    const lead = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) }, include: { clientUser: true } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
 
     const result = await sendPortalInviteForLead(lead);
@@ -671,7 +673,7 @@ router.post("/:id/portal-invite", blockChannelPartner, async (req, res, next) =>
 // they're converted into a tracked deal, not on the first cold email.
 router.post("/from-email-lead/:emailLeadId", blockChannelPartner, async (req, res, next) => {
   try {
-    const emailLead = await prisma.emailLead.findUnique({ where: { id: req.params.emailLeadId } });
+    const emailLead = await prisma.emailLead.findFirst({ where: { id: req.params.emailLeadId, campaign: ownerWhereClause(req) } });
     if (!emailLead) return res.status(404).json({ error: "Email lead not found" });
     if (emailLead.convertedToLeadId) {
       return res.status(400).json({ error: "This contact has already been converted to a CRM lead." });
@@ -717,7 +719,7 @@ function generateClientPassword() {
 
 router.post("/:id/client-portal/reset-password", blockChannelPartner, async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: true } });
+    const lead = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) }, include: { clientUser: true } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
     if (!lead.clientUser) return res.status(400).json({ error: "This lead doesn't have a client portal account yet." });
 
@@ -739,7 +741,7 @@ router.post("/:id/client-portal/reset-password", blockChannelPartner, async (req
 // for why this needs its own token rather than the normal Bearer session.
 router.post("/:id/client-portal/preview-link", blockChannelPartner, async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id }, include: { clientUser: true } });
+    const lead = await prisma.lead.findFirst({ where: { id: req.params.id, ...leadOwnerWhereClause(req) }, include: { clientUser: true } });
     if (!lead) return res.status(404).json({ error: "Lead not found" });
     if (!lead.clientUser) return res.status(400).json({ error: "This lead doesn't have a client portal account yet." });
 

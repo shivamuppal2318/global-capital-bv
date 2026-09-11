@@ -3,7 +3,8 @@ import { prisma } from "../db.js";
 import { createZoomMeeting } from "../lib/zoomClient.js";
 import { callMetrics } from "../lib/relationshipMetrics.js";
 import { getAnthropicClient, getAnthropicModel } from "../lib/anthropic.js";
-import { sendSystemEmail, zoomMeetingInviteEmail } from "../lib/systemMailer.js";
+import { zoomMeetingInviteEmail } from "../lib/systemMailer.js";
+import { sendLeadRoutedTransactionalEmail } from "../lib/outreachMailbox.js";
 import { processMeetingRecording } from "../lib/zoomTranscriptProcessor.js";
 import { relatedLeadOwnerWhereClause, relatedLeadEmployeeOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 
@@ -143,7 +144,7 @@ router.post("/", async (req, res, next) => {
         joinUrl: zoomMeeting.joinUrl,
         hostName: req.user?.name ?? req.channelPartner?.name ?? "Global Capital BV"
       });
-      const delivery = await sendSystemEmail({ to: lead.email, ...mail });
+      const delivery = await sendLeadRoutedTransactionalEmail(lead, mail);
       inviteSent = delivery.sent;
       inviteError = delivery.reason ?? null;
     }
@@ -213,7 +214,10 @@ router.get("/metrics", async (req, res, next) => {
 // an explicit action.
 router.post("/:id/summarise", blockChannelPartner, async (req, res, next) => {
   try {
-    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id }, include: { lead: true } });
+    const meeting = await prisma.meeting.findFirst({
+      where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...relatedLeadEmployeeOwnerWhereClause(req) },
+      include: { lead: true }
+    });
     if (!meeting) return res.status(404).json({ error: "Meeting not found" });
     if (!meeting.notes?.trim()) {
       return res.status(400).json({ error: "Add call notes first — there's nothing to summarise yet." });
@@ -272,7 +276,10 @@ ${meeting.notes}`
 // pipeline either way, see lib/zoomTranscriptProcessor.js.
 router.post("/:id/fetch-transcript", blockChannelPartner, async (req, res, next) => {
   try {
-    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id }, include: { lead: true } });
+    const meeting = await prisma.meeting.findFirst({
+      where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...relatedLeadEmployeeOwnerWhereClause(req) },
+      include: { lead: true }
+    });
     if (!meeting) return res.status(404).json({ error: "Meeting not found" });
     if (!meeting.zoomMeetingId) {
       return res.status(400).json({ error: "This call has no Zoom meeting ID — it wasn't created through this app's Zoom connection." });

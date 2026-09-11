@@ -26,7 +26,7 @@ async function recordEvent(activityLogId, kind, title, detailFn) {
     const original = await prisma.emailActivityLog.findUnique({ where: { id: activityLogId } });
     if (original) {
       await prisma.emailActivityLog.create({
-        data: { leadId: original.leadId, kind, title, detail: detailFn(original) }
+        data: { leadId: original.leadId, kind, title, detail: detailFn(original), sourceCampaignId: original.sourceCampaignId }
       });
     }
   } catch (err) {

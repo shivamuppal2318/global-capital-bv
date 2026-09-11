@@ -90,7 +90,14 @@ export async function sendCampaignBlastEmail(leadId, campaignId) {
   // The activity row has to exist before sending — open/click tracking
   // embeds this row's own id (same reason as leadSender.js/cadenceQueue.js).
   const pendingActivity = await prisma.emailActivityLog.create({
-    data: { leadId: lead.id, kind: "CAMPAIGN_BLAST_SENT", title: subject, detail: "Sending…", emailAccountId: resolvedAccount?.id ?? null }
+    data: {
+      leadId: lead.id,
+      kind: "CAMPAIGN_BLAST_SENT",
+      title: subject,
+      detail: "Sending…",
+      emailAccountId: resolvedAccount?.id ?? null,
+      sourceCampaignId: campaign.id
+    }
   });
 
   // Same one-click "I'm Interested" button every cadence-step email already

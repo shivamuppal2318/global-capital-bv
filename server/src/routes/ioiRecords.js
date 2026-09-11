@@ -10,10 +10,17 @@ import {
 } from "../lib/channelPartnerLeadScope.js";
 import { renderSignedIoi, slugify } from "../lib/signedDocumentRenderer.js";
 import { generateStageReport, ioiReportFacts } from "../lib/stageCompletionReports.js";
+import { signClientInviteToken } from "../lib/clientPortalToken.js";
+import { ioiReadyToSignEmail } from "../lib/systemMailer.js";
+import { sendLeadRoutedTransactionalEmail } from "../lib/outreachMailbox.js";
 
 export const ioiRecordsRouter = Router();
 
 const STATUSES = ["DRAFT", "GENERATED", "SENT", "SIGNED", "DECLINED", "EXPIRED"];
+
+function apiBaseUrl() {
+  return process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
+}
 
 const include = {
   lead: { select: { id: true, name: true, company: true } },
@@ -208,6 +215,28 @@ ioiRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
     include
   });
 
+  let emailResult = null;
+  if (req.params.action === "send") {
+    const lead = await prisma.lead.findUnique({ where: { id: existing.leadId }, include: { clientUser: true } });
+    const portalUrl = lead.clientUser
+      ? `${apiBaseUrl()}/api/client-portal/login`
+      : `${apiBaseUrl()}/api/client-portal/register/${signClientInviteToken(lead.id)}`;
+
+    if (!lead.email) {
+      emailResult = { emailed: false, reason: "This lead has no email address on file.", portalUrl: null };
+    } else {
+      const { subject, html, text } = ioiReadyToSignEmail({
+        contactName: lead.name,
+        company: lead.company,
+        doeName: record.owner,
+        portalUrl,
+        isNewAccount: !lead.clientUser
+      });
+      const result = await sendLeadRoutedTransactionalEmail(lead, { subject, html, text });
+      emailResult = { emailed: result.sent, reason: result.sent ? undefined : result.reason, portalUrl };
+    }
+  }
+
   if (req.params.action === "sign") {
     generateStageReport({
       leadId: existing.leadId,
@@ -218,7 +247,7 @@ ioiRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
     }).catch(() => {});
   }
 
-  res.json(record);
+  res.json({ ...record, emailResult });
 }));
 
 ioiRecordsRouter.patch("/:id", asyncHandler(async (req, res) => {

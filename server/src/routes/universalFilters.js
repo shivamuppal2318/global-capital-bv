@@ -21,8 +21,16 @@ universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
     select: { id: true, name: true, company: true, doe: true, channelPartner: true, industry: true, territory: true, teamLeader: true, manager: true, leadSource: true },
     orderBy: { name: "asc" }
   });
+  const emailLeads = await prisma.emailLead.findMany({
+    where: req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {},
+    select: { source: true, convertedToLeadId: true }
+  });
 
   const distinct = (field) => [...new Set(leads.map((l) => l[field]).filter(Boolean))].sort();
+  const emailLeadSourceByLeadId = new Map(
+    emailLeads.filter((l) => l.convertedToLeadId && l.source).map((l) => [l.convertedToLeadId, l.source])
+  );
+  const sourceForLead = (lead) => lead.leadSource || emailLeadSourceByLeadId.get(lead.id);
 
   // A real, signed-up Channel Partner (routes/channelPartners.js) should be
   // pickable here even before any Lead has actually been tagged with their
@@ -47,12 +55,14 @@ universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
   // has actually been assigned to them, not just whatever rep names happen
   // to already be on existing leads. Staff/admin only: a Channel Partner's
   // own portal has no legitimate need to see the full company roster.
-  let does = distinct("doe");
+  let does;
   if (!req.channelPartner) {
     // EMPLOYEE only -- an ADMIN account (e.g. the seeded system admin) is a
     // login role, not a deal originator, and shouldn't be pickable here.
     const employees = await prisma.user.findMany({ where: { role: "EMPLOYEE" }, select: { name: true } });
-    does = [...new Set([...does, ...employees.map((e) => e.name)])].sort();
+    does = [...new Set(employees.map((e) => e.name))].sort();
+  } else {
+    does = distinct("doe");
   }
 
   res.json({
@@ -65,7 +75,10 @@ universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
     geographies: distinct("territory"),
     teamLeaders: distinct("teamLeader"),
     managers: distinct("manager"),
-    leadSources: distinct("leadSource")
+    leadSources: [...new Set([
+      ...emailLeads.map((l) => l.source),
+      ...leads.filter((l) => l.leadSource === "Channel Partner Referral").map((l) => l.leadSource)
+    ].filter(Boolean))].sort()
   });
 }));
 
@@ -78,8 +91,12 @@ universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
 // build per-leadId lookup Maps/Sets, never returned directly, so the final
 // leads.map(...) below only ever iterates the already-scoped lead set.
 async function buildRows(req) {
-  const [leads, ndaRecords, meetings, ioiRecords, visitPlans, stageRows] = await Promise.all([
+  const [leads, emailLeads, ndaRecords, meetings, ioiRecords, visitPlans, stageRows] = await Promise.all([
     prisma.lead.findMany({ where: { ...leadOwnerWhereClause(req) } }),
+    prisma.emailLead.findMany({
+      where: req.channelPartner ? { campaign: { ownerChannelPartnerId: req.channelPartner.id } } : {},
+      select: { source: true, convertedToLeadId: true }
+    }),
     prisma.ndaRecord.findMany({ select: { leadId: true, expiresAt: true } }),
     prisma.meeting.findMany({ where: { leadId: { not: null } }, select: { leadId: true, startTime: true, status: true, nextActionDueAt: true } }),
     prisma.ioiRecord.findMany({ select: { leadId: true } }),
@@ -128,6 +145,9 @@ async function buildRows(req) {
   for (const r of ndaRecords) {
     if (r.expiresAt) nextActionByLead.set(r.leadId, [...(nextActionByLead.get(r.leadId) ?? []), r.expiresAt]);
   }
+  const emailLeadSourceByLeadId = new Map(
+    emailLeads.filter((l) => l.convertedToLeadId && l.source).map((l) => [l.convertedToLeadId, l.source])
+  );
 
   return leads.map((lead) => {
     const phase = deriveLifecyclePhase(lead.id, membership);
@@ -135,6 +155,7 @@ async function buildRows(req) {
 
     return {
       ...lead,
+      leadSource: lead.leadSource || emailLeadSourceByLeadId.get(lead.id) || null,
       lifecyclePhase: phase.key,
       lifecyclePhaseLabel: phase.label,
       ticketSizeBand: bucketTicketSize(lead.capitalAsk),

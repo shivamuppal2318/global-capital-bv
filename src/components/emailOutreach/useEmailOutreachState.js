@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOptionalAuth } from "../../context/AuthContext";
 import { emailCampaignsApi } from "../../lib/emailCampaignsApi.js";
 import { emailSegmentsApi } from "../../lib/emailSegmentsApi.js";
 import { emailLeadsApi } from "../../lib/emailLeadsApi.js";
@@ -45,7 +46,8 @@ const DEFAULT_AUTOMATION_FORM = {
   // them, no further per-lead narrowing (see CampaignsTab's "Send To").
   targetCampaignId: "",
   scheduledAt: "",
-  delayBetweenMinutes: "0"
+  delayBetweenMinutes: "0",
+  emailAccountId: ""
 };
 
 function normalizeCampaigns(campaigns) {
@@ -286,6 +288,13 @@ export function backendCampaignStatusToLocal(status) {
 // sync on the same campaigns/leads/automation-form data, same reasoning as
 // the rest of this app's per-module state hooks.
 export function useEmailOutreachState({ demoData = true } = {}) {
+  // Optional: this hook also renders inside the Channel Partner portal
+  // (see ChannelPartnerPortalApp.jsx), which is a separate root mounted
+  // without AuthProvider at all -- useAuth() would throw there. A partner
+  // session has no staff User to attribute a manually-added lead to
+  // anyway, so leadOwnerName below just falls back to a neutral default.
+  const staffAuth = useOptionalAuth();
+  const leadOwnerName = staffAuth?.user?.name || "Unassigned";
   const initialCampaigns = demoData ? normalizeCampaigns(SEED_CAMPAIGNS) : [];
   const [campaigns, setCampaigns] = useState(initialCampaigns);
   const [selectedCampaignId, setSelectedCampaignId] = useState(initialCampaigns[0]?.id ?? null);
@@ -546,6 +555,12 @@ export function useEmailOutreachState({ demoData = true } = {}) {
 
   const [automationForm, setAutomationForm] = useState(DEFAULT_AUTOMATION_FORM);
   const [automationNotice, setAutomationNotice] = useState("Automation ready. Select a campaign or create a new one.");
+  // Guards handleSendNow against a fast double-click/double-tap on "Send
+  // Now" -- confirmed live: with no busy state, two clicks a few seconds
+  // apart fired two independent /send-now requests, each queuing a full
+  // blast to every recipient, so every lead in the list got the campaign
+  // email twice.
+  const [sendingNowBusy, setSendingNowBusy] = useState(false);
 
   const [newLeadForm, setNewLeadForm] = useState({ firstName: "", lastName: "", email: "", country: "", company: "" });
   const [csvText, setCsvText] = useState("");
@@ -635,11 +650,6 @@ export function useEmailOutreachState({ demoData = true } = {}) {
     setAutomationNotice(`Loaded ${lead.name}'s reply into the follow-up panel.`);
   }
 
-  // Only succeeds for an empty list (see emailCampaignsApi.remove ->
-  // DELETE /api/email/campaigns/:id) -- the backend refuses one with real
-  // leads/activity attached rather than cascading the delete through them,
-  // and surfaces that as a real error message here instead of a silent
-  // no-op, so a rep knows to pause it instead.
   async function handleDeleteCampaign(campaign) {
     try {
       await emailCampaignsApi.remove(campaign.id);
@@ -647,7 +657,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       if (selectedCampaignId === campaign.id) {
         setSelectedCampaignId(null);
       }
-      setAutomationNotice(`"${campaign.name}" deleted.`);
+      setAutomationNotice(`"${campaign.name}" and its subscribers were deleted.`);
     } catch (error) {
       setAutomationNotice(`Could not delete "${campaign.name}" (${error.message}).`);
     }
@@ -742,7 +752,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
         // POST /inbound) — company itself is optional on this form.
         company: newLeadForm.company.trim() || "—",
         email: newLeadForm.email,
-        owner: "Rahul R",
+        owner: leadOwnerName,
         campaignId: selectedCampaign.id,
         country: newLeadForm.country.trim() || null
       });
@@ -885,14 +895,16 @@ export function useEmailOutreachState({ demoData = true } = {}) {
   }
 
   async function handleAssignAccountToCampaign(event) {
-    const emailAccountId = event.target.value || null;
+    const emailAccountId = event.target.value || "";
+    setAutomationForm((current) => ({ ...current, emailAccountId }));
     if (!selectedCampaign) {
-      setAutomationNotice("Select a campaign first.");
+      const account = emailAccounts.find((acc) => acc.id === emailAccountId);
+      setAutomationNotice(emailAccountId ? `New campaign will send through "${account?.label ?? emailAccountId}".` : "New campaign will use the default mailbox.");
       return;
     }
 
     try {
-      const updated = await emailCampaignsApi.assignEmailAccount(selectedCampaign.id, emailAccountId);
+      const updated = await emailCampaignsApi.assignEmailAccount(selectedCampaign.id, emailAccountId || null);
       setCampaigns((current) =>
         current.map((campaign) => (campaign.id === selectedCampaign.id ? { ...campaign, emailAccountId: updated.emailAccountId } : campaign))
       );
@@ -951,6 +963,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       replyTo: campaign.replyTo ?? "",
       subject: campaign.subject ?? "",
       bodyHtml: campaign.bodyHtml ?? "",
+      emailAccountId: campaign.emailAccountId ?? "",
       targetCampaignId: "",
       scheduledAt: "",
       delayBetweenMinutes: "0"
@@ -994,23 +1007,29 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       followUpCount,
       abTest: automationForm.abTest,
       autoPause: automationForm.autoPause,
+      emailAccountId: automationForm.emailAccountId || undefined,
       replyTo: automationForm.replyTo?.trim() || null,
       subject: automationForm.subject?.trim() || null,
       bodyHtml: automationForm.bodyHtml?.trim() || null
     };
 
-    // The campaign name still matching the currently-selected (already
-    // real, backend-loaded) campaign means the user is tweaking its
-    // settings, not starting a new one — update it in place instead of
-    // creating a same-name duplicate row. No local-only fallback either
-    // way — a campaign that only exists in this browser tab can't
-    // actually send anything.
-    const isEditingSelected = selectedCampaign && selectedCampaign.name === automationForm.campaignName;
-
     try {
-      if (isEditingSelected) {
+      if (selectedCampaign) {
         const campaign = await emailCampaignsApi.update(selectedCampaign.id, payload);
-        setCampaigns((current) => current.map((c) => (c.id === campaign.id ? { ...c, ...payload } : c)));
+        setCampaigns((current) =>
+          current.map((c) =>
+            c.id === campaign.id
+              ? {
+                  ...c,
+                  ...payload,
+                  status: backendCampaignStatusToLocal(campaign.status),
+                  emailAccountId: campaign.emailAccountId ?? null,
+                  subject: campaign.subject ?? "",
+                  bodyHtml: campaign.bodyHtml ?? ""
+                }
+              : c
+          )
+        );
         setAutomationNotice(`"${campaign.name}" updated on the backend — ${followUpCount + 1} follow-up emails, ${dailyLimit}/day limit.`);
         return campaign;
       }
@@ -1052,6 +1071,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
   // handleSaveAutomation. No local-only fallback: nothing genuine to send
   // without the backend.
   async function handleSendNow() {
+    if (sendingNowBusy) return;
     if (!selectedCampaign) {
       setAutomationNotice("Select or save a campaign first.");
       return;
@@ -1065,43 +1085,60 @@ export function useEmailOutreachState({ demoData = true } = {}) {
       return;
     }
 
-    const saved = await handleSaveAutomation();
-    if (!saved) {
-      setAutomationNotice(`Could not save "${selectedCampaign.name}" before sending — nothing was sent.`);
-      return;
-    }
-
+    setSendingNowBusy(true);
     try {
-      const targetCampaignId = automationForm.targetCampaignId && automationForm.targetCampaignId !== saved.id
-        ? automationForm.targetCampaignId
-        : null;
-      const targetName = targetCampaignId ? campaigns.find((c) => c.id === targetCampaignId)?.name : null;
-      const sentToLabel = targetName ? `"${saved.name}" → "${targetName}"` : `"${saved.name}"`;
-
-      // No per-lead narrowing — redirecting to a different List (via
-      // targetCampaignId) still means every one of that List's leads, same
-      // as sending to this campaign's own leads means every one of those.
-      const result = await emailCampaignsApi.sendNow(saved.id, {
-        targetCampaignId,
-        scheduledAt: automationForm.scheduledAt ? new Date(automationForm.scheduledAt).toISOString() : null,
-        delayBetweenMinutes: Number(automationForm.delayBetweenMinutes) || 0
-      });
-
-      if (result.queued > 0) {
-        setAutomationNotice(
-          result.scheduled
-            ? `${sentToLabel}: ${result.queued} email(s) scheduled.`
-            : `${sentToLabel}: ${result.queued} email(s) queued to send now.`
-        );
-      } else if (result.sentImmediately > 0 || result.failed > 0) {
-        setAutomationNotice(
-          `${sentToLabel}: ${result.sentImmediately} sent immediately, ${result.failed} failed (sending queue is disabled — no delay throttle was applied).`
-        );
-      } else {
-        setAutomationNotice(result.message ?? `${sentToLabel}: nothing was sent.`);
+      const saved = await handleSaveAutomation();
+      if (!saved) {
+        setAutomationNotice(`Could not save "${selectedCampaign.name}" before sending — nothing was sent.`);
+        return;
       }
-    } catch (error) {
-      setAutomationNotice(`Could not send "${saved.name}" — ${error.message}`);
+
+      try {
+        const targetCampaignId = automationForm.targetCampaignId && automationForm.targetCampaignId !== saved.id
+          ? automationForm.targetCampaignId
+          : null;
+        const targetName = targetCampaignId ? campaigns.find((c) => c.id === targetCampaignId)?.name : null;
+        const sentToLabel = targetName ? `"${saved.name}" → "${targetName}"` : `"${saved.name}"`;
+
+        // No per-lead narrowing — redirecting to a different List (via
+        // targetCampaignId) still means every one of that List's leads, same
+        // as sending to this campaign's own leads means every one of those.
+        const result = await emailCampaignsApi.sendNow(saved.id, {
+          targetCampaignId,
+          scheduledAt: automationForm.scheduledAt ? new Date(automationForm.scheduledAt).toISOString() : null,
+          delayBetweenMinutes: Number(automationForm.delayBetweenMinutes) || 0
+        });
+
+        if (result.queued > 0) {
+          setCampaigns((current) => current.map((campaign) => (campaign.id === saved.id ? { ...campaign, status: "Sending" } : campaign)));
+          setAutomationNotice(
+            result.scheduled
+              ? `${sentToLabel}: ${result.queued} email(s) scheduled.`
+              : `${sentToLabel}: ${result.queued} email(s) queued to send now.`
+          );
+        } else if (result.sentImmediately > 0 || result.failed > 0) {
+          setCampaigns((current) =>
+            current.map((campaign) =>
+              campaign.id === saved.id
+                ? {
+                    ...campaign,
+                    status: result.sentImmediately > 0 ? "Completed" : campaign.status,
+                    sentCount: (campaign.sentCount ?? 0) + result.sentImmediately
+                  }
+                : campaign
+            )
+          );
+          setAutomationNotice(
+            `${sentToLabel}: ${result.sentImmediately} sent immediately, ${result.failed} failed (sending queue is disabled — no delay throttle was applied).`
+          );
+        } else {
+          setAutomationNotice(result.message ?? `${sentToLabel}: nothing was sent.`);
+        }
+      } catch (error) {
+        setAutomationNotice(`Could not send "${saved.name}" — ${error.message}`);
+      }
+    } finally {
+      setSendingNowBusy(false);
     }
   }
 
@@ -1227,7 +1264,7 @@ export function useEmailOutreachState({ demoData = true } = {}) {
   return {
     campaigns, segments, selectedCampaignId, setSelectedCampaignId, setAutomationForm,
     repliedLeads, allLeads, systemStatus, dashboardSummary, testConnectionResult, handleTestConnection, selectedLeadId, leadActivity,
-    automationForm, automationNotice, newLeadForm, setNewLeadForm,
+    automationForm, automationNotice, sendingNowBusy, leadOwnerName, newLeadForm, setNewLeadForm,
     csvText, handleCsvTextChange, csvImportBusy, previewHtml, setPreviewHtml,
     emailAccounts, newAccountForm, setNewAccountForm,
     selectedCampaign, selectedLead, selectedLeadTimeline, activeReplyRule,

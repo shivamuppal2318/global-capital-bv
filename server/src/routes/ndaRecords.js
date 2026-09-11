@@ -4,7 +4,8 @@ import { prisma } from "../db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { ndaMetrics } from "../lib/relationshipMetrics.js";
 import { signClientInviteToken } from "../lib/clientPortalToken.js";
-import { sendSystemEmail, ndaReadyToSignEmail } from "../lib/systemMailer.js";
+import { ndaReadyToSignEmail } from "../lib/systemMailer.js";
+import { sendLeadRoutedTransactionalEmail } from "../lib/outreachMailbox.js";
 import { relatedLeadOwnerWhereClause, employeeOwnerWhereClause } from "../lib/channelPartnerLeadScope.js";
 import { renderSignedNda, slugify } from "../lib/signedDocumentRenderer.js";
 import { generateStageReport, ndaReportFacts } from "../lib/stageCompletionReports.js";
@@ -204,7 +205,7 @@ ndaRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
         portalUrl,
         isNewAccount: !lead.clientUser
       });
-      const result = await sendSystemEmail({ to: lead.email, subject, html, text });
+      const result = await sendLeadRoutedTransactionalEmail(lead, { subject, html, text });
       emailResult = { emailed: result.sent, reason: result.sent ? undefined : result.reason, portalUrl };
     }
   }

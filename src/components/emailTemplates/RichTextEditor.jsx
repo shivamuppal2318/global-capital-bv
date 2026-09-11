@@ -8,6 +8,35 @@ const toolbarButtons = [
   { command: "insertUnorderedList", icon: ListIcon, label: "Bullet list" }
 ];
 
+function insertPlainTextAtSelection(text) {
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount) return false;
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const textNode = document.createTextNode(text);
+  range.insertNode(textNode);
+  range.setStartAfter(textNode);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
+}
+
+function placeCursorAtEnd(element) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function isPlainTextKey(event) {
+  return event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+}
+
 // A minimal WYSIWYG editor for template bodies (bold/italic/underline/
 // lists/links/images) — built on the browser's own contentEditable +
 // execCommand rather than pulling in a rich-text-editor dependency for what
@@ -24,24 +53,136 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
   // already holds (e.g. opening a template that has real saved body text).
   const lastEmittedValue = useRef(null);
   const [htmlMode, setHtmlMode] = useState(false);
+  // Whether bold/italic/underline is active because the user actually
+  // clicked that toolbar button — as opposed to Chrome's own contentEditable
+  // spontaneously reporting the state active on a brand-new, empty editor
+  // with nothing clicked (confirmed live: typing into a fresh template body
+  // came out as a stray <b>kk</b>, toolbar Bold button lit up, despite never
+  // being pressed). Only formatting the user actually chose should survive
+  // the phantom-formatting cleanup below.
+  const formatActiveByChoice = useRef({ bold: false, italic: false, underline: false });
 
   useEffect(() => {
     if (editorRef.current && value !== lastEmittedValue.current) {
       editorRef.current.innerHTML = value;
       lastEmittedValue.current = value;
+      if (!value) {
+        formatActiveByChoice.current = { bold: false, italic: false, underline: false };
+      }
     }
   }, [value]);
 
+  function tagToFormatCommand(tagName) {
+    if (tagName === "B" || tagName === "STRONG") return "bold";
+    if (tagName === "I" || tagName === "EM") return "italic";
+    if (tagName === "U") return "underline";
+    return null;
+  }
+
+  // Chrome (and evidently Chromium generally) can wrap the very first text
+  // typed into an empty contentEditable in a stray formatting element that
+  // nothing asked for. Unwraps a lone top-level <b>/<i>/<u> (optionally one
+  // block element deep, if the browser also added a wrapping <div>/<p>) as
+  // long as `formatActiveByChoice` says the user never actually turned that
+  // formatting on themselves.
+  function stripPhantomFormatting() {
+    const editor = editorRef.current;
+    if (!editor || editor.childNodes.length !== 1) return;
+    let node = editor.firstChild;
+    if ((node.nodeName === "DIV" || node.nodeName === "P") && node.childNodes.length === 1) {
+      node = node.firstChild;
+    }
+    const command = tagToFormatCommand(node.nodeName);
+    if (!command || formatActiveByChoice.current[command]) return;
+
+    const selection = window.getSelection();
+    const wasFocused = document.activeElement === editor;
+    const text = document.createTextNode(node.textContent ?? "");
+    node.parentNode.replaceChild(text, node);
+
+    if (wasFocused && selection) {
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }
+
   function emitChange() {
+    stripPhantomFormatting();
     const html = editorRef.current?.innerHTML ?? "";
     lastEmittedValue.current = html;
     onChange(html);
   }
 
+  function handleBeforeInput(event) {
+    if (!editorRef.current || htmlMode || event.inputType !== "insertText" || !event.data) return;
+    if (formatActiveByChoice.current.bold || formatActiveByChoice.current.italic || formatActiveByChoice.current.underline) return;
+    event.preventDefault();
+    resetEmptyEditorToNormal();
+    if (insertPlainTextAtSelection(event.data)) {
+      emitChange();
+    }
+  }
+
+  function handleKeyDown(event) {
+    if (!editorRef.current || htmlMode || !isPlainTextKey(event)) return;
+    if (formatActiveByChoice.current.bold || formatActiveByChoice.current.italic || formatActiveByChoice.current.underline) return;
+    event.preventDefault();
+    resetEmptyEditorToNormal();
+    if (insertPlainTextAtSelection(event.key)) {
+      emitChange();
+    }
+  }
+
+  function handlePaste(event) {
+    if (!editorRef.current || htmlMode) return;
+    if (formatActiveByChoice.current.bold || formatActiveByChoice.current.italic || formatActiveByChoice.current.underline) return;
+    const text = event.clipboardData?.getData("text/plain");
+    if (!text) return;
+    event.preventDefault();
+    resetEmptyEditorToNormal();
+    if (insertPlainTextAtSelection(text)) {
+      emitChange();
+    }
+  }
+
   function runCommand(command, arg) {
     editorRef.current?.focus();
+    if (command in formatActiveByChoice.current) {
+      formatActiveByChoice.current[command] = !formatActiveByChoice.current[command];
+    }
     document.execCommand(command, false, arg);
     emitChange();
+  }
+
+  function resetToNormal() {
+    editorRef.current?.focus();
+    for (const command of ["bold", "italic", "underline"]) {
+      if (document.queryCommandState(command)) {
+        document.execCommand(command, false, null);
+      }
+    }
+    formatActiveByChoice.current = { bold: false, italic: false, underline: false };
+    emitChange();
+  }
+
+  function resetEmptyEditorToNormal() {
+    const editor = editorRef.current;
+    if (!editor || htmlMode) return;
+    if (editor.textContent?.trim() || editor.querySelector("img,a,ul,ol")) return;
+
+    editor.focus();
+    for (const command of ["bold", "italic", "underline"]) {
+      if (document.queryCommandState(command)) {
+        document.execCommand(command, false, null);
+      }
+    }
+    formatActiveByChoice.current = { bold: false, italic: false, underline: false };
+    editor.innerHTML = "";
+    lastEmittedValue.current = "";
+    placeCursorAtEnd(editor);
   }
 
   function handleInsertLink() {
@@ -88,7 +229,15 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
   return (
     <div className="overflow-hidden rounded-[14px] border border-[#d6deea] bg-[#f4f7fc] focus-within:border-[#3046b2] focus-within:ring-1 focus-within:ring-[#3046b2]/20">
       <div className="flex flex-wrap items-center gap-1.5 border-b border-[#e1e7f0] px-3 py-2.5">
-        <span className="px-2 text-[12px] font-medium text-[#5f6f89]">Normal</span>
+        <button
+          type="button"
+          disabled={htmlMode}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={resetToNormal}
+          className="rounded-[8px] px-2 py-1 text-[12px] font-normal text-[#5f6f89] transition hover:bg-white hover:text-[#3046b2] disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          Normal
+        </button>
         <span className="mx-1 h-5 w-px bg-[#d6deea]" />
         {toolbarButtons.map(({ command, icon: Icon, label }) => (
           <button
@@ -164,9 +313,15 @@ export function RichTextEditor({ value, onChange, placeholder, unsubscribeLinkTa
           ref={editorRef}
           contentEditable
           suppressContentEditableWarning
+          onFocus={resetEmptyEditorToNormal}
+          onClick={resetEmptyEditorToNormal}
+          onKeyDown={handleKeyDown}
+          onBeforeInput={handleBeforeInput}
           onInput={emitChange}
+          onPaste={handlePaste}
           data-placeholder={placeholder}
-          className="min-h-[320px] bg-white px-5 py-4 text-[14.5px] leading-7 text-[#334463] outline-none empty:before:text-[#9aa6ba] empty:before:content-[attr(data-placeholder)] [&_a]:text-[#3046b2] [&_a]:underline [&_img]:max-w-full [&_img]:rounded-[8px] [&_ul]:list-disc [&_ul]:pl-5 [&_p]:mb-3 [&_p:last-child]:mb-0"
+          className="min-h-[320px] bg-white px-5 py-4 text-[14.5px] font-normal leading-7 text-[#334463] outline-none empty:before:font-normal empty:before:text-[#9aa6ba] empty:before:content-[attr(data-placeholder)] [&_a]:text-[#3046b2] [&_a]:underline [&_img]:max-w-full [&_img]:rounded-[8px] [&_p:last-child]:mb-0 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5"
+          style={{ fontWeight: 400 }}
         />
       )}
     </div>

@@ -104,7 +104,12 @@ export function parseLeadsCsv(text) {
       // (server/src/routes/emailLeads.js's POST /inbound).
       company: record.company || "—",
       email: record.email,
-      owner: record.owner || "Rahul R",
+      // Same fallback the inbound lead webhook already uses when no owner
+      // is given (server/src/routes/emailLeads.js's POST /inbound) --
+      // "Rahul R" here was a leftover placeholder name, not a real default,
+      // and silently misattributed every ownerless CSV row's outreach
+      // performance to a specific person who never actually touched it.
+      owner: record.owner || "Unassigned",
       // Optional — drives automatic sending-mailbox routing by country (see
       // server/src/lib/accountRouting.js). Blank is fine, just means no
       // country-based routing for that row.

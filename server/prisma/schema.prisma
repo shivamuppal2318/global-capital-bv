@@ -1181,6 +1181,7 @@ model EmailCampaign {
   leads        EmailLead[]
   cadenceSteps CadenceStep[]
   segments     EmailSegment[]
+  sourceActivity EmailActivityLog[] @relation("EmailActivitySourceCampaign")
 
   @@index([status])
   @@index([ownerId])
@@ -1339,9 +1340,12 @@ model EmailActivityLog {
   // per lead than whatever the campaign itself is assigned to.
   emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
   emailAccountId String?
+  sourceCampaign  EmailCampaign? @relation("EmailActivitySourceCampaign", fields: [sourceCampaignId], references: [id], onDelete: SetNull)
+  sourceCampaignId String?
 
   @@index([leadId, createdAt])
   @@index([emailAccountId, kind, createdAt])
+  @@index([sourceCampaignId, kind, createdAt])
 }
 
 model EmailTemplate {

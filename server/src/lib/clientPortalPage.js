@@ -99,8 +99,17 @@ function pageStyles() {
     .gc-brand-name { font-size: 15px; font-weight: 600; color: #18263e; }
     .gc-pill-green { border-radius: 999px; background: #d9f4df; color: #179150; padding: 4px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; }
     .gc-topbar-right { display: flex; align-items: center; gap: 12px; }
+    .gc-name-edit { position: relative; }
     .gc-user-name { margin: 0; font-size: 13px; font-weight: 500; color: #18263e; text-align: right; line-height: 1.3; }
     .gc-user-sub { margin: 0; font-size: 11px; color: #8592ab; text-align: right; line-height: 1.3; }
+    .gc-name-edit-summary { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; float: right; color: #3046b2; cursor: pointer; font-size: 11px; font-weight: 600; list-style: none; }
+    .gc-name-edit-summary::-webkit-details-marker { display: none; }
+    .gc-name-edit-summary:hover { text-decoration: underline; }
+    .gc-name-edit-panel { position: absolute; right: 0; top: calc(100% + 10px); width: min(300px, calc(100vw - 32px)); padding: 14px; border: 1px solid #d6deea; border-radius: 14px; background: #fff; box-shadow: 0 16px 36px rgba(30,48,87,0.16); z-index: 20; }
+    .gc-name-edit-panel .gc-field { margin-bottom: 10px; }
+    .gc-name-edit-panel .gc-input { padding: 9px 12px; border-radius: 10px; }
+    .gc-name-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .gc-name-edit-actions .gc-btn-primary { width: auto; padding: 9px 14px; border-radius: 10px; font-size: 13px; }
     .gc-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 999px; background: #2d47aa; color: #fff; font-size: 12px; font-weight: 600; flex-shrink: 0; }
     .gc-signout { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #d6deea; background: #fff; color: #5f6f89; border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 500; text-decoration: none; transition: background .15s; white-space: nowrap; }
     .gc-signout:hover { background: #f4f7fb; }
@@ -315,10 +324,17 @@ export function dashboardShell({ title, clientName, companyName, stages = [], ac
               <span class="gc-pill-green">Client Portal</span>
             </div>
             <div class="gc-topbar-right">
-              <div>
+              <details class="gc-name-edit">
                 <p class="gc-user-name">${escapeHtml(clientName)}</p>
                 <p class="gc-user-sub">${escapeHtml(companyName)}</p>
-              </div>
+                <summary class="gc-name-edit-summary">Edit</summary>
+                <form class="gc-name-edit-panel" method="POST" action="/api/client-portal/profile/name">
+                  ${formField({ label: "Display name", name: "name", value: clientName })}
+                  <div class="gc-name-edit-actions">
+                    <button type="submit" class="gc-btn-primary">Save</button>
+                  </div>
+                </form>
+              </details>
               <div class="gc-avatar">${escapeHtml(initials)}</div>
               <a href="/api/client-portal/logout" class="gc-signout">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true">

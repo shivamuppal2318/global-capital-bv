@@ -78,6 +78,21 @@ export async function enqueueCampaignBlast({ leadId, campaignId, delayMs }) {
   );
 }
 
+async function hasPendingBlastJobsForCampaign(campaignId, currentJobId = null) {
+  const q = getCadenceQueue();
+  if (!q) return false;
+  const jobs = await q.getJobs(["waiting", "delayed", "active", "waiting-children"]);
+  return jobs.some((job) => String(job.id) !== String(currentJobId ?? "") && job.name === "send-blast" && job.data?.campaignId === campaignId);
+}
+
+async function completeBlastCampaignIfFinished(campaignId, currentJobId = null) {
+  if (await hasPendingBlastJobsForCampaign(campaignId, currentJobId)) return;
+  await prisma.emailCampaign.updateMany({
+    where: { id: campaignId, status: "SENDING" },
+    data: { status: "COMPLETED" }
+  });
+}
+
 export function startCadenceWorker() {
   if (!isQueueEnabled()) {
     console.log("[cadence-worker] REDIS_URL not set — worker not started.");
@@ -94,6 +109,7 @@ export function startCadenceWorker() {
     async (job) => {
       if (job.name === "send-blast") {
         await sendCampaignBlastEmail(job.data.leadId, job.data.campaignId);
+        await completeBlastCampaignIfFinished(job.data.campaignId, job.id);
         return;
       }
 
