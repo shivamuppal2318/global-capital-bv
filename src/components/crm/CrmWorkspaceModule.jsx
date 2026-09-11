@@ -560,6 +560,19 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
   // Dashboard's fuller Funnel Health chart (which also shows conversion
   // rates between stages).
   const [dealBoard, setDealBoard] = useState(null);
+  // Cumulative "how many leads have ever reached each milestone" counts —
+  // e.g. a lead can be sitting at NDA (its current bottleneck, per dealBoard
+  // above) while having already reached Data Room/IOI/Field Visit in
+  // parallel; those still show up here even though dealBoard's own Field
+  // Visit column shows 0 for that same lead. Confirmed live: a real deal
+  // stuck at NDA Reminder 2 had already reached Field Visit, and the
+  // company's Term Sheet milestone had already been reached once too — both
+  // invisible in dealBoard's per-lead-single-column counts, which only ever
+  // show a lead's current bottleneck, never its full history of stages
+  // touched. Server-computed by leadPipeline.js's computePipelineSummary,
+  // reusing the exact same computeLeadPipeline the per-lead Deal Journey
+  // popup already shows, so this can never disagree with it.
+  const [pipelineSummary, setPipelineSummary] = useState(null);
   // "New record" — the header's create-lead modal.
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addForm, setAddForm] = useState({ name: "", company: "", email: "", mobile: "", capitalAsk: "", owner: "", territory: "" });
@@ -696,6 +709,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
 
   useEffect(() => {
     leadsApi.dealBoard().then(setDealBoard).catch(() => {});
+      leadsApi.pipelineSummary().then(setPipelineSummary).catch(() => {});
   }, []);
 
   // A selection made under one status filter shouldn't silently carry over
@@ -736,6 +750,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       });
       await refreshLeads();
       leadsApi.dealBoard().then(setDealBoard).catch(() => {});
+      leadsApi.pipelineSummary().then(setPipelineSummary).catch(() => {});
       setSelectedId(created.id);
       setAddModalOpen(false);
       setAddForm({ name: "", company: "", email: "", mobile: "", capitalAsk: "", owner: "", territory: "" });
@@ -947,6 +962,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       setImportResult({ ...result, errors: [...parseErrors, ...result.errors] });
       await refreshLeads();
       leadsApi.dealBoard().then(setDealBoard).catch(() => {});
+      leadsApi.pipelineSummary().then(setPipelineSummary).catch(() => {});
     } catch (err) {
       setImportResult({ createdCount: 0, failedCount: rows.length, errors: [...parseErrors, err.message] });
     } finally {
@@ -1062,6 +1078,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       // keep the board in sync rather than leaving it stale until the next
       // full page load.
       leadsApi.dealBoard().then(setDealBoard).catch(() => {});
+      leadsApi.pipelineSummary().then(setPipelineSummary).catch(() => {});
     } catch (err) {
       setSaveError(err.message);
     } finally {
@@ -1105,6 +1122,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
       const updated = await leadsApi.patch(selectedLead.id, { status: "CONVERTED" });
       setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
       leadsApi.dealBoard().then(setDealBoard).catch(() => {});
+      leadsApi.pipelineSummary().then(setPipelineSummary).catch(() => {});
       leadsApi.timeline(selectedLead.id).then(setTimeline).catch(() => {});
       leadsApi.interactions(selectedLead.id).then(setInteractions).catch(() => {});
     } catch (err) {
@@ -1298,29 +1316,46 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
     if (leadSourceFilter !== "ALL" && (lead.leadSource || "") !== leadSourceFilter) return false;
     return true;
   });
-  const dealStageCounts = dealBoard?.map((column) => ({
-    id: column.id,
-    label: column.label,
-    count: column.deals.length
-  })) ?? [];
-
   return (
     <div className="space-y-6">
       <Header />
 
-      {dealBoard ? (
+      {pipelineSummary ? (
         <Card className="px-5 py-5">
-          <SectionTitle icon={RadarIcon} iconClass="text-[#2f96da]">
-            Deal pipeline
+          <SectionTitle
+            icon={RadarIcon}
+            iconClass="text-[#8b52d0]"
+            subtitle="How many leads have EVER reached each milestone, company-wide — a lead reaching Field Visit or Term Sheet still counts here even if it's currently stuck earlier (e.g. an unsigned NDA) in the board below."
+          >
+            Milestones reached
           </SectionTitle>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
-            {dealStageCounts.map((stage) => (
-              <div key={stage.id} className="rounded-[14px] border border-[#e7edf5] bg-[#f8faff] px-4 py-3">
+            {pipelineSummary.map((stage) => (
+              <div
+                key={stage.id}
+                className="rounded-[14px] border border-[#e7edf5] bg-[#f8faff] px-4 py-3"
+                title={stage.names.length ? stage.names.join(", ") : "No leads have reached this stage yet."}
+              >
                 <p className="truncate text-[12px] font-semibold text-[#435471]">{stage.label}</p>
-                <p className="mt-2 text-[24px] font-semibold leading-none text-[#102246]">{stage.count}</p>
+                <p className="mt-2 text-[24px] font-semibold leading-none text-[#102246]">
+                  {stage.reached}
+                  <span className="ml-1 text-[13px] font-medium text-[#8592ab]">/ {stage.total}</span>
+                </p>
               </div>
             ))}
           </div>
+        </Card>
+      ) : null}
+
+      {dealBoard ? (
+        <Card className="px-5 py-5">
+          <SectionTitle
+            icon={RadarIcon}
+            iconClass="text-[#2f96da]"
+            subtitle="Where each deal is stuck right now — its earliest stage not yet resolved, one column per lead. Not the same as the cumulative milestone counts above."
+          >
+            Deal pipeline
+          </SectionTitle>
           <div className="mt-5 max-h-[62vh] overflow-x-auto overflow-y-auto pr-1">
             <div className="flex min-h-[320px] items-stretch gap-4" style={{ minWidth: "max-content" }}>
               {dealBoard.map((column) => (
