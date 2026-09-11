@@ -1337,10 +1337,7 @@ export function CrmWorkspaceModule({ partnerMode = false } = {}) {
                 title={stage.names.length ? stage.names.join(", ") : "No leads have reached this stage yet."}
               >
                 <p className="truncate text-[12px] font-semibold text-[#435471]">{stage.label}</p>
-                <p className="mt-2 text-[24px] font-semibold leading-none text-[#102246]">
-                  {stage.reached}
-                  <span className="ml-1 text-[13px] font-medium text-[#8592ab]">/ {stage.total}</span>
-                </p>
+                <p className="mt-2 text-[24px] font-semibold leading-none text-[#102246]">{stage.reached}</p>
               </div>
             ))}
           </div>
