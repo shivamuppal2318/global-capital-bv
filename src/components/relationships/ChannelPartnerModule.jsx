@@ -15,6 +15,105 @@ const STATUS_TONE = { ACTIVE: "green", INACTIVE: "slate", PROSPECTIVE: "amber" }
 
 const has = (v) => v !== null && v !== undefined;
 
+// Shared by both the "Add partner" form (top of the directory, no existing
+// row to attach to) and the "Edit" form for an existing partner (rendered
+// inline in that partner's own card, right where Estimate commission /
+// Commission ledger / Portal activity already render their own panels).
+// Confirmed live: editing an existing partner used to always pop this form
+// open at the TOP of the whole list regardless of which row's Edit button
+// was clicked — invisible (and looking like a no-op) for any partner
+// scrolled further down the page than that.
+function PartnerEditForm({ editing, setEditing, handleSave, formError, saving, tiers, onCancel }) {
+  return (
+    <form onSubmit={handleSave} className="mt-3 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <label className={labelClass}>Partner name</label>
+          <input
+            className={inputClass}
+            value={editing.name}
+            onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+            placeholder="e.g. Iberia Solar Partners"
+            disabled={Boolean(editing.id)}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Status</label>
+          <select className={inputClass} value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>Contact name</label>
+          <input className={inputClass} value={editing.contactName} onChange={(e) => setEditing({ ...editing, contactName: e.target.value })} />
+        </div>
+        <div>
+          <label className={labelClass}>Region</label>
+          <input className={inputClass} value={editing.region} onChange={(e) => setEditing({ ...editing, region: e.target.value })} placeholder="e.g. Iberia" />
+        </div>
+        <div>
+          <label className={labelClass}>Contact email</label>
+          <input className={inputClass} value={editing.contactEmail} onChange={(e) => setEditing({ ...editing, contactEmail: e.target.value })} placeholder="name@partner.com" />
+        </div>
+        <div>
+          <label className={labelClass}>Contact phone</label>
+          <input className={inputClass} value={editing.contactPhone} onChange={(e) => setEditing({ ...editing, contactPhone: e.target.value })} />
+        </div>
+        <div>
+          <label className={labelClass}>Custom Commission % (optional)</label>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="0.1"
+            className={inputClass}
+            value={editing.commissionPct}
+            onChange={(e) => setEditing({ ...editing, commissionPct: e.target.value })}
+            placeholder="e.g. 2.5"
+          />
+          <p className="mt-1.5 text-[12px] leading-5 text-[#8593ac]">
+            Overrides the standard schedule
+            {tiers.length
+              ? ": " +
+                tiers
+                  .map(
+                    (t) =>
+                      `${t.pct}% (${(t.minBorrowing / 1_000_000).toFixed(0)}M–${
+                        // Infinity serializes to null over JSON — checking finiteness
+                        // (not `=== Infinity`) is what actually works after the round-trip.
+                        Number.isFinite(t.maxBorrowing) ? `${(t.maxBorrowing / 1_000_000).toFixed(0)}M` : "+"
+                      })`
+                  )
+                  .join(", ")
+              : ""}
+            . Leave blank to use the standard schedule.
+          </p>
+        </div>
+        <div className="md:col-span-2">
+          <label className={labelClass}>Notes</label>
+          <textarea
+            rows={3}
+            className={`${inputClass} resize-y`}
+            value={editing.notes}
+            onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
+            placeholder="How the relationship started, anything worth remembering"
+          />
+        </div>
+      </div>
+
+      {formError ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{formError}</p> : null}
+      <div className="mt-4 flex items-center gap-2">
+        <ActionButton label={saving ? "Saving…" : "Save"} primary small onClick={handleSave} disabled={saving} />
+        {onCancel ? <ActionButton label="Cancel" small onClick={onCancel} disabled={saving} /> : null}
+      </div>
+    </form>
+  );
+}
+
 // A directory of the partner organisations that refer/introduce leads —
 // distinct from the "Channel Partner" filter tag on a Lead itself (Universal
 // Filters, CRM Workspace edit form), which is just a free-text label. This
@@ -372,103 +471,32 @@ export function ChannelPartnerModule() {
           iconClass="text-[#3046b2]"
           subtitle="Referred-leads count matches this partner's name against Lead.channelPartner — set on a lead from CRM Workspace's edit form."
           action={
-            <ActionButton
-              label={editing ? "Cancel" : "Add partner"}
-              icon={editing ? XIcon : PlusIcon}
-              small
-              onClick={() => (editing ? setEditing(null) : startNew())}
-            />
+            // Hidden while editing an existing partner — that form now has
+            // its own Cancel button right where it's actually rendered
+            // (inline in that partner's own row), not up here.
+            !editing || !editing.id ? (
+              <ActionButton
+                label={editing ? "Cancel" : "Add partner"}
+                icon={editing ? XIcon : PlusIcon}
+                small
+                onClick={() => (editing ? setEditing(null) : startNew())}
+              />
+            ) : undefined
           }
         >
           Partner directory
         </SectionTitle>
 
-        {editing ? (
-          <form onSubmit={handleSave} className="mt-5 rounded-[16px] border border-[#e7edf5] bg-[#fbfcfe] p-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className={labelClass}>Partner name</label>
-                <input
-                  className={inputClass}
-                  value={editing.name}
-                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                  placeholder="e.g. Iberia Solar Partners"
-                  disabled={Boolean(editing.id)}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Status</label>
-                <select className={inputClass} value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}>
-                  {STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {STATUS_LABEL[s]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClass}>Contact name</label>
-                <input className={inputClass} value={editing.contactName} onChange={(e) => setEditing({ ...editing, contactName: e.target.value })} />
-              </div>
-              <div>
-                <label className={labelClass}>Region</label>
-                <input className={inputClass} value={editing.region} onChange={(e) => setEditing({ ...editing, region: e.target.value })} placeholder="e.g. Iberia" />
-              </div>
-              <div>
-                <label className={labelClass}>Contact email</label>
-                <input className={inputClass} value={editing.contactEmail} onChange={(e) => setEditing({ ...editing, contactEmail: e.target.value })} placeholder="name@partner.com" />
-              </div>
-              <div>
-                <label className={labelClass}>Contact phone</label>
-                <input className={inputClass} value={editing.contactPhone} onChange={(e) => setEditing({ ...editing, contactPhone: e.target.value })} />
-              </div>
-              <div>
-                <label className={labelClass}>Custom Commission % (optional)</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  className={inputClass}
-                  value={editing.commissionPct}
-                  onChange={(e) => setEditing({ ...editing, commissionPct: e.target.value })}
-                  placeholder="e.g. 2.5"
-                />
-                <p className="mt-1.5 text-[12px] leading-5 text-[#8593ac]">
-                  Overrides the standard schedule
-                  {tiers.length
-                    ? ": " +
-                      tiers
-                        .map(
-                          (t) =>
-                            `${t.pct}% (${(t.minBorrowing / 1_000_000).toFixed(0)}M–${
-                              // Infinity serializes to null over JSON — checking finiteness
-                              // (not `=== Infinity`) is what actually works after the round-trip.
-                              Number.isFinite(t.maxBorrowing) ? `${(t.maxBorrowing / 1_000_000).toFixed(0)}M` : "+"
-                            })`
-                        )
-                        .join(", ")
-                    : ""}
-                  . Leave blank to use the standard schedule.
-                </p>
-              </div>
-              <div className="md:col-span-2">
-                <label className={labelClass}>Notes</label>
-                <textarea
-                  rows={3}
-                  className={`${inputClass} resize-y`}
-                  value={editing.notes}
-                  onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
-                  placeholder="How the relationship started, anything worth remembering"
-                />
-              </div>
-            </div>
-
-            {formError ? <p className="mt-3 text-[13px] font-medium text-[#e0483f]">{formError}</p> : null}
-            <div className="mt-4">
-              <ActionButton label={saving ? "Saving…" : "Save"} primary small onClick={handleSave} disabled={saving} />
-            </div>
-          </form>
+        {editing && !editing.id ? (
+          <PartnerEditForm
+            editing={editing}
+            setEditing={setEditing}
+            handleSave={handleSave}
+            formError={formError}
+            saving={saving}
+            tiers={tiers}
+            onCancel={() => setEditing(null)}
+          />
         ) : null}
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -551,6 +579,18 @@ export function ChannelPartnerModule() {
                 <ActionButton small label={activityOpenId === p.id ? "Hide portal activity" : "Portal activity"} onClick={() => toggleActivity(p)} />
                 <ActionButton small label="Delete" onClick={() => remove(p)} disabled={busyId === p.id} />
               </div>
+
+              {editing?.id === p.id ? (
+                <PartnerEditForm
+                  editing={editing}
+                  setEditing={setEditing}
+                  handleSave={handleSave}
+                  formError={formError}
+                  saving={saving}
+                  tiers={tiers}
+                  onCancel={() => setEditing(null)}
+                />
+              ) : null}
 
               {agreementNoticeId === p.id && agreementNotice ? (
                 <p className="mt-2 text-[13px] text-[#334463]">{agreementNotice}</p>
