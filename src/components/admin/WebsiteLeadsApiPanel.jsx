@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { ActionButton, Card, SectionTitle } from "../ui";
 import { GlobeIcon, CopyIcon, RefreshIcon } from "../Icons";
+import { emailCampaignsApi } from "../../lib/emailCampaignsApi";
+import { emailLeadsApi } from "../../lib/emailLeadsApi";
+
+// Matches server/src/lib/websiteLeadsCampaign.js's WEBSITE_LEADS_CAMPAIGN_NAME
+// exactly -- can't import it directly, the frontend and server are separate
+// bundles.
+const WEBSITE_LEADS_CAMPAIGN_NAME = "Website Leads";
 
 const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-[#f7f9fc] px-3.5 py-2.5 font-mono text-[13px] text-[#102246] outline-none";
@@ -20,6 +27,26 @@ export function WebsiteLeadsApiPanel() {
   const [error, setError] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
   const [copied, setCopied] = useState(null);
+  // The actual captured leads, not just the setup instructions -- per QA
+  // feedback ("why is this code displayed here? ... website lead should
+  // come here"), an admin checking this screen wants to see real leads
+  // that came in, not just re-read the webhook config they already set up.
+  const [capturedLeads, setCapturedLeads] = useState(null);
+  const [capturedLeadsError, setCapturedLeadsError] = useState(null);
+
+  function loadCapturedLeads() {
+    setCapturedLeadsError(null);
+    emailCampaignsApi
+      .list()
+      .then((campaigns) => campaigns.find((c) => c.name === WEBSITE_LEADS_CAMPAIGN_NAME))
+      .then((campaign) => (campaign ? emailLeadsApi.list(campaign.id) : []))
+      .then(setCapturedLeads)
+      .catch((err) => setCapturedLeadsError(err.message));
+  }
+
+  useEffect(() => {
+    loadCapturedLeads();
+  }, []);
 
   useEffect(() => {
     api
@@ -81,6 +108,7 @@ document.getElementById("website-lead-form").addEventListener("submit", async (e
     : "";
 
   return (
+    <div className="space-y-5">
     <Card className="px-5 py-5">
       <SectionTitle
         icon={GlobeIcon}
@@ -147,5 +175,49 @@ document.getElementById("website-lead-form").addEventListener("submit", async (e
         </div>
       ) : null}
     </Card>
+
+    <Card className="px-5 py-5">
+      <SectionTitle
+        icon={GlobeIcon}
+        iconClass="text-[#2b9b60]"
+        subtitle="Real leads captured through the endpoint above — refresh after testing it to confirm a submission actually landed."
+        action={<ActionButton label="Refresh" icon={RefreshIcon} small onClick={loadCapturedLeads} />}
+      >
+        Captured website leads
+      </SectionTitle>
+
+      {capturedLeadsError ? <p className="mt-4 text-[13px] font-medium text-[#e0483f]">{capturedLeadsError}</p> : null}
+      {!capturedLeadsError && capturedLeads === null ? <p className="mt-4 text-[13px] text-[#8592ab]">Loading…</p> : null}
+
+      {capturedLeads?.length ? (
+        <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e7edf5]">
+          <table className="w-full min-w-[640px] text-left">
+            <thead>
+              <tr className="bg-[#f8faff] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5c6b87]">
+                <th className="px-4 py-2.5">Name</th>
+                <th className="px-4 py-2.5">Company</th>
+                <th className="px-4 py-2.5">Email</th>
+                <th className="px-4 py-2.5">Received</th>
+              </tr>
+            </thead>
+            <tbody>
+              {capturedLeads.map((lead) => (
+                <tr key={lead.id} className="border-t border-[#f0f3f9] text-[13px] text-[#334463]">
+                  <td className="px-4 py-2.5 font-medium text-[#102246]">{lead.name}</td>
+                  <td className="px-4 py-2.5">{lead.company ?? "—"}</td>
+                  <td className="px-4 py-2.5">{lead.email}</td>
+                  <td className="px-4 py-2.5 text-[#8592ab]">{new Date(lead.createdAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : capturedLeads && !capturedLeadsError ? (
+        <p className="mt-4 rounded-[14px] border border-dashed border-[#d6deea] px-4 py-6 text-center text-[13px] text-[#8592ab]">
+          No leads captured yet — once your website form or webhook sends its first submission, it'll show up here.
+        </p>
+      ) : null}
+    </Card>
+    </div>
   );
 }
