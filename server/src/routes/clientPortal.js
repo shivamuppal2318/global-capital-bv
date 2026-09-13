@@ -740,6 +740,45 @@ function fieldVisitDetailsHtml(fieldVisit) {
     </div>`;
 }
 
+function termSheetDetailsHtml(termSheet) {
+  if (!termSheet) return "";
+  const effectiveStatus = termSheet.completedAt || termSheet.reportSubmitted ? "COMPLETED" : termSheet.status;
+
+  const facts = [
+    ["Status", effectiveStatus ? effectiveStatus.replaceAll("_", " ") : null],
+    ["Scheduled for", fmtPortalDate(termSheet.scheduledAt)],
+    ["Completed on", fmtPortalDate(termSheet.completedAt)],
+    ["Counterparty", termSheet.counterparty],
+    ["Amount", termSheet.amount],
+    ["Valuation", termSheet.valuation],
+    ["Term sheet owner", termSheet.owner],
+    ["Client rating", termSheet.clientRating !== null && termSheet.clientRating !== undefined ? `${termSheet.clientRating}/5` : null]
+  ].filter(([, value]) => value && value !== "—");
+
+  if (!facts.length && !termSheet.notes && !termSheet.document) return "";
+
+  return `
+    <div class="gc-sign-box">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;">
+        ${facts
+          .map(
+            ([label, value]) => `
+              <div>
+                <p style="margin:0;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#8592ab;">${escapeHtml(label)}</p>
+                <p style="margin:4px 0 0;font-size:13px;color:#334463;line-height:1.5;">${escapeHtml(value)}</p>
+              </div>`
+          )
+          .join("")}
+      </div>
+      ${termSheet.notes ? `<p style="margin:12px 0 0;font-size:13px;color:#5c6b87;line-height:1.6;">${escapeHtml(termSheet.notes)}</p>` : ""}
+      ${
+        termSheet.document
+          ? `<p style="margin:12px 0 0;font-size:13px;"><a href="/api/client-portal/documents/${termSheet.document.id}/preview" target="_blank" style="color:#3046b2;font-weight:600;text-decoration:none;">Download &amp; print term sheet: ${escapeHtml(termSheet.document.originalName)}</a></p>`
+          : `<p style="margin:12px 0 0;font-size:13px;color:#9aa6ba;">No term sheet document attached yet.</p>`
+      }
+    </div>`;
+}
+
 // Both /dashboard (the overview) and /stage/:key (one stage on its own
 // page) need the exact same underlying records and the same 8-stage
 // computation — the only difference is how much of it gets rendered.
@@ -757,7 +796,10 @@ async function loadPortalData(leadId) {
         lead: { select: { channelPartner: true } }
       }
     }),
-    prisma.dealStageRecord.findUnique({ where: { leadId_stage: { leadId, stage: "TERM_SHEET" } } }),
+    prisma.dealStageRecord.findUnique({
+      where: { leadId_stage: { leadId, stage: "TERM_SHEET" } },
+      include: { document: { select: { id: true, originalName: true } } }
+    }),
     // Scoped to this lead's own uploads — unscoped before, which meant any
     // client's portal could show a checklist item "received" just because
     // some OTHER lead's (or an unrelated admin general-library) document
@@ -794,7 +836,7 @@ async function loadPortalData(leadId) {
     termSheet
   });
 
-  return { nda, ioi, visits, fieldVisit, stages, uploadedCategories, stageReportDocs };
+  return { nda, ioi, visits, fieldVisit, termSheet, stages, uploadedCategories, stageReportDocs };
 }
 
 // Matches a stage key to its generated report, if one exists yet -- same
@@ -831,7 +873,7 @@ clientPortalRouter.get(
   requireClientAuth,
   asyncHandler(async (req, res) => {
     const leadId = req.clientUser.leadId;
-    const { nda, ioi, visits, fieldVisit, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
+    const { nda, ioi, visits, fieldVisit, termSheet, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
 
     const completedCount = stages.filter((s) => s.status === "completed").length;
 
@@ -938,6 +980,8 @@ clientPortalRouter.get(
                     extraHtml = visitPlanningDetailsHtml(visits);
                   } else if (s.key === "fieldVisit") {
                     extraHtml = fieldVisitDetailsHtml(fieldVisit);
+                  } else if (s.key === "termSheet") {
+                    extraHtml = termSheetDetailsHtml(termSheet);
                   }
                   if (s.status === "completed") {
                     const report = reportDocFor(s.key, stageReportDocs);
@@ -965,7 +1009,7 @@ clientPortalRouter.get(
     if (!stageMeta) return res.redirect("/api/client-portal/dashboard");
 
     const leadId = req.clientUser.leadId;
-    const { nda, ioi, visits, fieldVisit, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
+    const { nda, ioi, visits, fieldVisit, termSheet, stages, uploadedCategories, stageReportDocs } = await loadPortalData(leadId);
     const stage = stages.find((s) => s.key === stageMeta.key);
 
     const ndaActionable = nda && Boolean(nda.sentAt) && !["DECLINED", "EXPIRED"].includes(nda.status);
@@ -1004,6 +1048,8 @@ clientPortalRouter.get(
       stageExtraHtml = visitPlanningDetailsHtml(visits);
     } else if (stage.key === "fieldVisit") {
       stageExtraHtml = fieldVisitDetailsHtml(fieldVisit);
+    } else if (stage.key === "termSheet") {
+      stageExtraHtml = termSheetDetailsHtml(termSheet);
     }
     if (stage.status === "completed") {
       const report = reportDocFor(stage.key, stageReportDocs);
