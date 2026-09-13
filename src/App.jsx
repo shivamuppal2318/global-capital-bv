@@ -36,6 +36,7 @@ import { DataRoomModule } from "./components/dataRoom/DataRoomModule";
 import { DealStageModule } from "./components/dealStages/DealStageModule";
 import { MODULE_TO_STAGE } from "./components/dealStages/stageConfig";
 import { AgeingReportModule } from "./components/ageingReport/AgeingReportModule";
+import { ageingReportApi } from "./lib/ageingReportApi";
 import { NdaModule } from "./components/relationships/NdaModule";
 import { VisitPlanningModule } from "./components/relationships/VisitPlanningModule";
 import { IoiModule } from "./components/relationships/IoiModule";
@@ -142,6 +143,25 @@ function AppShell() {
     [allowedSections]
   );
 
+  // Real on-screen notification for "DOE follow-up pending" (Ageing
+  // Report's own table) -- a count badge on the sidebar item itself, so a
+  // DOE sees they have something waiting without opening the report first.
+  // Per QA feedback ("DOE should get notification on pending task"),
+  // clarified as an on-screen badge rather than email. Polled, not
+  // pushed -- same 60s cadence as the imap-poller's own mailbox check.
+  const [pendingFollowUpCount, setPendingFollowUpCount] = useState(0);
+  useEffect(() => {
+    if (!allowedIds.has("ageing-report")) return;
+    let cancelled = false;
+    const load = () => ageingReportApi.pendingCount().then((r) => !cancelled && setPendingFollowUpCount(r.count)).catch(() => {});
+    load();
+    const interval = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [allowedIds]);
+
   // Land on the first module they can actually open, so an employee
   // without CRM Workspace doesn't start on a blank screen.
   const [activePage, setActivePage] = useState(() =>
@@ -163,9 +183,13 @@ function AppShell() {
     () =>
       allowedSections.map((section) => ({
         ...section,
-        items: section.items.map((item) => ({ ...item, active: item.id === activePage }))
+        items: section.items.map((item) => ({
+          ...item,
+          active: item.id === activePage,
+          alertBadge: item.id === "ageing-report" ? pendingFollowUpCount : 0
+        }))
       })),
-    [allowedSections, activePage]
+    [allowedSections, activePage, pendingFollowUpCount]
   );
 
   return (
@@ -276,7 +300,14 @@ function Sidebar({ navSections, onChange }) {
                         <Icon className="size-[15px]" />
                       </span>
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                      {item.badge ? (
+                      {item.alertBadge ? (
+                        <span
+                          title={`${item.alertBadge} follow-up${item.alertBadge === 1 ? "" : "s"} pending`}
+                          className="rounded-full bg-[#e0483f] px-2 py-0.5 text-[10px] font-bold text-white"
+                        >
+                          {item.alertBadge}
+                        </span>
+                      ) : item.badge ? (
                         <span className="rounded-full bg-[#21407f] px-2 py-0.5 text-[10px] font-semibold text-white/90">
                           {item.badge}
                         </span>

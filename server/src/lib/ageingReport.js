@@ -37,7 +37,7 @@ function daysSince(date) {
   return Math.floor((Date.now() - new Date(date).getTime()) / DAY_MS);
 }
 
-async function staleInterestedReplies(req) {
+export async function staleInterestedReplies(req) {
   const channelPartner = req?.channelPartner ?? null;
   const outreachWhere = channelPartner ? { campaign: { ownerChannelPartnerId: channelPartner.id } } : {};
   const interested = await prisma.emailLead.findMany({
