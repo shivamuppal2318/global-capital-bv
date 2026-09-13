@@ -29,6 +29,7 @@ import {
   MailIcon,
   NoteIcon,
   PhoneIcon,
+  PrinterIcon,
   RadarIcon,
   SearchIcon,
   SendIcon,
@@ -76,6 +77,7 @@ function PartnershipView({ partnerUser }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     channelPartnerPortalAuthApi
@@ -97,6 +99,18 @@ function PartnershipView({ partnerUser }) {
       setError(err.message);
     } finally {
       setDownloading(false);
+    }
+  }
+
+  async function handlePrint() {
+    setPrinting(true);
+    setError(null);
+    try {
+      await channelPartnerPortalAuthApi.printAgreement();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPrinting(false);
     }
   }
 
@@ -186,6 +200,15 @@ function PartnershipView({ partnerUser }) {
                   >
                     <AttachmentIcon className="size-4" />
                     {downloading ? "Downloading..." : "Download agreement"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    disabled={!signed || printing}
+                    className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-[14px] border border-[#dfe6f2] bg-white px-4 py-3 text-[15px] font-semibold text-[#3046b2] shadow-[0_2px_8px_rgba(30,48,87,0.04)] transition hover:bg-[#f4f7fb] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <PrinterIcon className="size-4" />
+                    {printing ? "Opening..." : "Print agreement"}
                   </button>
                 </div>
               </div>

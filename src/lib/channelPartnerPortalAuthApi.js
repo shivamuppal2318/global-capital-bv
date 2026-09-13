@@ -45,6 +45,27 @@ export const channelPartnerPortalAuthApi = {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   },
+  // Same document as downloadAgreement, opened in a new tab and printed
+  // instead of saved — the backend's own Content-Disposition: attachment
+  // only matters for a direct <a href>/navigation, not a fetch()'d blob we
+  // hand to window.open ourselves, so this can reuse the exact same
+  // endpoint without needing a server-side "inline" variant.
+  printAgreement: async () => {
+    const token = getToken();
+    const response = await fetch(`${API_BASE_URL}/agreement/download?fresh=${Date.now()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.error ?? `Could not open agreement to print (${response.status})`);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (!win) throw new Error("Your browser blocked the print preview — allow pop-ups for this site and try again.");
+    win.addEventListener("load", () => win.print());
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  },
   // Always resolves with the same generic message whether or not the
   // address exists — the API deliberately doesn't reveal that.
   forgotPassword: (email) => apiFetch(`${API_BASE_URL}/forgot-password`, { method: "POST", body: { email } }),
