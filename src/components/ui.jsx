@@ -39,9 +39,20 @@ export function SectionTitle({ icon: Icon, iconClass, children, action, subtitle
 
 export function StatCard({ card }) {
   return (
-    <div className="rounded-[20px] border border-[#d6deea] bg-white px-5 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
+    // min-w-0 matters here: a grid/flex item defaults to min-width:auto,
+    // which silently defeats the value's own truncate below (a long
+    // formatted number — e.g. a currency value with an unusually large
+    // amount — would keep forcing the card wider instead of ever eliding,
+    // visibly breaking out of its box and overlapping whatever's next to
+    // it). Confirmed live on IOI's "Avg IOI value" card.
+    <div className="min-w-0 rounded-[20px] border border-[#d6deea] bg-white px-5 py-4 shadow-[0_4px_16px_rgba(30,48,87,0.06)]">
       <p className="text-[12px] uppercase tracking-[0.2em] text-[#5c6b87]">{card.label}</p>
-      <p className="mt-3 text-[2.2rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]">{card.value}</p>
+      <p
+        title={card.value}
+        className="mt-3 truncate text-[2.2rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2042]"
+      >
+        {card.value}
+      </p>
       <span className={`mt-4 inline-flex rounded-full px-3 py-1 text-[12px] font-semibold ${noteToneClass[card.noteTone]}`}>
         {card.note}
       </span>
