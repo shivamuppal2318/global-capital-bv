@@ -77,7 +77,7 @@ universalFiltersRouter.get("/facets", asyncHandler(async (req, res) => {
     managers: distinct("manager"),
     leadSources: [...new Set([
       ...emailLeads.map((l) => l.source),
-      ...leads.filter((l) => l.leadSource === "Channel Partner Referral").map((l) => l.leadSource)
+      ...leads.filter((l) => l.leadSource === "Channel Partner").map((l) => l.leadSource)
     ].filter(Boolean))].sort()
   });
 }));

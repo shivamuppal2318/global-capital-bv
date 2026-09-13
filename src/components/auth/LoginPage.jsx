@@ -15,7 +15,7 @@ const primaryButtonClass =
 const FEATURE_POINTS = [
   { icon: ShieldIcon, title: "Governed", desc: "Stage-gated approvals" },
   { icon: LockIcon, title: "Secure", desc: "Audited data rooms" },
-  { icon: GlobeIcon, title: "Global", desc: "14 markets covered" }
+  { icon: GlobeIcon, title: "Global", desc: "7 continents covered" }
 ];
 
 // Shared split-screen frame for every auth view (sign in / forgot / reset)
@@ -44,7 +44,7 @@ export function AuthShell({ children }) {
             One operating system from opportunity discovery to portfolio monitoring.
           </h2>
           <p className="mt-6 max-w-md text-[15px] leading-7 text-white/70">
-            Twenty-four governed stages covering lead intelligence, NDA execution, secure data rooms, KYC, AI due
+            10+ governed stages covering lead intelligence, NDA execution, secure data rooms, KYC, AI due
             diligence, valuation, term sheets, funding and impact reporting.
           </p>
         </div>

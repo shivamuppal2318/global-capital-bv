@@ -285,7 +285,7 @@ emailLeadsRouter.post("/inbound", asyncHandler(async (req, res) => {
   }
 
   const lead = await prisma.emailLead.create({
-    data: { name, company: company ?? "—", email, owner, campaignId: campaign.id, country, source: "External API" }
+    data: { name, company: company ?? "—", email, owner, campaignId: campaign.id, country, source: "Website Form" }
   });
   const scheduledCount = await scheduleCadenceSteps(lead, campaign.cadenceSteps);
 

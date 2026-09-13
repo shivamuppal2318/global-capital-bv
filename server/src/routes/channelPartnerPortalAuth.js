@@ -364,7 +364,7 @@ channelPartnerPortalAuthRouter.post(
           mobile: data.mobile || null,
           capitalAsk: data.capitalAsk || "Not specified",
           owner: data.doe || null,
-          leadSource: "Channel Partner Referral",
+          leadSource: "Channel Partner",
           territory: data.territory || null,
           notes: details.join("\n") || null,
           doe: data.doe || null,

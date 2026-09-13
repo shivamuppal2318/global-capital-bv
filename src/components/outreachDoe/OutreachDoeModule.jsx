@@ -250,6 +250,7 @@ export function OutreachDoeModule() {
         </div>
       </Card>
 
+      {isAdmin ? (
       <Card className="px-5 py-5">
         <SectionTitle
           icon={RadarIcon}
@@ -314,6 +315,7 @@ export function OutreachDoeModule() {
           ) : null}
         </div>
       </Card>
+      ) : null}
     </div>
   );
 }
