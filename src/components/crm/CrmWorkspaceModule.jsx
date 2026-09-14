@@ -1742,6 +1742,34 @@ function ZoomInfoSearchPanel({
   const pageSize = 50;
   const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
   const hasPrev = page > 1;
+
+  // Click-to-reveal a contact's real email/phone — the search result itself
+  // only ever carries hasEmail/hasDirectPhone booleans (see
+  // routes/leads.js's own comment on reveal-contact), so nothing real
+  // exists to show until a rep actually asks for one specific person.
+  // Keyed by result id and cached once revealed, so re-clicking the same
+  // card doesn't spend a second ZoomInfo credit on it.
+  const [revealed, setRevealed] = useState({});
+  const [revealingId, setRevealingId] = useState(null);
+  const [revealError, setRevealError] = useState({});
+
+  async function handleRevealContact(result) {
+    if (revealed[result.id] || revealingId === result.id) return;
+    setRevealingId(result.id);
+    setRevealError((current) => ({ ...current, [result.id]: null }));
+    try {
+      const data = await leadsApi.zoomInfoRevealContact({
+        firstName: result.firstName,
+        lastName: result.lastName,
+        companyName: result.company?.name
+      });
+      setRevealed((current) => ({ ...current, [result.id]: data }));
+    } catch (err) {
+      setRevealError((current) => ({ ...current, [result.id]: err.message }));
+    } finally {
+      setRevealingId(null);
+    }
+  }
   const hasMore = page < totalPages;
   const pageResultIds = results.map((result) => result.id);
   const selectedCount = pageResultIds.filter((id) => selectedIds.has(id)).length;
@@ -1941,13 +1969,18 @@ function ZoomInfoSearchPanel({
                 ) : null}
               </div>
             ) : (
-              <div key={result.id} className="rounded-[14px] border border-[#e7edf5] px-4 py-3">
+              <div
+                key={result.id}
+                onClick={() => handleRevealContact(result)}
+                className="cursor-pointer rounded-[14px] border border-[#e7edf5] px-4 py-3 transition hover:border-[#c3cfe6]"
+              >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex min-w-0 items-start gap-3">
                     <input
                       type="checkbox"
                       checked={selectedIds.has(result.id)}
                       onChange={() => toggleResult(result.id)}
+                      onClick={(e) => e.stopPropagation()}
                       className="mt-1 size-4 rounded border-[#b9c4d8]"
                     />
                     <div className="min-w-0">
@@ -1958,14 +1991,26 @@ function ZoomInfoSearchPanel({
                       {result.jobTitle ? `${result.jobTitle} — ` : ""}
                       {result.company?.name ?? "Company unknown"}
                     </p>
-                    <p className="mt-1 text-[11px] text-[#9aa6ba]">
-                      {result.hasEmail ? "✉ Email on file" : "No email on file"}
-                      {result.hasDirectPhone || result.hasMobilePhone ? " · ☎ Phone on file" : ""}
-                    </p>
+                    {revealed[result.id] ? (
+                      <p className="mt-1 text-[11px] text-[#334463]">
+                        {revealed[result.id].email ? `✉ ${revealed[result.id].email}` : "No email found"}
+                        {revealed[result.id].mobilePhone ? ` · ☎ ${revealed[result.id].mobilePhone}` : ""}
+                      </p>
+                    ) : revealingId === result.id ? (
+                      <p className="mt-1 text-[11px] text-[#9aa6ba]">Revealing contact details…</p>
+                    ) : revealError[result.id] ? (
+                      <p className="mt-1 text-[11px] font-medium text-[#e0483f]">{revealError[result.id]}</p>
+                    ) : (
+                      <p className="mt-1 text-[11px] text-[#9aa6ba]">
+                        {result.hasEmail ? "✉ Email on file" : "No email on file"}
+                        {result.hasDirectPhone || result.hasMobilePhone ? " · ☎ Phone on file" : ""}
+                        {" · click to reveal"}
+                      </p>
+                    )}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <ActionButton label="Add to List" small onClick={() => onOpenAddToList(result)} />
+                    <ActionButton label="Add to List" small onClick={(e) => { e.stopPropagation(); onOpenAddToList(result); }} />
                   </div>
                 </div>
                 {addToListTarget?.id === result.id ? (
