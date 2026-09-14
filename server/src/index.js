@@ -5,6 +5,7 @@ import { initEncryptionKey } from "./lib/credentialCrypto.js";
 import { startCadenceWorker } from "./queue/cadenceQueue.js";
 import { startImapPoller } from "./lib/imapPoller.js";
 import { startMarketIntelligenceScheduler } from "./lib/marketIntelligence/scheduler.js";
+import { startNdaReminderScheduler } from "./lib/ndaReminderScheduler.js";
 import { ensureDefaults } from "../prisma/ensureDefaults.js";
 
 const port = process.env.PORT ?? 4000;
@@ -44,3 +45,4 @@ app.listen(port, () => {
 startCadenceWorker();
 startImapPoller();
 startMarketIntelligenceScheduler();
+startNdaReminderScheduler();
