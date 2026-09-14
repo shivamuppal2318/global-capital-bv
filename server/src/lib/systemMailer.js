@@ -217,3 +217,21 @@ export function ioiReadyToSignEmail({ contactName, company, doeName, portalUrl, 
     )
   };
 }
+
+// Same shape as ndaReminderEmail — a nudge for an IOI still sitting
+// unsigned, same portal link the original send used.
+export function ioiReminderEmail({ contactName, company, doeName, portalUrl, isNewAccount, reminderNumber }) {
+  const contactLine = doeName ? `Your Global Capital BV contact, <strong>${doeName}</strong>,` : "We";
+  const ordinal = reminderNumber === 2 ? "second" : "first";
+  return {
+    subject: `Reminder: ${company} — IOI still awaiting your signature`,
+    text: `Hi ${contactName},\n\nThis is a ${ordinal} reminder that ${doeName ? `your Global Capital BV contact, ${doeName},` : "we"} sent over an IOI for ${company} that's still awaiting your signature.\n\n${isNewAccount ? "Set up your client portal account, then sign it there:" : "Sign in to your client portal to review and sign it:"}\n${portalUrl}`,
+    html: shell(
+      "Still waiting on your IOI signature",
+      `<p style="font-size:15px;color:#334463;line-height:1.6">Hi ${contactName},</p>
+       <p style="font-size:15px;color:#334463;line-height:1.6">This is a ${ordinal} reminder that ${contactLine} sent over an IOI for ${company} that's still awaiting your signature.</p>
+       <p style="margin:24px 0"><a href="${portalUrl}" style="background:#3046b2;color:#fff;text-decoration:none;padding:12px 22px;border-radius:12px;font-weight:600;display:inline-block">${isNewAccount ? "Set up your account & sign" : "Sign in to sign"}</a></p>
+       <p style="font-size:13px;color:#8592ab;line-height:1.6">If the button doesn't work, paste this into your browser:<br><span style="word-break:break-all">${portalUrl}</span></p>`
+    )
+  };
+}

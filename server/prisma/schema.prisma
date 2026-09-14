@@ -1487,6 +1487,8 @@ model IoiRecord {
 
   generatedAt DateTime?
   sentAt      DateTime?
+  reminder1At DateTime?
+  reminder2At DateTime?
   signedAt    DateTime?
   expiresAt   DateTime?
 
@@ -1536,6 +1538,8 @@ enum IoiStatus {
   DRAFT
   GENERATED
   SENT
+  REMINDER_1
+  REMINDER_2
   SIGNED
   DECLINED
   EXPIRED

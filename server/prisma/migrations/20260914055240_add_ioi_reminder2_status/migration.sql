@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "IoiStatus" ADD VALUE 'REMINDER_2' BEFORE 'SIGNED';

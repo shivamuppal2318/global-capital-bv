@@ -10,12 +10,14 @@ const inputClass =
   "w-full rounded-[12px] border border-[#d6deea] bg-white px-3.5 py-2.5 text-[14px] text-[#102246] outline-none placeholder:text-[#9aa6bd] focus:border-[#3046b2]";
 const labelClass = "mb-1.5 block text-[13px] font-semibold text-[#334463]";
 
-const STATUSES = ["DRAFT", "GENERATED", "SENT", "SIGNED", "DECLINED", "EXPIRED"];
+const STATUSES = ["DRAFT", "GENERATED", "SENT", "REMINDER_1", "REMINDER_2", "SIGNED", "DECLINED", "EXPIRED"];
 
 const STATUS_LABEL = {
   DRAFT: "Draft",
   GENERATED: "Generated",
   SENT: "Sent",
+  REMINDER_1: "Reminder 1",
+  REMINDER_2: "Reminder 2",
   SIGNED: "Signed",
   DECLINED: "Declined",
   EXPIRED: "Expired"
@@ -25,6 +27,8 @@ const STATUS_TONE = {
   DRAFT: "slate",
   GENERATED: "blue",
   SENT: "amber",
+  REMINDER_1: "amber",
+  REMINDER_2: "amber",
   SIGNED: "green",
   DECLINED: "red",
   EXPIRED: "red"
@@ -33,6 +37,8 @@ const STATUS_TONE = {
 const FLOW = [
   { label: "Generate", action: "generate", field: "generatedAt" },
   { label: "Send", action: "send", field: "sentAt" },
+  { label: "Reminder 1", action: "remind1", field: "reminder1At" },
+  { label: "Reminder 2", action: "remind2", field: "reminder2At" },
   { label: "Sign", action: "sign", field: "signedAt" }
 ];
 

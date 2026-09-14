@@ -10,17 +10,11 @@ import {
 } from "../lib/channelPartnerLeadScope.js";
 import { renderSignedIoi, slugify } from "../lib/signedDocumentRenderer.js";
 import { generateStageReport, ioiReportFacts } from "../lib/stageCompletionReports.js";
-import { signClientInviteToken } from "../lib/clientPortalToken.js";
-import { ioiReadyToSignEmail } from "../lib/systemMailer.js";
-import { sendLeadRoutedTransactionalEmail } from "../lib/outreachMailbox.js";
+import { IOI_ACTION_FIELD, advanceIoiRecord } from "../lib/ioiActions.js";
 
 export const ioiRecordsRouter = Router();
 
-const STATUSES = ["DRAFT", "GENERATED", "SENT", "SIGNED", "DECLINED", "EXPIRED"];
-
-function apiBaseUrl() {
-  return process.env.APP_BASE_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
-}
+const STATUSES = ["DRAFT", "GENERATED", "SENT", "REMINDER_1", "REMINDER_2", "SIGNED", "DECLINED", "EXPIRED"];
 
 const include = {
   lead: { select: { id: true, name: true, company: true } },
@@ -187,16 +181,8 @@ ioiRecordsRouter.post("/", asyncHandler(async (req, res) => {
   res.status(201).json(record);
 }));
 
-// Advancing the lifecycle as a single action, so the UI never has to know
-// which timestamp each step writes — and so it can never be forgotten.
-const ACTION_FIELD = {
-  generate: { field: "generatedAt", status: "GENERATED", label: "Generated" },
-  send: { field: "sentAt", status: "SENT", label: "Sent" },
-  sign: { field: "signedAt", status: "SIGNED", label: "Signed" }
-};
-
 ioiRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
-  const step = ACTION_FIELD[req.params.action];
+  const step = IOI_ACTION_FIELD[req.params.action];
   if (!step) return res.status(400).json({ error: `Unknown action "${req.params.action}".` });
 
   const existing = await prisma.ioiRecord.findFirst({ where: { id: req.params.id, ...relatedLeadOwnerWhereClause(req), ...employeeOwnerWhereClause(req) } });
@@ -209,33 +195,13 @@ ioiRecordsRouter.post("/:id/:action", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "Record the generated date before sending or signing." });
   }
 
-  const record = await prisma.ioiRecord.update({
-    where: { id: existing.id },
-    data: { [step.field]: new Date(), status: step.status },
-    include
-  });
-
-  let emailResult = null;
-  if (req.params.action === "send") {
-    const lead = await prisma.lead.findUnique({ where: { id: existing.leadId }, include: { clientUser: true } });
-    const portalUrl = lead.clientUser
-      ? `${apiBaseUrl()}/api/client-portal/login`
-      : `${apiBaseUrl()}/api/client-portal/register/${signClientInviteToken(lead.id)}`;
-
-    if (!lead.email) {
-      emailResult = { emailed: false, reason: "This lead has no email address on file.", portalUrl: null };
-    } else {
-      const { subject, html, text } = ioiReadyToSignEmail({
-        contactName: lead.name,
-        company: lead.company,
-        doeName: record.owner,
-        portalUrl,
-        isNewAccount: !lead.clientUser
-      });
-      const result = await sendLeadRoutedTransactionalEmail(lead, { subject, html, text });
-      emailResult = { emailed: result.sent, reason: result.sent ? undefined : result.reason, portalUrl };
-    }
+  // Same reasoning as NDA's own guard: a reminder with no send date would
+  // break the signing-time and effectiveness maths.
+  if (["remind1", "remind2"].includes(req.params.action) && !existing.sentAt) {
+    return res.status(400).json({ error: "Record the send date before logging a reminder." });
   }
+
+  const { record, emailResult } = await advanceIoiRecord(existing, req.params.action);
 
   if (req.params.action === "sign") {
     generateStageReport({

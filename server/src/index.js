@@ -6,6 +6,7 @@ import { startCadenceWorker } from "./queue/cadenceQueue.js";
 import { startImapPoller } from "./lib/imapPoller.js";
 import { startMarketIntelligenceScheduler } from "./lib/marketIntelligence/scheduler.js";
 import { startNdaReminderScheduler } from "./lib/ndaReminderScheduler.js";
+import { startIoiReminderScheduler } from "./lib/ioiReminderScheduler.js";
 import { ensureDefaults } from "../prisma/ensureDefaults.js";
 
 const port = process.env.PORT ?? 4000;
@@ -46,3 +47,4 @@ startCadenceWorker();
 startImapPoller();
 startMarketIntelligenceScheduler();
 startNdaReminderScheduler();
+startIoiReminderScheduler();
